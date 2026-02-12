@@ -16,7 +16,16 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from django.urls import path, include
+from users_app.views import home 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # Auth (Forgot Password URLs)
+    path('api/auth/', include('users_app.urls')),  # ✅ correct
+    path('', home), 
+    path('accounts/', include('django.contrib.auth.urls')),
 ]
+
+

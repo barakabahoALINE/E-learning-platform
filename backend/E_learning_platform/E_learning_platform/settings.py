@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'users_app',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
@@ -38,7 +39,12 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
 ]
+
+
+CORS_ALLOW_ALL_ORIGINS = True
+
 
 ROOT_URLCONF = 'E_learning_platform.urls'
 
@@ -62,20 +68,26 @@ WSGI_APPLICATION = 'E_learning_platform.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
 DATABASES = {
     'default': {
-          'ENGINE': 'django.db.backends.mysql',
-          'NAME': config('DB_NAME'),
-          'USER': config('DB_USER'),
-          'PASSWORD': config('DB_PASSWORD'),
-          'HOST': config('DB_HOST'),
-          'PORT': config('DB_PORT'),
-          'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
-         }
- }
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
+
+# DATABASES = {
+#     'default': {
+#           'ENGINE': 'django.db.backends.mysql',
+#           'NAME': config('DB_NAME'),
+#           'USER': config('DB_USER'),
+#           'PASSWORD': config('DB_PASSWORD'),
+#           'HOST': config('DB_HOST'),
+#           'PORT': config('DB_PORT'),
+#           'OPTIONS': {
+#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+#         },
+#          }
+#  }
 
 
 
@@ -115,3 +127,21 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+
+# ==========================
+# EMAIL SETTINGS (GMAIL)
+# ==========================
+# backend-only, dev only
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+
+EMAIL_HOST_USER = 'albertineayingeneye749@gmail.com'      # shyiramo email yawe
+EMAIL_HOST_PASSWORD = 'ljga cdcd eloh ejqy'     # shyiramo app password
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
