@@ -1,3 +1,4 @@
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.contrib.auth.models import (
     AbstractBaseUser,
@@ -33,15 +34,19 @@ class User(AbstractBaseUser, PermissionsMixin):
         ("instructor", "Instructor"),
         ("admin", "Admin"),
     )
+    LEVEL_CHOICES = (
+        ('beginner', 'Beginner'),
+        ('intermediate', 'Intermediate'),
+        ('advanced', 'Advanced'),
+    )
+
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default='beginner')
+
 
     email = models.EmailField(unique=True)
-    first_name = None
-    last_name = None
     full_name = models.CharField(max_length=255)
     institution = models.CharField(max_length=255)
-
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="student")
-
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
@@ -52,7 +57,6 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["full_name", "institution"]
-
+    
     def __str__(self):
         return self.email
-# Create your models here.

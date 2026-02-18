@@ -1,12 +1,13 @@
 from django.shortcuts import render
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .serializers import SignupSerializer
 from rest_framework.views import APIView
 from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from .tokens import email_verification_token
 from django.contrib.auth import get_user_model
+from rest_framework.permissions import IsAuthenticated
+from .serializers import SignupSerializer, LoginSerializer, LogoutSerializer, GoogleLoginSerializer
 
 User = get_user_model()
 
@@ -49,3 +50,63 @@ class VerifyEmailView(APIView):
 
         except Exception:
             return Response({"status": "error", "message": "Invalid verification link"}, status=400)# Create your views here.
+
+# login view
+
+class LoginView(APIView):
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+
+        if serializer.is_valid():
+            return Response({
+                "success": "True",
+                "message": "Login successful",
+                "data": serializer.validated_data
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            "success": "False",
+            "message": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+# google login view
+
+class GoogleLoginView(APIView):
+
+    def post(self, request):
+        serializer = GoogleLoginSerializer(data=request.data)
+
+        if serializer.is_valid():
+            return Response({
+                "success": "True",
+                "message": "Google login successful",
+                "data": serializer.validated_data
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            "success": "False",
+            "message": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+# logout view
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = LogoutSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "success": "True",
+                "message": "Logout successful"
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            "success": "False",
+            "message": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
