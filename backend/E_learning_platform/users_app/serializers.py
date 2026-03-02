@@ -10,6 +10,7 @@ from django.utils.http import urlsafe_base64_encode
 from rest_framework_simplejwt.tokens import RefreshToken
 from google.oauth2 import id_token
 from google.auth.transport import requests
+from django.utils import timezone
 
 
 User = get_user_model()
@@ -67,7 +68,11 @@ class LoginSerializer(serializers.Serializer):
         
         if not user.is_verified:
             raise serializers.ValidationError("Email is not verified")
-
+        
+         # Update last login
+        user.last_login = timezone.now()
+        user.save(update_fields=['last_login'])
+        
         refresh = RefreshToken.for_user(user)
 
         return {
