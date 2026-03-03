@@ -1,8 +1,7 @@
 
 # Create your models here.
 from django.db import models
-from django.contrib.auth.models import User
-
+from django.conf import settings
 from django.utils import timezone
 
 class Course(models.Model):
@@ -10,7 +9,7 @@ class Course(models.Model):
     description = models.TextField()
     duration = models.CharField(max_length=50)
     instructor = models.ForeignKey(
-    User,
+    settings.AUTH_USER_MODEL,
     on_delete=models.CASCADE,
     null=True,
     blank=True
@@ -37,7 +36,14 @@ class Section(models.Model):
     course = models.ForeignKey("Course", on_delete=models.CASCADE, related_name="sections")
     title = models.CharField(max_length=255)
     order = models.PositiveIntegerField()
-    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order"]
+        unique_together = ("course", "order")
+
+    def __str__(self):
+        return f"{self.course.title} - {self.title}"
 class Lesson(models.Model):
     section = models.ForeignKey("Section", on_delete=models.CASCADE, related_name="lessons")
     title = models.CharField(max_length=255)

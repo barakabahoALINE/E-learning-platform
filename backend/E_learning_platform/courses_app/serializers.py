@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Course
+from .models import Course, Section
 
 
 class CourseCreateUpdateSerializer(serializers.ModelSerializer):
@@ -35,3 +35,10 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         model = Course
         fields = "__all__"
         read_only_fields = ["instructor", "created_at", "updated_at"]
+
+
+class SectionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Section
+        fields = ["id", "title", "order", "course"]
+        read_only_fields = ["course"]

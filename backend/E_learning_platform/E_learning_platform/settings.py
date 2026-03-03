@@ -30,10 +30,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist', 
     'corsheaders',
     'users_app',
-    'corsheaders',
     'courses_app',
-    'enrollments_app' ,
-    'rest_framework',
     'rest_framework.authtoken', 
     
 ]
@@ -83,19 +80,19 @@ DATABASES = {
     }
 }
 
-# DATABASES = {
-#     'default': {
-#           'ENGINE': 'django.db.backends.mysql',
-#           'NAME': config('DB_NAME'),
-#           'USER': config('DB_USER'),
-#           'PASSWORD': config('DB_PASSWORD'),
-#           'HOST': config('DB_HOST'),
-#           'PORT': config('DB_PORT'),
-#           'OPTIONS': {
-#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-#         },
-#          }
-#  }
+DATABASES = {
+    'default': {
+          'ENGINE': 'django.db.backends.mysql',
+          'NAME': config('DB_NAME'),
+          'USER': config('DB_USER'),
+          'PASSWORD': config('DB_PASSWORD'),
+          'HOST': config('DB_HOST'),
+          'PORT': config('DB_PORT'),
+          'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
+         }
+ }
 
 
 
