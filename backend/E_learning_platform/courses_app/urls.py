@@ -20,4 +20,7 @@ urlpatterns = [
     path("courses/<int:course_id>/lessons/<int:lesson_id>/contents/<int:pk>/", LessonContentRetrieveAPIView.as_view(), name="content-detail"),
     path("courses/<int:course_id>/lessons/<int:lesson_id>/contents/<int:pk>/update/", LessonContentUpdateAPIView.as_view(), name="content-update"),
     path("courses/<int:course_id>/lessons/<int:lesson_id>/contents/<int:pk>/delete/", LessonContentDeleteAPIView.as_view(), name="content-delete"),
+    path("levels/", LevelListAPIView.as_view(), name="level-list"),
+    path("categories/", CategoryListAPIView.as_view(), name="category-list"),
+    path('media/upload/', MediaUploadAPIView.as_view(), name='media-upload'),
 ]

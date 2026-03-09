@@ -1,0 +1,27 @@
+# Media and Large Files
+backend/E_learning_platform/media/
+backend/E_learning_platform/course_thumbnails/
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# Python & Environment
+__pycache__/
+*.pyc
+venv/
+backend/venv/
+.env
+
+# Node
+node_modules/
+dist/
+.eslintcache
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

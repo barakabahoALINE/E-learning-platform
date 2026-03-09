@@ -9,7 +9,7 @@ from .permissions import IsAdmin
 from django.shortcuts import get_object_or_404
 from courses_app.models import Lesson
 from rest_framework.exceptions import ValidationError
-from .models import Content, Lesson, Course
+from .models import Content, Lesson, Course, Level, Category, MediaUpload
 from .serializers import (
     CourseCreateUpdateSerializer,
     CourseListSerializer,
@@ -18,6 +18,8 @@ from .serializers import (
     LessonContentCreateUpdateSerializer,
     LessonContentListSerializer,
     LessonContentDetailSerializer,
+    LevelSerializer,
+    CategorySerializer,
 )
 
 # =====================================
@@ -29,7 +31,22 @@ class CourseListAPIView(generics.ListAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return Course.objects.filter(is_published=True).select_related("category" , "level")
+        queryset = Course.objects.select_related("category", "level", "created_by")
+        is_admin = self.request.query_params.get("admin", "false").lower() == "true"
+        if is_admin:
+            return queryset
+        return queryset.filter(is_published=True)
+
+class LevelListAPIView(generics.ListAPIView):
+    queryset = Level.objects.all()
+    serializer_class = LevelSerializer
+    permission_classes = [AllowAny]
+
+
+class CategoryListAPIView(generics.ListAPIView):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    permission_classes = [AllowAny]
 
 
 # =====================================
@@ -55,12 +72,12 @@ class CourseCreateAPIView(generics.CreateAPIView):
                 status=status.HTTP_201_CREATED
             )
         except Exception as e:
-            # Catch validation errors
+            error_data = serializer.errors if hasattr(serializer, "errors") and serializer.errors else str(e)
             return Response(
                 {
                     "success": False,
                     "message": "Course creation failed",
-                    "errors": serializer.errors if hasattr(serializer, "errors") else str(e)
+                    "errors": error_data
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -101,6 +118,19 @@ class CourseUpdateAPIView(generics.UpdateAPIView):
     serializer_class = CourseCreateUpdateSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Course.objects.all()
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        return Response({
+            "success": True,
+            "message": "Course updated successfully",
+            "data": serializer.data
+        })
 
 
 # =====================================
@@ -413,4 +443,30 @@ class LessonContentDeleteAPIView(generics.DestroyAPIView):
                     "errors": str(e)
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+class MediaUploadAPIView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, *args, **kwargs):
+        file = request.FILES.get('file')
+        if not file:
+            return Response(
+                {"success": False, "message": "No file provided"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            media = MediaUpload.objects.create(file=file)
+            url = request.build_absolute_uri(media.file.url)
+            
+            return Response({
+                "success": True,
+                "message": "File uploaded successfully",
+                "url": url,
+                "id": media.id
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response(
+                {"success": False, "message": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

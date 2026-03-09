@@ -35,13 +35,19 @@ class SignupSerializer(serializers.ModelSerializer):
 
         verification_link = f"http://localhost:5173/verify-email/{uid}/{token}"
 
-        send_mail(
-            subject="Verify your email",
-            message=f"Click the link to verify your email: {verification_link}",
-            from_email=settings.EMAIL_HOST_USER,
-            recipient_list=[user.email],
+        try:
+            send_mail(
+                subject="Verify your email",
+                message=f"Click the link to verify your email: {verification_link}",
+                from_email=settings.EMAIL_HOST_USER,
+                recipient_list=[user.email],
             fail_silently=False,
         )
+        except Exception as e:
+            return Response(
+                {"error": "Failed to create account. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
         return user
 
@@ -145,12 +151,6 @@ class LogoutSerializer(serializers.Serializer):
             token.blacklist()
         except Exception:
             raise serializers.ValidationError("Invalid or expired token")
-
-from rest_framework import serializers
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
-
 
 class UserListSerializer(serializers.ModelSerializer):
 

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from .models import Course,Lesson, Content
+from .models import Course, Lesson, Content, Level, Category
+import json
 
 
 class CourseCreateUpdateSerializer(serializers.ModelSerializer):
@@ -10,45 +11,135 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Course
-        fields = ["title", "description", "duration","category","level", "price"]
+        fields = ["title", "description", "duration", "category", "level", "price", "final_assessment", "thumbnail", "is_published"]
 
     def validate_price(self, value):
         if value < 0:
             raise serializers.ValidationError("Price cannot be negative.")
         return value
 
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
 
+        lessons_data_str = self.initial_data.get("lessons")
+        final_assessment_str = self.initial_data.get("finalAssessment")
+
+        if final_assessment_str is not None:
+            try:
+                instance.final_assessment = json.loads(final_assessment_str) if isinstance(final_assessment_str, str) else final_assessment_str
+                instance.save()
+            except Exception:
+                pass
+
+        if lessons_data_str is not None:
+            if isinstance(lessons_data_str, str):
+                try:
+                    lessons_data = json.loads(lessons_data_str)
+                except Exception:
+                    lessons_data = []
+            else:
+                lessons_data = lessons_data_str
+                
+            provided_lesson_ids = [str(l.get("id")) for l in lessons_data if l.get("id")]
+            Lesson.objects.filter(course=instance).exclude(id__in=provided_lesson_ids).delete()
+
+            for lesson_data in lessons_data:
+                lesson_id = lesson_data.get("id")
+                lesson = Lesson.objects.filter(id=lesson_id, course=instance).first() if lesson_id else None
+                
+                if not lesson:
+                    lesson = Lesson.objects.create(
+                        course=instance,
+                        title=lesson_data.get("title", ""),
+                        order=lesson_data.get("order", 0)
+                    )
+                else:
+                    lesson.title = lesson_data.get("title", lesson.title)
+                    lesson.order = lesson_data.get("order", lesson.order)
+                    lesson.save()
+
+                contents_data = lesson_data.get("contents", [])
+                provided_content_ids = [str(c.get("id")) for c in contents_data if c.get("id")]
+                Content.objects.filter(lesson=lesson).exclude(id__in=provided_content_ids).delete()
+
+                for content_data in contents_data:
+                    content_id = content_data.get("id")
+                    content = Content.objects.filter(id=content_id, lesson=lesson).first() if content_id else None
+                    
+                    if not content:
+                            Content.objects.create(
+                                lesson=lesson,
+                                title=content_data.get("title", ""),
+                                content_type=content_data.get("content_type", "note"),
+                                description=content_data.get("description", ""),
+                                video_url=content_data.get("video_url", ""),
+                                note_text=content_data.get("text_content", "") or content_data.get("note_text", ""),
+                                file=content_data.get("file", None),
+                                quiz=content_data.get("quiz", None),
+                                order=content_data.get("order", 0)
+                            )
+                    else:
+                        content.title = content_data.get("title", content.title)
+                        content.content_type = content_data.get("content_type", content.content_type)
+                        content.description = content_data.get("description", content.description)
+                        content.video_url = content_data.get("video_url", content.video_url)
+                        content.note_text = content_data.get("text_content", content.note_text) or content_data.get("note_text", content.note_text)
+                        content.file = content_data.get("file", content.file)
+                        content.quiz = content_data.get("quiz", content.quiz)
+                        content.order = content_data.get("order", content.order)
+                        content.save()
+        return instance
 
 class CourseListSerializer(serializers.ModelSerializer):
-    category = serializers.StringRelatedField()
-    level = serializers.StringRelatedField()
+    admin = serializers.CharField(source="created_by.username", read_only=True)
+    lessons_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
         fields = [
             "id",
             "title",
+            "description",
+            "duration",
             "price",
             "category",
             "level",
+            "thumbnail",
             "is_published",
+            "admin",
+            "lessons_count",
+            "created_at",
+            "updated_at"
         ]
 
+    def get_lessons_count(self, obj):
+        return obj.lessons.count()
+
 class CourseDetailSerializer(serializers.ModelSerializer):
-    category = serializers.StringRelatedField()
-    level = serializers.StringRelatedField()
+    lessons = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
         fields = "__all__"
         read_only_fields = ["created_at", "updated_at"]
 
+    def get_lessons(self, obj):
+        lessons = obj.lessons.all()
+        return LessonSerializer(lessons, many=True).data
+
 class LessonSerializer(serializers.ModelSerializer):
+    contents = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
         fields = "__all__"
         read_only_fields = ["course"]
+
+    def get_contents(self, obj):
+        contents = obj.contents.all()
+        return LessonContentDetailSerializer(contents, many=True).data
 
     def validate(self, attrs):
         view = self.context.get("view")
@@ -98,6 +189,11 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
                 "video_url": "Video URL is required for video content."
             })
 
+        if content_type == "image" and not (attrs.get("description") or attrs.get("file")):
+            raise serializers.ValidationError({
+                "description": "Image URL or file is required for image content."
+            })
+
         if content_type == "note" and not attrs.get("note_text"):
             raise serializers.ValidationError({
                 "note_text": "Note text is required for note content."
@@ -122,6 +218,16 @@ class LessonContentListSerializer(serializers.ModelSerializer):
         model = Content
         fields = ["id", "title", "content_type", "order"]
 
+
+class LevelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Level
+        fields = "__all__"
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = "__all__"
 
 class LessonContentDetailSerializer(serializers.ModelSerializer):
     lesson = serializers.StringRelatedField()

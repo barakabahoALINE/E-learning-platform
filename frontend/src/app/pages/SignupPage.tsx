@@ -54,6 +54,16 @@ export const SignupPage: React.FC = () => {
 
   const handleModalClose = () => {
     setIsModalOpen(false);
+    
+    if (status === 'succeeded') {
+      setName("");
+      setEmail("");
+      setInstitution("");
+      setPassword("");
+      setAcceptTerms(false);
+      setHasActuallyReadTerms(false);
+    }
+
     dispatch(clearError());
     dispatch(resetStatus());
   };
@@ -285,6 +295,7 @@ export const SignupPage: React.FC = () => {
         onClose={handleModalClose}
         onConfirm={handleModalConfirm}
         confirmLabel={status === 'succeeded' ? 'Go to Login' : 'Try Again'}
+        showConfirmButton={status !== 'succeeded'}
       />
     </div>
   );

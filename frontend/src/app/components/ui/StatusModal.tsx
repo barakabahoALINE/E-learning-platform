@@ -10,6 +10,7 @@ interface StatusModalProps {
   onClose: () => void;
   onConfirm?: () => void;
   confirmLabel?: string;
+  showConfirmButton?: boolean;
   showCloseButton?: boolean;
 }
 
@@ -66,6 +67,7 @@ export default function StatusModal({
   onClose,
   onConfirm,
   confirmLabel = "Continue",
+  showConfirmButton = true,
   showCloseButton = true,
 }: StatusModalProps) {
   const cfg = config[type] || config.info;
@@ -133,9 +135,11 @@ export default function StatusModal({
             {descContent as React.ReactNode}
           </p>
 
-          <Button onClick={handleConfirm} className={`w-full ${showCloseButton ? "mb-2" : ""} ${cfg.btn}`}>
-            {confirmLabel}
-          </Button>
+          {showConfirmButton && (
+            <Button onClick={handleConfirm} className={`w-full ${showCloseButton ? "mb-2" : ""} ${cfg.btn}`}>
+              {confirmLabel}
+            </Button>
+          )}
 
           {showCloseButton && (
             <Button variant="ghost" onClick={onClose} className={`w-full ${cfg.dismiss}`}>

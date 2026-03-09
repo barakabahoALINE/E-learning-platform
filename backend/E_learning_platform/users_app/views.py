@@ -159,12 +159,18 @@ def forgot_password(request):
 
     reset_link = f"http://localhost:5173/reset-password/{uid}/{token}"
 
-    send_mail(
-        subject="Reset Your Password",
-        message=f"Click to this link to reset your password:\n{reset_link}",
-        from_email=None,
-        recipient_list=[email],
-    )
+    try:
+        send_mail(
+            subject="Reset Your Password",
+            message=f"Click to this link to reset your password:\n{reset_link}",
+            from_email=None,
+            recipient_list=[email],
+        )
+    except Exception as e:
+        return Response(
+            {"error": "Failed to send email. Please try again later."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
     return Response(
         {"message": "Password reset email sent"},
