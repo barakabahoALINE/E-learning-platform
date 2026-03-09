@@ -1,9 +1,22 @@
 from rest_framework import serializers
-from .models import Course, Section
+from .models import Course
+from rest_framework.validators import UniqueValidator
+from .models import Lesson
 
 
 class CourseCreateUpdateSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(
+        validators=[UniqueValidator(queryset=Course.objects.all(), message="Course with this title already exists.")]
+    )
 
+    class Meta:
+        model = Course
+        fields = ["title", "description", "duration", "price"]
+
+    def validate_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Price cannot be negative.")
+        return value
     class Meta:
         model = Course
         fields = ["title", "description", "duration", "price"]
@@ -15,7 +28,7 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 class CourseListSerializer(serializers.ModelSerializer):
-    instructor = serializers.CharField(source="instructor.full_name", read_only=True)
+    admin= serializers.CharField(source="admin.full_name", read_only=True)
 
     class Meta:
         model = Course
@@ -23,22 +36,24 @@ class CourseListSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "price",
-            "instructor",
+            "admin",
             "is_published",
         ]
 
 
 class CourseDetailSerializer(serializers.ModelSerializer):
-    instructor = serializers.CharField(source="instructor.full_name", read_only=True)
+    admin = serializers.CharField(source="admin.full_name", read_only=True)
 
     class Meta:
         model = Course
         fields = "__all__"
-        read_only_fields = ["instructor", "created_at", "updated_at"]
+        read_only_fields = ["admin", "created_at", "updated_at"]
+        
+    
 
+class LessonSerializer(serializers.ModelSerializer):
 
-class SectionSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Section
-        fields = ["id", "title", "order", "course"]
+        model = Lesson
+        fields = "__all__"
         read_only_fields = ["course"]

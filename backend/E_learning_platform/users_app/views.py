@@ -15,7 +15,12 @@ from rest_framework.decorators import api_view
 from django.contrib.auth.tokens import default_token_generator
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from .permissions import IsAdmin
 import json
+from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth import get_user_model
+from .serializers import UserListSerializer, UserUpdateSerializer
 
 User = get_user_model()
 
@@ -198,3 +203,30 @@ def reset_password(request, uidb64, token):
     user.save()
 
     return JsonResponse({"message": "Password has been reset successfully"})
+
+class UserListView(generics.ListAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserListSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    
+class UserUpdateView(generics.UpdateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserUpdateSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    lookup_field = "id"
+    
+class UserDeleteView(generics.DestroyAPIView):
+    queryset = User.objects.all()
+    permission_classes = [IsAuthenticated, IsAdmin]
+    lookup_field = "id"
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        username = instance.email  # cyangwa email niba ushaka
+        self.perform_destroy(instance)
+        return Response(
+            {
+                "success": True,
+                "message": f"User '{username}' has been deleted successfully."
+            },
+            status=status.HTTP_200_OK
+        )

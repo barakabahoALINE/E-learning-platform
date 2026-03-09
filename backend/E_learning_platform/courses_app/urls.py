@@ -1,4 +1,5 @@
 from django.urls import path
+# from .views import *
 from .views import (
     CourseListAPIView,
     CourseCreateAPIView,
@@ -7,10 +8,10 @@ from .views import (
     CourseDeleteAPIView,
     CoursePublishAPIView,
     CourseUnpublishAPIView,
-    SectionCreateAPIView, 
-    SectionListAPIView,
-    SectionUpdateView,
-    SectionDeleteView,
+    LessonCreateAPIView,
+    LessonListAPIView,
+    LessonUpdateAPIView,
+    LessonDeleteAPIView
 )
 
 
@@ -22,8 +23,8 @@ urlpatterns = [
     path("courses/<int:pk>/delete/", CourseDeleteAPIView.as_view(), name="course-delete"),
     path("courses/<int:pk>/publish/", CoursePublishAPIView.as_view(), name="course-publish"),
     path("courses/<int:pk>/unpublish/", CourseUnpublishAPIView.as_view(), name="course-unpublish"),
-    path("courses/<int:course_id>/sections/create/", SectionCreateAPIView.as_view(),name="section-create"),
-    path("courses/<int:course_id>/sections/", SectionListAPIView.as_view(), name="section-list" ),
-    path("sections/<int:pk>/update/", SectionUpdateView.as_view(),name="section-update"),
-    path("sections/<int:pk>/delete/", SectionDeleteView.as_view(), name="section-delete")
+    path("courses/<int:course_id>/lessons/create/", LessonCreateAPIView.as_view()),
+    path("courses/<int:course_id>/lessons/", LessonListAPIView.as_view()),
+    path("lessons/<int:pk>/update/", LessonUpdateAPIView.as_view()),
+    path("lessons/<int:pk>/delete/", LessonDeleteAPIView.as_view()),
 ]

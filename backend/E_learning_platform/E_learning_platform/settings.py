@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import timedelta
 import os
+
 from dotenv import load_dotenv
 from decouple import config
 load_dotenv()
@@ -31,11 +32,14 @@ INSTALLED_APPS = [
     'corsheaders',
     'users_app',
     'courses_app',
+    'enrollments_app' ,
+    # 'rest_framework',
     'rest_framework.authtoken', 
     
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -70,15 +74,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'E_learning_platform.wsgi.application'
 
-
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
 
 DATABASES = {
     'default': {
@@ -170,3 +165,4 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 
 SECRET_KEY= config('SECRET_KEY')
+# SECRET_KEY = config('SECRET_KEY', default='unsafe-secret-key')

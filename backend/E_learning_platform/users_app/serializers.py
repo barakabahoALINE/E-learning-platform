@@ -142,3 +142,36 @@ class LogoutSerializer(serializers.Serializer):
         except Exception:
             raise serializers.ValidationError("Invalid or expired token")
 
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+class UserListSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "email",
+            "full_name",
+            "institution",
+            "role",
+            "is_verified"
+        ]
+class UserUpdateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        fields = [
+            "full_name",
+            "institution",
+            "role",
+            "is_active"
+        ]
+class UserDeleteSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        fields = ["id"]
