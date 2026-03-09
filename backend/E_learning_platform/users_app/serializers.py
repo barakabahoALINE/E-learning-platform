@@ -33,7 +33,7 @@ class SignupSerializer(serializers.ModelSerializer):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = email_verification_token.make_token(user)
 
-        verification_link = f"http://127.0.0.1:8000/api/auth/verify-email/{uid}/{token}/"
+        verification_link = f"http://localhost:5173/verify-email/{uid}/{token}"
 
         send_mail(
             subject="Verify your email",
@@ -79,6 +79,8 @@ class LoginSerializer(serializers.Serializer):
             "user": {
                 "id": user.id,
                 "email": user.email,
+                "full_name": user.full_name,
+                "institution": user.institution,
                 "role": user.role,
             },
             "access": str(refresh.access_token),
@@ -119,6 +121,8 @@ class GoogleLoginSerializer(serializers.Serializer):
             "user": {
                 "id": user.id,
                 "email": user.email,
+                "full_name": user.full_name,
+                "institution": user.institution,
                 "role": user.role,
             },
             "access": str(refresh.access_token),
