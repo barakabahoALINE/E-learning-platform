@@ -6,7 +6,9 @@ from .views import (
     CourseStudentsView,
     EnrollmentDetailView,
     EnrollmentUpdateView,
-    EnrollmentDeleteView
+    EnrollmentDeleteView,
+    AdminEnrollmentListView,
+    AdminEnrollmentDeleteView,
 )
 
 app_name = "enrollments_app"
@@ -16,6 +18,6 @@ urlpatterns = [
     path('enrollments/<int:enrollment_id>/', EnrollmentDetailView.as_view(), name='enrollment-detail'),
     path("enrollments/<int:enrollment_id>/update/",EnrollmentUpdateView.as_view(),name="enrollment-update"),
     path("enrollments/<int:enrollment_id>/delete/",EnrollmentDeleteView.as_view(),name="enrollment-delete"),
-
+    path("admin/enrollments/", AdminEnrollmentListView.as_view(), name="admin-enrollment-list"),
+    path("admin/enrollments/<int:pk>/delete/", AdminEnrollmentDeleteView.as_view(), name="admin-enrollment-delete"),
 ]
-

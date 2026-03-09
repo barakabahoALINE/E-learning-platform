@@ -50,13 +50,21 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
-
     date_joined = models.DateTimeField(default=timezone.now)
-
     objects = UserManager()
-
+    
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["full_name", "institution"]
+    
+    def save(self, *args, **kwargs):
+        # ensure staff status matches role
+        if self.role == "admin":
+            self.is_staff = True 
+        else:
+            self.is_staff = False
+
+        super().save(*args, **kwargs)
+
     
     def __str__(self):
         return self.email
