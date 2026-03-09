@@ -1,21 +1,20 @@
-# enrollments_app/permissions.py
-from rest_framework import permissions
-from django.shortcuts import get_object_or_404
-from courses_app.models import Course
+from rest_framework.permissions import BasePermission
+from .models import Enrollment
 
-class IsCourseIAdmin(permissions.BasePermission):
+
+class IsEnrolledStudent(BasePermission):
     """
-    Only allows access if the requesting user is the instructor of the course.
+    Allows access only to users enrolled in the course.
     """
 
     def has_permission(self, request, view):
         course_id = view.kwargs.get("course_id")
-        if course_id:
-    
-            course = get_object_or_404(Course, pk=course_id)
-            return getattr(course, "organizer", None) == request.user
-        return True
 
-    def has_object_permission(self, request, view, obj):
-        course = getattr(obj, "course", None)
-        return getattr(course, "organizer", None) == request.user if course else False
+        if not course_id or not request.user.is_authenticated:
+            return False
+
+        return Enrollment.objects.filter(
+            student=request.user,
+            course_id=course_id,
+            status=Enrollment.Status.ACTIVE
+        ).exists()

@@ -30,11 +30,11 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist', 
     'corsheaders',
+    'django_filters',
     'users_app',
     'courses_app',
-    'enrollments_app' ,
-    # 'rest_framework',
-    'rest_framework.authtoken', 
+    'rest_framework.authtoken',
+    'enrollments_app',
     
 ]
 
@@ -156,9 +156,14 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
     ]
 }
-
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = True
