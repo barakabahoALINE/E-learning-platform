@@ -1,23 +1,19 @@
-
-  
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.permissions import AllowAny
-from .models import Course
 from .permissions import IsAdmin
-from .models import Course
-from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
-from .models import Lesson, Course
-from .serializers import LessonSerializer
+from .models import Lesson, Course,Content 
 from .serializers import (
     CourseCreateUpdateSerializer,
     CourseListSerializer,
     CourseDetailSerializer,
+    LessonSerializer,
+    LessonContentCreateUpdateSerializer,
+    LessonContentListSerializer,
+    LessonContentDetailSerializer,
 )
 
 # =====================================
@@ -66,11 +62,7 @@ class CourseCreateAPIView(generics.CreateAPIView):
             )
 
     def perform_create(self, serializer):
-        serializer.save(admin=self.request.user)
-
-    # def perform_create(self, serializer):
-    #     #serializer.save(instructor=self.request.user)
-    #     serializer.save()
+        serializer.save(created_by=self.request.user)
 
 
 # =====================================
@@ -81,16 +73,20 @@ class CourseRetrieveAPIView(generics.RetrieveAPIView):
     serializer_class = CourseDetailSerializer
     permission_classes = [AllowAny]
 
-    queryset = Course.objects.select_related("admin")
+    queryset = Course.objects.select_related("category", "level", "created_by")
 
     def get_object(self):
         course = super().get_object()
+        if course.is_published:
+                return course
 
-        # If unpublished, only owner can view
-        if not course.is_published:
-            if self.request.user != course.admin:
-                raise PermissionDenied("Course is not published.")
-        return course
+            # If not published → allow only admin users
+        user = self.request.user
+
+        if user.is_authenticated and user.role == "admin":
+                return course
+
+        raise PermissionDenied("Course is not published.")
 
 
 # =====================================
@@ -99,7 +95,7 @@ class CourseRetrieveAPIView(generics.RetrieveAPIView):
 
 class CourseUpdateAPIView(generics.UpdateAPIView):
     serializer_class = CourseCreateUpdateSerializer
-    permission_classes = [IsAuthenticated,IsAdmin]  # optional: add IsInstructor
+    permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Course.objects.all()
 
 
@@ -108,7 +104,7 @@ class CourseUpdateAPIView(generics.UpdateAPIView):
 # =====================================
 
 class CourseDeleteAPIView(generics.DestroyAPIView):
-    permission_classes = [IsAuthenticated,IsAdmin]  # optional: add IsInstructor
+    permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Course.objects.all()
 
     def destroy(self, request, *args, **kwargs):
@@ -122,11 +118,13 @@ class CourseDeleteAPIView(generics.DestroyAPIView):
     
 
 # =====================================
+
+
 # 6️⃣ PUBLISH COURSE (Instructor)
 # =====================================
 
 class CoursePublishAPIView(generics.GenericAPIView):
-    permission_classes = [IsAuthenticated,IsAdmin]
+    permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Course.objects.all()
 
     def post(self, request, pk):
@@ -147,11 +145,11 @@ class CoursePublishAPIView(generics.GenericAPIView):
 
 
 # =====================================
-# 7️⃣ UNPUBLISH COURSE(Instructor)
+# 7️⃣ UNPUBLISH COURSE(Admin)
 # =====================================
 
 class CourseUnpublishAPIView(generics.GenericAPIView):
-    permission_classes = [IsAuthenticated,IsAdmin]
+    permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Course.objects.all()
 
     def post(self, request, pk):
@@ -228,3 +226,33 @@ class LessonDeleteAPIView(generics.DestroyAPIView):
             },
             status=status.HTTP_200_OK
         )
+    
+class LessonContentListAPIView(generics.ListAPIView):
+    serializer_class = LessonContentListSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        lesson_id = self.kwargs["lesson_id"]
+        return Content.objects.filter(lesson_id=lesson_id)
+
+# Create content (Admin only)
+class LessonContentCreateAPIView(generics.CreateAPIView):
+    serializer_class = LessonContentCreateUpdateSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+# Retrieve content
+class LessonContentRetrieveAPIView(generics.RetrieveAPIView):
+    serializer_class = LessonContentDetailSerializer
+    permission_classes = [AllowAny]
+    queryset = Content.objects.all()
+
+# Update content (Admin)
+class LessonContentUpdateAPIView(generics.UpdateAPIView):
+    serializer_class = LessonContentCreateUpdateSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    queryset = Content.objects.all()
+
+# Delete content (Admin)
+class LessonContentDeleteAPIView(generics.DestroyAPIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+    queryset = Content.objects.all()

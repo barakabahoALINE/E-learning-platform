@@ -11,7 +11,12 @@ from .views import (
     LessonCreateAPIView,
     LessonListAPIView,
     LessonUpdateAPIView,
-    LessonDeleteAPIView
+    LessonDeleteAPIView,
+    LessonContentListAPIView,
+    LessonContentCreateAPIView,
+    LessonContentRetrieveAPIView,
+    LessonContentUpdateAPIView,
+    LessonContentDeleteAPIView,
 )
 
 
@@ -25,6 +30,11 @@ urlpatterns = [
     path("courses/<int:pk>/unpublish/", CourseUnpublishAPIView.as_view(), name="course-unpublish"),
     path("courses/<int:course_id>/lessons/create/", LessonCreateAPIView.as_view()),
     path("courses/<int:course_id>/lessons/", LessonListAPIView.as_view()),
-    path("lessons/<int:pk>/update/", LessonUpdateAPIView.as_view()),
-    path("lessons/<int:pk>/delete/", LessonDeleteAPIView.as_view()),
+    path("courses/<int:course_id>/lessons/<int:pk>/update/", LessonUpdateAPIView.as_view()),
+    path("courses/<int:course_id>/lessons/<int:pk>/delete/", LessonDeleteAPIView.as_view()),
+    path("courses/<int:course_id>/lessons/<int:lesson_id>/contents/",LessonContentListAPIView.as_view(),name="lesson-contents"),
+    path("courses/<int:course_id>/lessons/<int:lesson_id>/contents/create/", LessonContentCreateAPIView.as_view(), name="content-create"),
+    path("courses/<int:course_id>/lessons/<int:lesson_id>/contents/<int:pk>/", LessonContentRetrieveAPIView.as_view(), name="content-detail"),
+    path("courses/<int:course_id>/lessons/<int:lesson_id>/contents/<int:pk>/update/", LessonContentUpdateAPIView.as_view(), name="content-update"),
+    path("courses/<int:course_id>/lessons/<int:lesson_id>/contents/<int:pk>/delete/", LessonContentDeleteAPIView.as_view(), name="content-delete"),
 ]

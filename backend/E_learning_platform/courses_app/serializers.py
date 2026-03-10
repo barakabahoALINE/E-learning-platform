@@ -1,7 +1,6 @@
 from rest_framework import serializers
-from .models import Course
 from rest_framework.validators import UniqueValidator
-from .models import Lesson
+from .models import Course,Lesson, Content
 
 
 class CourseCreateUpdateSerializer(serializers.ModelSerializer):
@@ -11,7 +10,7 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Course
-        fields = ["title", "description", "duration", "price"]
+        fields = ["title", "description", "duration","category","level", "price"]
 
     def validate_price(self, value):
         if value < 0:
@@ -28,7 +27,8 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 class CourseListSerializer(serializers.ModelSerializer):
-    admin= serializers.CharField(source="admin.full_name", read_only=True)
+    category = serializers.StringRelatedField()
+    level = serializers.StringRelatedField()
 
     class Meta:
         model = Course
@@ -36,20 +36,19 @@ class CourseListSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "price",
-            "admin",
+            "category",
+            "level",
             "is_published",
         ]
 
-
 class CourseDetailSerializer(serializers.ModelSerializer):
-    admin = serializers.CharField(source="admin.full_name", read_only=True)
+    category = serializers.StringRelatedField()
+    level = serializers.StringRelatedField()
 
     class Meta:
         model = Course
         fields = "__all__"
-        read_only_fields = ["admin", "created_at", "updated_at"]
-        
-    
+        read_only_fields = ["created_at", "updated_at"]
 
 class LessonSerializer(serializers.ModelSerializer):
 
@@ -57,3 +56,47 @@ class LessonSerializer(serializers.ModelSerializer):
         model = Lesson
         fields = "__all__"
         read_only_fields = ["course"]
+
+class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Content
+        fields = [
+            "lesson",
+            "title",
+            "content_type",
+            "description",
+            "video_url",
+            "note_text",
+            "file",
+            "quiz",
+            "order",
+        ]
+
+    def validate(self, attrs):
+        content_type = attrs.get("content_type")
+        # ensure appropriate field is filled
+        if content_type == "video" and not attrs.get("video_url"):
+            raise serializers.ValidationError({"video_url": "Video URL is required for video content."})
+        if content_type == "note" and not attrs.get("note_text"):
+            raise serializers.ValidationError({"note_text": "Note text is required for note content."})
+        if content_type == "file" and not attrs.get("file"):
+            raise serializers.ValidationError({"file": "File is required for file content."})
+        if content_type == "quiz" and not attrs.get("quiz"):
+            raise serializers.ValidationError({"quiz": "Quiz JSON is required for quiz content."})
+        return attrs
+
+
+class LessonContentListSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Content
+        fields = ["id", "title", "content_type", "order"]
+
+
+class LessonContentDetailSerializer(serializers.ModelSerializer):
+    lesson = serializers.StringRelatedField()
+
+    class Meta:
+        model = Content
+        fields = "__all__"
