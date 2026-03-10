@@ -5,7 +5,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from .permissions import IsAdmin
-from .models import Lesson, Course,Content 
+from rest_framework.exceptions import ValidationError
+from .models import Content, Lesson, Course
 from .serializers import (
     CourseCreateUpdateSerializer,
     CourseListSerializer,
@@ -240,19 +241,119 @@ class LessonContentCreateAPIView(generics.CreateAPIView):
     serializer_class = LessonContentCreateUpdateSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+
+            return Response(
+                {
+                    "success": True,
+                    "message": "Content created successfully",
+                    "data": serializer.data
+                },
+                status=status.HTTP_201_CREATED
+            )
+
+        except ValidationError as e:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Validation error",
+                    "errors": e.detail
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 # Retrieve content
 class LessonContentRetrieveAPIView(generics.RetrieveAPIView):
     serializer_class = LessonContentDetailSerializer
     permission_classes = [AllowAny]
     queryset = Content.objects.all()
+    
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+
+            return Response(
+                {
+                    "success": True,
+                    "message": "Content retrieved successfully",
+                    "data": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Content not found",
+                    "errors": str(e)
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 # Update content (Admin)
 class LessonContentUpdateAPIView(generics.UpdateAPIView):
     serializer_class = LessonContentCreateUpdateSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Content.objects.all()
+    
+    def update(self, request, *args, **kwargs):
+        try:
+            partial = kwargs.pop('partial', False)
+            instance = self.get_object()
 
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+
+            return Response(
+                {
+                    "success": True,
+                    "message": "Content updated successfully",
+                    "data": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except ValidationError as e:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Validation error",
+                    "errors": e.detail
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 # Delete content (Admin)
 class LessonContentDeleteAPIView(generics.DestroyAPIView):
     permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Content.objects.all()
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            instance = self.get_object()
+            self.perform_destroy(instance)
+
+            return Response(
+                {
+                    "success": True,
+                    "message": "Content deleted successfully",
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Failed to delete content",
+                    "errors": str(e)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )

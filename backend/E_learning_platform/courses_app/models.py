@@ -71,7 +71,6 @@ class Content(models.Model):
     title = models.CharField(max_length=255)
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPES)
     description = models.TextField(blank=True)
-
     video_url = models.URLField(blank=True, null=True)
     note_text = models.TextField(blank=True, null=True)
     file = models.FileField(upload_to="lesson_files/", blank=True, null=True)
