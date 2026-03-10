@@ -16,14 +16,7 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
         if value < 0:
             raise serializers.ValidationError("Price cannot be negative.")
         return value
-    class Meta:
-        model = Course
-        fields = ["title", "description", "duration", "price"]
 
-    def validate_price(self, value):
-        if value < 0:
-            raise serializers.ValidationError("Price cannot be negative.")
-        return value
 
 
 class CourseListSerializer(serializers.ModelSerializer):
