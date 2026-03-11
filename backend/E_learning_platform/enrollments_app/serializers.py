@@ -33,23 +33,25 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         student = data.get("student")
         course = data.get("course")
 
-        # 1️⃣ Prevent admin enrollment
-        if student.is_staff or student.is_superuser:
-            raise serializers.ValidationError({
-                "student": "Admins cannot be enrolled in courses."
-            })
-
-        # 2️⃣ Ensure user role is student
-        if hasattr(student, "role"):
-            if student.role != "student":
+        if student is not None:
+            # 1️⃣ Prevent admin enrollment
+            if student.is_staff or student.is_superuser:
                 raise serializers.ValidationError({
-                    "student": "Only users with student role can be enrolled."
+                    "student": "Admins cannot be enrolled, only students can be enrolled."
                 })
 
-        # 3️⃣ Prevent duplicate enrollment
-        if Enrollment.objects.filter(student=student, course=course).exists():
-            raise serializers.ValidationError({
-                "enrollment": f"This student {student.email} is already enrolled to this course."
-            })
+            # 2️⃣ Ensure user role is student
+            if hasattr(student, "role"):
+                if student.role != "student":
+                    raise serializers.ValidationError({
+                        "student": "Only users with student role can be enrolled."
+                    })
+
+        if student is not None and course is not None:
+            # 3️⃣ Prevent duplicate enrollment
+            if Enrollment.objects.filter(student=student, course=course).exists():
+                raise serializers.ValidationError({
+                    "enrollment": f"This student {student.email} is already enrolled to this course."
+                })
 
         return data

@@ -7,8 +7,6 @@ from django.conf import settings  # ✅ use this for user model
 from django.utils import timezone 
 from django.core.exceptions import ValidationError
 
-
-
 class Enrollment(models.Model):
 
     class Status(models.TextChoices):
