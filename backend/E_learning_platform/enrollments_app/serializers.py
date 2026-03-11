@@ -1,84 +1,55 @@
-
-from enrollments_app.models import Enrollment
 from rest_framework import serializers
-from .models import Enrollment  
+from .models import Enrollment
+from django.contrib.auth import get_user_model
 
-class CourseStudentsSerializer(serializers.ModelSerializer):
-    student_id = serializers.IntegerField(source="student.id")
-    first_name = serializers.CharField(source="student.first_name")
-    last_name = serializers.CharField(source="student.last_name")
-    email = serializers.EmailField(source="student.email")
-
-    class Meta:
-        model = Enrollment
-        fields = [
-            "id",
-            "student_id",
-            "first_name",
-            "last_name",
-            "email",
-            "status",
-            "created_at",
-        ]
-      
+User = get_user_model()
 
 
-class EnrollmentDetailSerializer(serializers.ModelSerializer):
-    student_id = serializers.IntegerField(source="student.id")
-    student_first_name = serializers.CharField(source="student.first_name")
-    student_last_name = serializers.CharField(source="student.last_name")
-    student_email = serializers.EmailField(source="student.email")
+class EnrollmentSerializer(serializers.ModelSerializer):
 
-    course_id = serializers.IntegerField(source="course.id")
-    course_title = serializers.CharField(source="course.title")
+    student_email = serializers.ReadOnlyField(source="student.email")
+    course_title = serializers.ReadOnlyField(source="course.title")
 
     class Meta:
         model = Enrollment
         fields = [
             "id",
-            "student_id",
-            "student_first_name",
-            "student_last_name",
+            "student",
             "student_email",
-            "course_id",
+            "course",
             "course_title",
             "status",
-            "created_at",
+            "enrolled_at",
+            "updated_at"
         ]
 
-class AdminEnrollmentSerializer(serializers.ModelSerializer):
+        read_only_fields = ["enrolled_at", "updated_at"]
 
-    student_email = serializers.EmailField(source="student.email", read_only=True)
-    course_title = serializers.CharField(source="course.title", read_only=True)
+        # disable default unique validator
+        validators = []
 
-    class Meta:
-        model = Enrollment
-        fields = [
-            "id",
-            "student_id",
-            "student_first_name",
-            "student_last_name",
-            "student_email",
-            "course_id",
-            "course_title",
-            "status",
-            "created_at",
-        ]
-        read_only_fields = [
-            "id",
-            "student_id",
-            "student_first_name",
-            "student_last_name",
-            "student_email",
-            "course_id",
-            "course_title",
-            "created_at",
-        ]
+    def validate(self, data):
 
-    def validate_status(self, value):
-        allowed_status = ["active", "completed", "cancelled", "pending"]
+        student = data.get("student")
+        course = data.get("course")
 
-        if value not in allowed_status:
-            raise serializers.ValidationError("Invalid status value.")
+        # 1️⃣ Prevent admin enrollment
+        if student.is_staff or student.is_superuser:
+            raise serializers.ValidationError({
+                "student": "Admins cannot be enrolled in courses."
+            })
 
-        return value
+        # 2️⃣ Ensure user role is student
+        if hasattr(student, "role"):
+            if student.role != "student":
+                raise serializers.ValidationError({
+                    "student": "Only users with student role can be enrolled."
+                })
+
+        # 3️⃣ Prevent duplicate enrollment
+        if Enrollment.objects.filter(student=student, course=course).exists():
+            raise serializers.ValidationError({
+                "enrollment": f"This student {student.email} is already enrolled to this course."
+            })
+
+        return data

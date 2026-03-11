@@ -1,20 +1,23 @@
+
+
+#    
 from rest_framework.permissions import BasePermission
-from .models import Enrollment
 
 
-class IsEnrolledStudent(BasePermission):
-    """
-    Allows access only to users enrolled in the course.
-    """
+
+# --------------------------------
+# Admin permission
+# --------------------------------
+class IsAdmin(BasePermission):
 
     def has_permission(self, request, view):
-        course_id = view.kwargs.get("course_id")
+        return (
+            request.user.is_authenticated and
+            request.user.role == "admin"
+        )
 
-        if not course_id or not request.user.is_authenticated:
-            return False
-
-        return Enrollment.objects.filter(
-            student=request.user,
-            course_id=course_id,
-            status=Enrollment.Status.ACTIVE
-        ).exists()
+    def has_object_permission(self, request, view, obj):
+        return (
+            request.user.is_authenticated and
+            request.user.role == "admin"
+        )
