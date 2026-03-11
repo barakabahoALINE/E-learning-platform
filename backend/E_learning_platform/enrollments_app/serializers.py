@@ -1,9 +1,59 @@
 from rest_framework import serializers
 from .models import Enrollment
-from django.contrib.auth import get_user_model
 
-User = get_user_model()
 
+class EnrollmentCreateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Enrollment
+        fields = ["course"]
+
+    def validate(self, data):
+        student = self.context["request"].user
+        course = data["course"]
+
+        if not course.is_published:
+            raise serializers.ValidationError("Cannot enroll in unpublished course.")
+
+        if Enrollment.objects.filter(student=student, course=course).exists():
+            raise serializers.ValidationError("You are already enrolled in this course.")
+
+        return data
+
+    def create(self, validated_data):
+       student = self.context["request"].user
+       course = validated_data["course"]
+
+       enrollment = Enrollment.objects.filter(student=student,course=course).first()
+
+       if enrollment:
+                if enrollment.status == Enrollment.Status.CANCELLED:
+                    enrollment.status = Enrollment.Status.ACTIVE
+                    enrollment.save()
+                    return enrollment
+                else:
+                    raise serializers.ValidationError(
+                        "You are already enrolled in this course."
+                    )
+
+       return Enrollment.objects.create(
+            student=student,
+            status=Enrollment.Status.ACTIVE,
+            **validated_data
+        )
+
+class StudentEnrollmentListSerializer(serializers.ModelSerializer):
+    course_title = serializers.CharField(source="course.title", read_only=True)
+
+    class Meta:
+        model = Enrollment
+        fields = [
+            "id",
+            "course",
+            "course_title",
+            "status",
+            "enrolled_at",
+        ]
 
 class EnrollmentSerializer(serializers.ModelSerializer):
 
