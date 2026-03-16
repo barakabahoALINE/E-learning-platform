@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'courses_app',
     'rest_framework.authtoken',
     'enrollments_app',
+    'progress_app',
     
 ]
 

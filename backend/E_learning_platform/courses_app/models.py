@@ -25,12 +25,7 @@ class Course(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE,null=True,blank=True)
     is_preview = models.BooleanField(default=False)
     thumbnail = models.ImageField(upload_to="course_thumbnails/", null=True, blank=True) 
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="created_courses",
-        null=True,
-    )  
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name="created_courses",null=True,)  
     created_at = models.DateTimeField(auto_now_add=True)   
     price = models.DecimalField(max_digits=8, decimal_places=2,default=0.00)
     is_published = models.BooleanField(default=False)
