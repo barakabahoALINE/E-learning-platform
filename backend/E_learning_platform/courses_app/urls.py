@@ -1,23 +1,6 @@
 from django.urls import path
 # from .views import *
-from .views import (
-    CourseListAPIView,
-    CourseCreateAPIView,
-    CourseRetrieveAPIView,
-    CourseUpdateAPIView,
-    CourseDeleteAPIView,
-    CoursePublishAPIView,
-    CourseUnpublishAPIView,
-    LessonCreateAPIView,
-    LessonListAPIView,
-    LessonUpdateAPIView,
-    LessonDeleteAPIView,
-    LessonContentListAPIView,
-    LessonContentCreateAPIView,
-    LessonContentRetrieveAPIView,
-    LessonContentUpdateAPIView,
-    LessonContentDeleteAPIView,
-)
+from .views import *
 
 
 urlpatterns = [

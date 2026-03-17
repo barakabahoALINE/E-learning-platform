@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from .models import ContentProgress, LessonProgress
 from courses_app.models import Content,Lesson
+from .models import LearningSession
+
 
 class ContentProgressSerializer(serializers.ModelSerializer):
     content_title = serializers.CharField(source='content.title', read_only=True)
@@ -53,3 +55,15 @@ class LessonProgressSerializer(serializers.ModelSerializer):
             completed=True
         ).count()
         return int((completed_contents / total_contents) * 100)
+
+class LearningSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LearningSession
+        fields = [
+            "id",
+            "course",
+            "started_at",
+            "ended_at",
+            "duration_minutes",
+            "is_active",
+        ]

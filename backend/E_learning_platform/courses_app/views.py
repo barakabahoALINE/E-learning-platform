@@ -2,6 +2,7 @@ from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from .permissions import IsAdmin
@@ -241,6 +242,18 @@ class LessonContentCreateAPIView(generics.CreateAPIView):
     serializer_class = LessonContentCreateUpdateSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
 
+    def perform_create(self, serializer):
+        course_id = self.kwargs.get("course_id")
+        lesson_id = self.kwargs.get("lesson_id")
+
+        lesson = get_object_or_404(
+            Lesson,
+            id=lesson_id,
+            course_id=course_id
+        )
+
+        serializer.save(lesson=lesson)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
 
@@ -296,7 +309,6 @@ class LessonContentRetrieveAPIView(generics.RetrieveAPIView):
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
-
 # Update content (Admin)
 class LessonContentUpdateAPIView(generics.UpdateAPIView):
     serializer_class = LessonContentCreateUpdateSerializer

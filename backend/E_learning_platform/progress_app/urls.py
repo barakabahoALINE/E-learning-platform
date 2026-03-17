@@ -1,12 +1,5 @@
 from django.urls import path
-from .views import (
-    CompleteContentAPIView,
-    LessonContentsProgressAPIView,
-    LessonProgressAPIView,
-    CourseLessonsProgressAPIView,
-    CompletedLessonsAPIView,
-    CompletedCourseLessonsAPIView
-)
+from .views import *
 
 urlpatterns = [
     path('content/<int:content_id>/complete/', CompleteContentAPIView.as_view(), name='complete-content'),
@@ -15,4 +8,7 @@ urlpatterns = [
     path('courses/<int:course_id>/lessons/', CourseLessonsProgressAPIView.as_view(), name='course-lessons-progress'),
     path('lessons/completed/', CompletedLessonsAPIView.as_view(), name='completed-lessons'),
     path('courses/<int:course_id>/lessons/completed/', CompletedCourseLessonsAPIView.as_view(), name='completed-course-lessons'),
+    path("courses/<int:course_id>/start/", StartLearningAPIView.as_view()),
+    path("courses/<int:course_id>/end-session/", EndLearningSessionAPIView.as_view()),
+    path("courses/<int:course_id>/continue/", ContinueLearningAPIView.as_view()),
 ]
