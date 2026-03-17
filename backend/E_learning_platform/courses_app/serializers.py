@@ -64,6 +64,7 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
             "file",
             "quiz",
             "order",
+            "is_preview",
         ]
 
     def validate(self, attrs):
