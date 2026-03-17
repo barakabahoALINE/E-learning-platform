@@ -163,6 +163,8 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
             {"success": True, "message": "Course unpublished successfully."}
         )
         
+from rest_framework.exceptions import ValidationError
+
 class LessonCreateAPIView(generics.CreateAPIView):
     serializer_class = LessonSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -171,20 +173,31 @@ class LessonCreateAPIView(generics.CreateAPIView):
         return Course.objects.get(id=self.kwargs["course_id"])
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        course = self.get_course()
-        serializer.save(course=course)
+            course = self.get_course()
+            serializer.save(course=course)
 
-        return Response(
-            {
-                "success": True,
-                "message": "Lesson created successfully",
-                "data": serializer.data
-            },
-            status=status.HTTP_201_CREATED
-        )
+            return Response(
+                {
+                    "success": True,
+                    "message": "Lesson created successfully",
+                    "data": serializer.data
+                },
+                status=status.HTTP_201_CREATED
+            )
+
+        except ValidationError as e:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Lesson create failed",
+                    "error": e.detail[0] if isinstance(e.detail, list) else e.detail
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 class LessonListAPIView(generics.ListAPIView):
      serializer_class = LessonSerializer
 

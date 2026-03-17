@@ -50,6 +50,18 @@ class LessonSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["course"]
 
+    def validate(self, attrs):
+        view = self.context.get("view")
+        course_id = view.kwargs.get("course_id")
+        order = attrs.get("order")
+
+        if Lesson.objects.filter(course_id=course_id, order=order).exists():
+            raise serializers.ValidationError(
+                f"A lesson with order {order} already exists in this course."
+            )
+
+        return attrs
+
 class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -69,6 +81,18 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         content_type = attrs.get("content_type")
+        lesson = attrs.get("lesson") or getattr(self.instance, "lesson", None)
+        order = attrs.get("order") or getattr(self.instance, "order", None)
+
+        if lesson is not None and order is not None:
+            existing = Content.objects.filter(lesson=lesson, order=order)
+            if self.instance is not None:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError(
+                    {"order": f"A content item with order {order} already exists in this lesson."}
+                )
+
         # ensure appropriate field is filled
         if content_type == "video" and not attrs.get("video_url"):
             raise serializers.ValidationError({"video_url": "Video URL is required for video content."})

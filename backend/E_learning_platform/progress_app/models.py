@@ -25,6 +25,15 @@ class ContentProgress(models.Model):
         on_delete=models.CASCADE,
         related_name="progress"
     )
+    
+    enrollment = models.ForeignKey(
+        Enrollment,
+        on_delete=models.CASCADE,
+        default=None,
+        related_name="content_progress",
+        null=True,
+        blank=True
+    )
 
     completed = models.BooleanField(default=False)
 

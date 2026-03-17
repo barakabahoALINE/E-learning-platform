@@ -32,3 +32,23 @@ class IsEnrolled(BasePermission):
 
         # If no course or lesson in URL allow authenticated users
         return user.is_authenticated
+
+
+class IsAdmin(BasePermission):
+    """
+    Custom permission to allow access only to Admin users.
+    """
+
+    message = "You do not have permission to perform this action."
+
+    def has_permission(self, request, view):
+
+        # User must be authenticated first
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Check if user role is admin
+        return (
+            request.user.role is not None and
+            request.user.role.lower() == "admin"
+        )
