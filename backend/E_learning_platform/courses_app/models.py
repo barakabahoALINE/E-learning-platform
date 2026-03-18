@@ -73,10 +73,7 @@ class Content(models.Model):
     note_text = models.TextField(blank=True, null=True)
     file = models.FileField(upload_to="lesson_files/", blank=True, null=True)
     quiz = models.JSONField(blank=True, null=True) 
-<<<<<<< HEAD
-=======
     
->>>>>>> 2d673be (Added progress APIs with lesson percentage calculation)
     is_preview = models.BooleanField(default=False)
     order = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
