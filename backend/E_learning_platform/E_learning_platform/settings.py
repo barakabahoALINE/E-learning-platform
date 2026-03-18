@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'courses_app',
     'enrollments_app',
     'progress_app',
+    'payments_app',
     
 ]
 

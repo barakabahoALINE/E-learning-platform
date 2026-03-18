@@ -67,7 +67,6 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Content
         fields = [
-            "lesson",
             "title",
             "content_type",
             "description",
@@ -81,6 +80,7 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         content_type = attrs.get("content_type")
+<<<<<<< HEAD
         lesson = attrs.get("lesson") or getattr(self.instance, "lesson", None)
         order = attrs.get("order") or getattr(self.instance, "order", None)
 
@@ -94,14 +94,29 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
                 )
 
         # ensure appropriate field is filled
+=======
+
+>>>>>>> 2d673be (Added progress APIs with lesson percentage calculation)
         if content_type == "video" and not attrs.get("video_url"):
-            raise serializers.ValidationError({"video_url": "Video URL is required for video content."})
+            raise serializers.ValidationError({
+                "video_url": "Video URL is required for video content."
+            })
+
         if content_type == "note" and not attrs.get("note_text"):
-            raise serializers.ValidationError({"note_text": "Note text is required for note content."})
+            raise serializers.ValidationError({
+                "note_text": "Note text is required for note content."
+            })
+
         if content_type == "file" and not attrs.get("file"):
-            raise serializers.ValidationError({"file": "File is required for file content."})
+            raise serializers.ValidationError({
+                "file": "File is required for file content."
+            })
+
         if content_type == "quiz" and not attrs.get("quiz"):
-            raise serializers.ValidationError({"quiz": "Quiz JSON is required for quiz content."})
+            raise serializers.ValidationError({
+                "quiz": "Quiz JSON is required for quiz content."
+            })
+
         return attrs
 
 
