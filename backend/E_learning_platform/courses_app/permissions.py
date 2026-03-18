@@ -4,8 +4,6 @@ from .models import Course
 
 from rest_framework import permissions
 
-from rest_framework.permissions import BasePermission
-
 class IsAdmin(permissions.BasePermission):
     """
     Allows access only to users with role='admin'.

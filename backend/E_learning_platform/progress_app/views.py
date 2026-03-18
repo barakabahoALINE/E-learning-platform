@@ -21,6 +21,7 @@ User = get_user_model()
 class CompleteContentAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
+    # def post(self, request, content_id):
     def post(self, request, course_id, lesson_id, content_id):
         content = get_object_or_404(Content, id=content_id)
         enrollment = get_object_or_404(
@@ -73,7 +74,7 @@ class CompleteContentAPIView(APIView):
                 "is_new": created
             },
             "lesson_progress": {
-                "course_id": lesson.course.id,
+                "course_id": lesson.course.id,        # ← Bishya
                 "course_title": lesson.course.title,
                 "lesson_id": lesson.id,
                 "lesson_title": lesson.title,
@@ -170,7 +171,7 @@ class LessonProgressAPIView(APIView):
                 "course_id": lesson.course.id,
                 "course_title": lesson.course.title,
                 "lesson_id": lesson.id,
-                "lesson_title": lesson.title,
+                "lesson_title": lesson.title
                 
             },
             "progress": {

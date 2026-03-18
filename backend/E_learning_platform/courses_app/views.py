@@ -6,6 +6,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from .permissions import IsAdmin
+from django.shortcuts import get_object_or_404
+from courses_app.models import Lesson
 from rest_framework.exceptions import ValidationError
 from .models import Content, Lesson, Course
 from .serializers import (
@@ -251,6 +253,7 @@ class LessonContentListAPIView(generics.ListAPIView):
         return Content.objects.filter(lesson_id=lesson_id)
 
 # Create content (Admin only)
+
 class LessonContentCreateAPIView(generics.CreateAPIView):
     serializer_class = LessonContentCreateUpdateSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -292,6 +295,35 @@ class LessonContentCreateAPIView(generics.CreateAPIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
+# class LessonContentCreateAPIView(generics.CreateAPIView):
+#     serializer_class = LessonContentCreateUpdateSerializer
+#     permission_classes = [IsAuthenticated, IsAdmin]
+
+#     def create(self, request, *args, **kwargs):
+#         serializer = self.get_serializer(data=request.data)
+
+#         try:
+#             serializer.is_valid(raise_exception=True)
+#             self.perform_create(serializer)
+
+#             return Response(
+#                 {
+#                     "success": True,
+#                     "message": "Content created successfully",
+#                     "data": serializer.data
+#                 },
+#                 status=status.HTTP_201_CREATED
+#             )
+
+#         except ValidationError as e:
+#             return Response(
+#                 {
+#                     "success": False,
+#                     "message": "Validation error",
+#                     "errors": e.detail
+#                 },
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
 
 # Retrieve content
 class LessonContentRetrieveAPIView(generics.RetrieveAPIView):
