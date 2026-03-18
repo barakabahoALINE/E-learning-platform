@@ -44,12 +44,15 @@ class Course(models.Model):
 
 
 class Lesson(models.Model):
-    course = models.ForeignKey("Course", on_delete=models.CASCADE, related_name="lessons",null=True,blank=True)
+    course = models.ForeignKey("Course", on_delete=models.CASCADE, related_name="lessons", null=True, blank=True)
     title = models.CharField(max_length=255)
     order = models.PositiveIntegerField()
+
+    class Meta:
+        unique_together = ("course", "order")  # Same order not allowed within the same course
+    
     
 class Content(models.Model):
-
     CONTENT_TYPES = (
         ("video", "Video"),
         ("note", "Note"),

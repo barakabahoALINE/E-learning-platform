@@ -1,23 +1,27 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from .permissions import IsAdmin, IsEnrolled
+from django.db.models import Sum
+from django.contrib.auth import get_user_model
+from courses_app.models import Lesson
+from enrollments_app.models import Enrollment
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from .models import ContentProgress, LessonProgress
+from .models import ContentProgress, LessonProgress, LearningSession
 from courses_app.models import Content, Lesson, Course
-from enrollments_app.models import Enrollment
 from rest_framework import status
-from .models import LearningSession
-from .serializers import LearningSessionSerializer
 from .serializers import *
-from .permissions import IsEnrolled
+
+User = get_user_model()
+
 #.....................
 #POST /progress/content/{content_id}/complete/
 # 1️. Mark content completed
 class CompleteContentAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
-    def post(self, request, content_id):
+    def post(self, request, course_id, lesson_id, content_id):
         content = get_object_or_404(Content, id=content_id)
         enrollment = get_object_or_404(
             Enrollment,
@@ -29,8 +33,7 @@ class CompleteContentAPIView(APIView):
         # Mark content completed
         progress, created = ContentProgress.objects.get_or_create(
             student=request.user,
-            content=content,
-            enrollment=enrollment
+            content=content
         )
         progress.completed = True
         progress.completed_at = timezone.now()
@@ -41,7 +44,6 @@ class CompleteContentAPIView(APIView):
         total_contents = lesson.contents.count()
         completed_contents = ContentProgress.objects.filter(
             student=request.user,
-            enrollment=enrollment,
             content__lesson=lesson,
             completed=True
         ).count()
@@ -71,6 +73,8 @@ class CompleteContentAPIView(APIView):
                 "is_new": created
             },
             "lesson_progress": {
+                "course_id": lesson.course.id,
+                "course_title": lesson.course.title,
                 "lesson_id": lesson.id,
                 "lesson_title": lesson.title,
                 "total_contents": total_contents,
@@ -88,7 +92,7 @@ class CompleteContentAPIView(APIView):
 class LessonContentsProgressAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
-    def get(self, request, lesson_id):
+    def get(self, request, course_id, lesson_id):
         lesson = get_object_or_404(Lesson, id=lesson_id)
         enrollment = get_object_or_404(
             Enrollment,
@@ -102,7 +106,6 @@ class LessonContentsProgressAPIView(APIView):
         total = contents.count()
         completed_count = ContentProgress.objects.filter(
             student=request.user,
-            enrollment=enrollment,
             content__lesson=lesson,
             completed=True
         ).count()
@@ -118,6 +121,8 @@ class LessonContentsProgressAPIView(APIView):
         return Response({
             "status": "success",
             "lesson": {
+                "course_id": lesson.course.id,
+                "course_title": lesson.course.title,
                 "lesson_id": lesson.id,
                 "lesson_title": lesson.title,
             },
@@ -136,7 +141,7 @@ class LessonContentsProgressAPIView(APIView):
 class LessonProgressAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
-    def get(self, request, lesson_id):
+    def get(self, request, course_id, lesson_id):
         lesson = get_object_or_404(Lesson, id=lesson_id)
         enrollment = get_object_or_404(
             Enrollment,
@@ -153,7 +158,6 @@ class LessonProgressAPIView(APIView):
         total = lesson.contents.count()
         completed_count = ContentProgress.objects.filter(
             student=request.user,
-            enrollment=enrollment,
             content__lesson=lesson,
             completed=True
         ).count()
@@ -163,10 +167,11 @@ class LessonProgressAPIView(APIView):
         return Response({
             "status": "success",
             "lesson": {
+                "course_id": lesson.course.id,
+                "course_title": lesson.course.title,
                 "lesson_id": lesson.id,
                 "lesson_title": lesson.title,
-                "course_id": lesson.course.id,
-                "course_title": lesson.course.title
+                
             },
             "progress": {
                 "total_contents": total,
@@ -180,6 +185,7 @@ class LessonProgressAPIView(APIView):
 #.................................
 #GET /progress/courses/{course_id}/lessons/
 # 4️. List all lessons for a course with progress
+
 class CourseLessonsProgressAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
@@ -190,21 +196,43 @@ class CourseLessonsProgressAPIView(APIView):
             course_id=course_id,
             status="active"
         )
-        lessons = Lesson.objects.filter(course_id=course_id).order_by("order")
-        lessons_data = []
 
+        lessons = Lesson.objects.filter(course_id=course_id).order_by("order")
         total_lessons = lessons.count()
         completed_lessons = 0
+        lessons_data = []
 
         for lesson in lessons:
+            total_contents = lesson.contents.count()
+            completed_contents = ContentProgress.objects.filter(
+                student=request.user,
+                enrollment=enrollment,
+                content__lesson=lesson,
+                completed=True
+            ).count()
+
             progress, _ = LessonProgress.objects.get_or_create(
                 student=request.user,
                 lesson=lesson,
                 enrollment=enrollment
             )
-            completed_lessons += 1 if progress.completed else 0
-            serializer = LessonProgressSerializer(progress)
-            lessons_data.append(serializer.data)
+
+            # Bara percentage ya buri somo
+            percentage = round((completed_contents / total_contents) * 100) if total_contents > 0 else 0
+
+            if progress.completed:
+                completed_lessons += 1
+
+            lessons_data.append({
+                "lesson_id": lesson.id,
+                "lesson_title": lesson.title,
+                "order": lesson.order,
+                "total_contents": total_contents,
+                "completed_contents": completed_contents,
+                "progress_percentage": percentage,        # ← Ibarwa neza
+                "lesson_completed": progress.completed,
+                "completed_at": progress.completed_at
+            })
 
         course_percentage = round((completed_lessons / total_lessons) * 100) if total_lessons > 0 else 0
 
@@ -218,7 +246,6 @@ class CourseLessonsProgressAPIView(APIView):
             },
             "lessons": lessons_data
         })
-
 #.....................
 #GET /progress/lessons/completed/
 # 5️. Completed lessons across all courses
@@ -386,5 +413,225 @@ class ContinueLearningAPIView(APIView):
                 "data": LearningSessionSerializer(session).data
             }
         )
-
    
+
+# --------------------------------------------------
+# STUDENT COURSE PROGRESS API
+# --------------------------------------------------
+class StudentCourseProgressAPIView(APIView):
+    """
+    Student can view their own course progress
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, course_id):
+
+        student = request.user
+
+        # Check enrollment
+        enrollment = Enrollment.objects.filter(student=student,course_id=course_id).first()
+        if not enrollment:
+            return Response({
+                "success": False,
+                "message": "You are not enrolled in this course"
+            })
+
+        # Total lessons
+        total_lessons = Lesson.objects.filter(course_id=course_id).count()
+
+        # Completed lessons
+        completed_lessons = LessonProgress.objects.filter(
+            student=student,
+            lesson__course_id=course_id,
+            completed=True
+        ).count()
+
+        progress_percentage = 0
+
+        if total_lessons > 0:
+            progress_percentage = round((completed_lessons / total_lessons) * 100)
+
+        return Response({
+            "success": True,
+            "message": "Course progress retrieved successfully",
+            "data": {
+                "course_id": course_id,
+                "total_lessons": total_lessons,
+                "completed_lessons": completed_lessons,
+                "progress_percentage": progress_percentage
+            }
+        })
+    
+# --------------------------------------------------
+# ADMIN STUDENT COURSE PROGRESS API
+# --------------------------------------------------
+
+class AdminStudentCourseProgressAPIView(APIView):
+    """
+    Admin can view progress of any student
+    """
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request, student_id, course_id):
+
+        try:
+            student = User.objects.get(id=student_id)
+        except User.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Student not found"
+            })
+
+        # Check enrollment
+        enrollment = Enrollment.objects.filter(
+            student=student,
+            course_id=course_id
+        ).first()
+
+        if not enrollment:
+            return Response({
+                "success": False,
+                "message": "Student is not enrolled in this course"
+            })
+
+        total_lessons = Lesson.objects.filter(course_id=course_id).count()
+
+        completed_lessons = LessonProgress.objects.filter(
+            student=student,
+            lesson__course_id=course_id,
+            completed=True
+        ).count()
+
+        progress_percentage = 0
+
+        if total_lessons > 0:
+            progress_percentage = round((completed_lessons / total_lessons) * 100)
+
+        return Response({
+            "success": True,
+            "message": "Student course progress retrieved",
+            "data": {
+                "student_id": student.id,
+                "course_id": course_id,
+                "total_lessons": total_lessons,
+                "completed_lessons": completed_lessons,
+                "progress_percentage": progress_percentage
+            }
+        })
+# --------------------------------------------------
+# COMPLETE COURSE API
+# --------------------------------------------------
+class CompleteCourseAPIView(APIView):
+    """
+    Mark a course as completed.
+
+    A course can only be completed if all lessons are finished.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, course_id):
+
+        try:
+            enrollment = Enrollment.objects.get(
+                student=request.user,
+                course_id=course_id
+            )
+
+        except Enrollment.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Enrollment not found"
+            })
+
+        # Check course lessons
+        total_lessons = Lesson.objects.filter(course_id=course_id).count()
+
+        completed_lessons = LessonProgress.objects.filter(
+            student=request.user,
+            lesson__course_id=course_id,
+            completed=True
+        ).count()
+
+        # Prevent course completion if lessons are not finished
+        if completed_lessons < total_lessons:
+            return Response({
+                "success": False,
+                "message": "You must complete all lessons before finishing the course"
+            })
+
+        # Update enrollment status
+        enrollment.status = "COMPLETED"
+        enrollment.save()
+
+        return Response({
+            "success": True,
+            "message": "Course marked as completed successfully"
+        })
+
+
+# --------------------------------------------------
+# LEARNING HOURS KPI API
+# --------------------------------------------------
+class LearningHoursKPIAPIView(APIView):
+    """
+    Return total hours learned by the student.
+
+    Calculated from LearningSession.duration_minutes.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        total_minutes = LearningSession.objects.filter(
+            student=request.user
+        ).aggregate(total=Sum("duration_minutes"))["total"] or 0
+
+        total_hours = round(total_minutes / 60, 2)
+
+        return Response({
+            "success": True,
+            "message": "Learning hours KPI retrieved successfully",
+            "data": {
+                "total_hours_learned": total_hours
+            }
+        })
+
+
+# --------------------------------------------------
+# COURSES KPI API
+# --------------------------------------------------
+class CoursesKPIAPIView(APIView):
+    """
+    Return course statistics for the student.
+
+    Includes:
+    - Total courses enrolled
+    - Courses in progress
+    - Courses completed
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        enrollments = Enrollment.objects.filter(student=request.user)
+
+        total_courses = enrollments.count()
+
+        completed_courses = enrollments.filter(status="COMPLETED").count()
+
+        in_progress_courses = enrollments.filter(status="ACTIVE").count()
+
+        return Response({
+            "success": True,
+            "message": "Courses KPI retrieved successfully",
+            "data": {
+                "total_courses_enrolled": total_courses,
+                "courses_in_progress": in_progress_courses,
+                "courses_completed": completed_courses
+            }
+        })

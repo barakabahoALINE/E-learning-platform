@@ -28,7 +28,6 @@ class LessonContentProgressSerializer(serializers.ModelSerializer):
         progress = ContentProgress.objects.filter(
             student=student,
             content=obj,
-            enrollment=enrollment,
             completed=True
         ).first()
         return bool(progress)
