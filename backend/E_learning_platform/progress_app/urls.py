@@ -14,6 +14,8 @@ urlpatterns = [
     path("courses/<int:course_id>/", StudentCourseProgressAPIView.as_view(), name="student-course-progress"),
     path("students/<int:student_id>/courses/<int:course_id>/admin/",AdminStudentCourseProgressAPIView.as_view(), name="admin-student-course-progress"),
     path("courses/<int:course_id>/complete/", CompleteCourseAPIView.as_view()),
+    path("admin/courses/<int:course_id>/complete/",AdminCompleteCourseAPIView.as_view(),name="admin-complete-course"),
+    path("admin/courses/<int:course_id>/students-progress/", AdminCourseStudentsProgressAPIView.as_view(), name="admin-course-students-progress"),
     path("kpi/learning-hours/", LearningHoursKPIAPIView.as_view()),
     path("kpi/courses/", CoursesKPIAPIView.as_view()),
 ]

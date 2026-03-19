@@ -2,6 +2,8 @@ from rest_framework import serializers
 from .models import ContentProgress, LessonProgress
 from courses_app.models import Content,Lesson
 from .models import LearningSession
+from users_app.models import User
+
 
 
 class ContentProgressSerializer(serializers.ModelSerializer):
@@ -66,3 +68,24 @@ class LearningSessionSerializer(serializers.ModelSerializer):
             "duration_minutes",
             "is_active",
         ]
+
+class AdminCompleteCourseSerializer(serializers.Serializer):
+    student_id = serializers.IntegerField()
+
+    def validate_student_id(self, value):
+        try:
+            User.objects.get(id=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Student not found")
+
+        return value
+    
+
+
+class StudentCourseProgressSerializer(serializers.Serializer):
+
+    student_id = serializers.IntegerField()
+    student_name = serializers.CharField()
+    completed_lessons = serializers.IntegerField()
+    total_lessons = serializers.IntegerField()
+    progress_percentage = serializers.IntegerField()
