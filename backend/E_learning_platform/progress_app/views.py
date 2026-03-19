@@ -572,6 +572,104 @@ class CompleteCourseAPIView(APIView):
             "message": "Course marked as completed successfully"
         })
 
+# --------------------------------------------------
+# ADMIN COMPLETE COURSE API
+# --------------------------------------------------
+
+class AdminCompleteCourseAPIView(APIView):
+    """
+    Admin can manually mark a course as completed for a student.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, course_id):
+
+        serializer = AdminCompleteCourseSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response({
+                "success": False,
+                "errors": serializer.errors
+            })
+
+        student_id = serializer.validated_data["student_id"]
+
+        try:
+            enrollment = Enrollment.objects.get(
+                student_id=student_id,
+                course_id=course_id
+            )
+
+        except Enrollment.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Student is not enrolled in this course"
+            })
+
+        # Mark course as completed
+        enrollment.status = "COMPLETED"
+        enrollment.save()
+
+        return Response({
+            "success": True,
+            "message": "Course marked as completed by admin",
+            "data": {
+                "student_id": student_id,
+                "course_id": course_id
+            }
+        })
+        
+
+class AdminCourseStudentsProgressAPIView(APIView):
+    """
+    Admin can view progress of all students enrolled in a course
+    """
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request, course_id):
+
+        enrollments = Enrollment.objects.filter(course_id=course_id)
+
+        if not enrollments.exists():
+            return Response({
+                "success": False,
+                "message": "No students enrolled in this course"
+            })
+
+        total_lessons = Lesson.objects.filter(course_id=course_id).count()
+
+        students_progress = []
+
+        for enrollment in enrollments:
+
+            student = enrollment.student
+
+            completed_lessons = LessonProgress.objects.filter(
+                student=student,
+                lesson__course_id=course_id,
+                completed=True
+            ).count()
+
+            progress_percentage = 0
+
+            if total_lessons > 0:
+                progress_percentage = round((completed_lessons / total_lessons) * 100)
+
+            students_progress.append({
+                "student_id": student.id,
+                "student_name": f"{student.full_name}",
+                "completed_lessons": completed_lessons,
+                "total_lessons": total_lessons,
+                "progress_percentage": progress_percentage
+            })
+
+        return Response({
+            "success": True,
+            "course_id": course_id,
+            "students_progress": students_progress
+        })
 
 # --------------------------------------------------
 # LEARNING HOURS KPI API
@@ -580,16 +678,28 @@ class LearningHoursKPIAPIView(APIView):
     """
     Return total hours learned by the student.
 
-    Calculated from LearningSession.duration_minutes.
+    Calculated from LearningSession.duration_minutes and active session elapsed time.
     """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
 
+        # Sum all completed session durations
         total_minutes = LearningSession.objects.filter(
-            student=request.user
+            student=request.user,
+            is_active=False
         ).aggregate(total=Sum("duration_minutes"))["total"] or 0
+
+        # Include active sessions live duration (not yet ended)
+        active_sessions = LearningSession.objects.filter(
+            student=request.user,
+            is_active=True
+        )
+
+        for session in active_sessions:
+            elapsed_minutes = (timezone.now() - session.started_at).total_seconds() / 60
+            total_minutes += int(elapsed_minutes)
 
         total_hours = round(total_minutes / 60, 2)
 
@@ -597,7 +707,9 @@ class LearningHoursKPIAPIView(APIView):
             "success": True,
             "message": "Learning hours KPI retrieved successfully",
             "data": {
-                "total_hours_learned": total_hours
+                "total_hours_learned": total_hours,
+                "total_minutes_learned": total_minutes,
+                "active_sessions_count": active_sessions.count()
             }
         })
 
