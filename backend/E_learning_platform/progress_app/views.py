@@ -15,34 +15,163 @@ from .serializers import *
 
 User = get_user_model()
 
+class StartLearningAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, course_id):
+
+        try:
+            enrollment = Enrollment.objects.get(
+                student=request.user,
+                course_id=course_id,
+                status=Enrollment.Status.ACTIVE
+            )
+        except Enrollment.DoesNotExist:
+            return Response(
+                {
+                    "status": "failed",
+                    "message": "You are not enrolled in this course.",
+                    "data": None
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Prevent multiple active sessions
+        if LearningSession.objects.filter(
+            student=request.user,
+            course_id=course_id,
+            is_active=True
+        ).exists():
+            return Response(
+                {
+                    "status": "failed",
+                    "message": "You already have an active learning session.",
+                    "data": None
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        session = LearningSession.objects.create(
+            student=request.user,
+            course_id=course_id,
+            enrollment=enrollment,
+            started_at=timezone.now()
+        )
+
+        return Response(
+            {
+                "status": "success",
+                "message": "Learning session started.",
+                "data": LearningSessionSerializer(session).data
+            },
+            status=status.HTTP_201_CREATED
+        )
+    
+class EndLearningSessionAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, course_id):
+
+        try:
+            session = LearningSession.objects.get(
+                student=request.user,
+                course_id=course_id,
+                is_active=True
+            )
+        except LearningSession.DoesNotExist:
+            return Response(
+                {
+                    "status": "failed",
+                    "message": "No active learning session found.",
+                    "data": None
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        session.end_session()
+
+        return Response(
+            {
+                "status": "success",
+                "message": "Learning session ended.",
+                "data": LearningSessionSerializer(session).data
+            }
+        )
+
+class ContinueLearningAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, course_id):
+
+        session = LearningSession.objects.filter(
+            student=request.user,
+            course_id=course_id
+        ).order_by("-started_at").first()
+
+        if not session:
+            return Response(
+                {
+                    "status": "failed",
+                    "message": "No learning history found.",
+                    "data": None
+                }
+            )
+
+        return Response(
+            {
+                "status": "success",
+                "message": "Continue learning data retrieved.",
+                "data": LearningSessionSerializer(session).data
+            }
+        )
+   
+
 #.....................
 #POST /progress/content/{content_id}/complete/
 # 1️. Mark content completed
 class CompleteContentAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
-    # def post(self, request, content_id):
     def post(self, request, course_id, lesson_id, content_id):
-        content = get_object_or_404(Content, id=content_id)
+
+        # Validate course and lesson
+        lesson = get_object_or_404(
+            Lesson,
+            id=lesson_id,
+            course_id=course_id
+        )
+
+        content = get_object_or_404(
+            Content,
+            id=content_id,
+            lesson=lesson
+        )
+
+        # Check enrollment
         enrollment = get_object_or_404(
             Enrollment,
             student=request.user,
-            course=content.lesson.course,
+            course_id=course_id,
             status="active"
         )
 
-        # Mark content completed
+        # -----------------------------------------
+        # 1️⃣ Mark content completed
+        # -----------------------------------------
         progress, created = ContentProgress.objects.get_or_create(
             student=request.user,
             content=content
         )
+
         progress.completed = True
         progress.completed_at = timezone.now()
         progress.save()
 
-        # Update lesson progress
-        lesson = content.lesson
+        # -----------------------------------------
+        # 2️⃣ Lesson Progress Calculation
+        # -----------------------------------------
         total_contents = lesson.contents.count()
+
         completed_contents = ContentProgress.objects.filter(
             student=request.user,
             content__lesson=lesson,
@@ -55,16 +184,52 @@ class CompleteContentAPIView(APIView):
             enrollment=enrollment
         )
 
-        lesson_progress.completed = completed_contents == total_contents
-        lesson_progress.completed_at = timezone.now() if lesson_progress.completed else None
+        lesson_completed = completed_contents == total_contents
+
+        lesson_progress.completed = lesson_completed
+        lesson_progress.completed_at = timezone.now() if lesson_completed else None
         lesson_progress.save()
 
-        # Calculate percentage
-        percentage = round((completed_contents / total_contents) * 100) if total_contents > 0 else 0
+        # -----------------------------------------
+        # 3️⃣ Course Auto Completion
+        # -----------------------------------------
+        total_lessons = Lesson.objects.filter(
+            course_id=course_id
+        ).count()
 
+        completed_lessons = LessonProgress.objects.filter(
+            student=request.user,
+            lesson__course_id=course_id,
+            completed=True
+        ).count()
+
+        course_completed = False
+
+        if total_lessons > 0 and completed_lessons == total_lessons:
+            enrollment.completed = True
+            enrollment.completed_at = timezone.now()
+            enrollment.save()
+
+            course_completed = True
+
+        # -----------------------------------------
+        # 4️⃣ Calculate percentages
+        # -----------------------------------------
+        lesson_percentage = round(
+            (completed_contents / total_contents) * 100
+        ) if total_contents > 0 else 0
+
+        course_percentage = round(
+            (completed_lessons / total_lessons) * 100
+        ) if total_lessons > 0 else 0
+
+        # -----------------------------------------
+        # Response
+        # -----------------------------------------
         return Response({
             "status": "success",
             "message": f"Content '{content.title}' marked as completed.",
+
             "content_progress": {
                 "content_id": content.id,
                 "content_title": content.title,
@@ -73,19 +238,27 @@ class CompleteContentAPIView(APIView):
                 "completed_at": progress.completed_at,
                 "is_new": created
             },
+
             "lesson_progress": {
-                "course_id": lesson.course.id,        # ← Bishya
+                "course_id": lesson.course.id,
                 "course_title": lesson.course.title,
                 "lesson_id": lesson.id,
                 "lesson_title": lesson.title,
                 "total_contents": total_contents,
                 "completed_contents": completed_contents,
-                "progress_percentage": percentage,
-                "lesson_completed": lesson_progress.completed,
+                "progress_percentage": lesson_percentage,
+                "lesson_completed": lesson_completed,
                 "completed_at": lesson_progress.completed_at
+            },
+
+            "course_progress": {
+                "course_id": course_id,
+                "total_lessons": total_lessons,
+                "completed_lessons": completed_lessons,
+                "progress_percentage": course_percentage,
+                "course_completed": course_completed
             }
         })
-
 #........................
 #GET /progress/lessons/{lesson_id}/contents/
 
@@ -218,7 +391,6 @@ class CourseLessonsProgressAPIView(APIView):
                 enrollment=enrollment
             )
 
-            # Bara percentage ya buri somo
             percentage = round((completed_contents / total_contents) * 100) if total_contents > 0 else 0
 
             if progress.completed:
@@ -230,7 +402,7 @@ class CourseLessonsProgressAPIView(APIView):
                 "order": lesson.order,
                 "total_contents": total_contents,
                 "completed_contents": completed_contents,
-                "progress_percentage": percentage,        # ← Ibarwa neza
+                "progress_percentage": percentage,       
                 "lesson_completed": progress.completed,
                 "completed_at": progress.completed_at
             })
@@ -304,117 +476,106 @@ class CompletedCourseLessonsAPIView(APIView):
             "total_completed": lessons.count(),
             "data": data
         })
+        
+# --------------------------------------------------
+# ADMIN COMPLETE CONTENT API
+# --------------------------------------------------
+class AdminCompleteContentAPIView(APIView):
+    """
+    Admin can mark a content as completed for a student
+    """
 
-class StartLearningAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdmin]
 
-    def post(self, request, course_id):
+    def post(self, request, student_id, course_id, lesson_id, content_id):
 
-        try:
-            enrollment = Enrollment.objects.get(
-                student=request.user,
-                course_id=course_id,
-                status=Enrollment.Status.ACTIVE
-            )
-        except Enrollment.DoesNotExist:
-            return Response(
-                {
-                    "status": "failed",
-                    "message": "You are not enrolled in this course.",
-                    "data": None
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        student = get_object_or_404(User, id=student_id)
 
-        # Prevent multiple active sessions
-        if LearningSession.objects.filter(
-            student=request.user,
-            course_id=course_id,
-            is_active=True
-        ).exists():
-            return Response(
-                {
-                    "status": "failed",
-                    "message": "You already have an active learning session.",
-                    "data": None
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        session = LearningSession.objects.create(
-            student=request.user,
-            course_id=course_id,
-            enrollment=enrollment,
-            started_at=timezone.now()
-        )
-
-        return Response(
-            {
-                "status": "success",
-                "message": "Learning session started.",
-                "data": LearningSessionSerializer(session).data
-            },
-            status=status.HTTP_201_CREATED
-        )
-    
-class EndLearningSessionAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, course_id):
-
-        try:
-            session = LearningSession.objects.get(
-                student=request.user,
-                course_id=course_id,
-                is_active=True
-            )
-        except LearningSession.DoesNotExist:
-            return Response(
-                {
-                    "status": "failed",
-                    "message": "No active learning session found.",
-                    "data": None
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        session.end_session()
-
-        return Response(
-            {
-                "status": "success",
-                "message": "Learning session ended.",
-                "data": LearningSessionSerializer(session).data
-            }
-        )
-
-class ContinueLearningAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, course_id):
-
-        session = LearningSession.objects.filter(
-            student=request.user,
+        lesson = get_object_or_404(
+            Lesson,
+            id=lesson_id,
             course_id=course_id
-        ).order_by("-started_at").first()
-
-        if not session:
-            return Response(
-                {
-                    "status": "failed",
-                    "message": "No learning history found.",
-                    "data": None
-                }
-            )
-
-        return Response(
-            {
-                "status": "success",
-                "message": "Continue learning data retrieved.",
-                "data": LearningSessionSerializer(session).data
-            }
         )
-   
+
+        content = get_object_or_404(
+            Content,
+            id=content_id,
+            lesson=lesson
+        )
+
+        progress, created = ContentProgress.objects.get_or_create(
+            student=student,
+            content=content
+        )
+
+        progress.completed = True
+        progress.completed_at = timezone.now()
+        progress.save()
+
+        return Response({
+            "success": True,
+            "message": "Content marked as completed for student",
+            "data": {
+                "student_id": student.id,
+                "content_id": content.id
+            }
+        })
+        
+# --------------------------------------------------
+# ADMIN COMPLETE LESSON API
+# --------------------------------------------------
+class AdminCompleteLessonAPIView(APIView):
+    """
+    Admin can mark a lesson as completed for a student
+    only if all lesson contents are completed
+    """
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, student_id, course_id, lesson_id):
+
+        student = get_object_or_404(User, id=student_id)
+
+        lesson = get_object_or_404(
+            Lesson,
+            id=lesson_id,
+            course_id=course_id
+        )
+
+        total_contents = lesson.contents.count()
+
+        completed_contents = ContentProgress.objects.filter(
+            student=student,
+            content__lesson=lesson,
+            completed=True
+        ).count()
+
+        if total_contents != completed_contents:
+            return Response({
+                "success": False,
+                "message": "Cannot complete lesson. All contents must be completed first.",
+                "total_contents": total_contents,
+                "completed_contents": completed_contents
+            }, status=400)
+
+        lesson_progress, created = LessonProgress.objects.get_or_create(
+            student=student,
+            lesson=lesson
+        )
+
+        lesson_progress.completed = True
+        lesson_progress.completed_at = timezone.now()
+        lesson_progress.save()
+
+        return Response({
+            "success": True,
+            "message": "Lesson completed successfully for student",
+            "data": {
+                "student_id": student.id,
+                "lesson_id": lesson.id
+            }
+        })
+        
 
 # --------------------------------------------------
 # STUDENT COURSE PROGRESS API
@@ -470,7 +631,7 @@ class StudentCourseProgressAPIView(APIView):
 
 class AdminStudentCourseProgressAPIView(APIView):
     """
-    Admin can view progress of any student
+    Admin can view progress of any student in a course
     """
 
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -483,7 +644,7 @@ class AdminStudentCourseProgressAPIView(APIView):
             return Response({
                 "success": False,
                 "message": "Student not found"
-            })
+            }, status=status.HTTP_404_NOT_FOUND)
 
         # Check enrollment
         enrollment = Enrollment.objects.filter(
@@ -495,10 +656,12 @@ class AdminStudentCourseProgressAPIView(APIView):
             return Response({
                 "success": False,
                 "message": "Student is not enrolled in this course"
-            })
+            }, status=status.HTTP_404_NOT_FOUND)
 
+        # Total lessons in the course
         total_lessons = Lesson.objects.filter(course_id=course_id).count()
 
+        # Completed lessons
         completed_lessons = LessonProgress.objects.filter(
             student=student,
             lesson__course_id=course_id,
@@ -512,9 +675,10 @@ class AdminStudentCourseProgressAPIView(APIView):
 
         return Response({
             "success": True,
-            "message": "Student course progress retrieved",
+            "message": "Student course progress retrieved successfully",
             "data": {
                 "student_id": student.id,
+                "student_name": student.username,
                 "course_id": course_id,
                 "total_lessons": total_lessons,
                 "completed_lessons": completed_lessons,
@@ -522,105 +686,55 @@ class AdminStudentCourseProgressAPIView(APIView):
             }
         })
 # --------------------------------------------------
-# COMPLETE COURSE API
-# --------------------------------------------------
-class CompleteCourseAPIView(APIView):
-    """
-    Mark a course as completed.
-
-    A course can only be completed if all lessons are finished.
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, course_id):
-
-        try:
-            enrollment = Enrollment.objects.get(
-                student=request.user,
-                course_id=course_id
-            )
-
-        except Enrollment.DoesNotExist:
-            return Response({
-                "success": False,
-                "message": "Enrollment not found"
-            })
-
-        # Check course lessons
-        total_lessons = Lesson.objects.filter(course_id=course_id).count()
-
-        completed_lessons = LessonProgress.objects.filter(
-            student=request.user,
-            lesson__course_id=course_id,
-            completed=True
-        ).count()
-
-        # Prevent course completion if lessons are not finished
-        if completed_lessons < total_lessons:
-            return Response({
-                "success": False,
-                "message": "You must complete all lessons before finishing the course"
-            })
-
-        # Update enrollment status
-        enrollment.status = "COMPLETED"
-        enrollment.save()
-
-        return Response({
-            "success": True,
-            "message": "Course marked as completed successfully"
-        })
-
-# --------------------------------------------------
 # ADMIN COMPLETE COURSE API
 # --------------------------------------------------
-
 class AdminCompleteCourseAPIView(APIView):
     """
-    Admin can manually mark a course as completed for a student.
+    Admin can mark a course as completed for a student
+    only if all lessons are completed
     """
 
     permission_classes = [IsAuthenticated, IsAdmin]
 
-    def post(self, request, course_id):
+    def post(self, request, student_id, course_id):
 
-        serializer = AdminCompleteCourseSerializer(data=request.data)
+        student = get_object_or_404(User, id=student_id)
 
-        if not serializer.is_valid():
+        enrollment = get_object_or_404(
+            Enrollment,
+            student=student,
+            course_id=course_id
+        )
+
+        total_lessons = Lesson.objects.filter(course_id=course_id).count()
+
+        completed_lessons = LessonProgress.objects.filter(
+            student=student,
+            lesson__course_id=course_id,
+            completed=True
+        ).count()
+
+        if total_lessons != completed_lessons:
             return Response({
                 "success": False,
-                "errors": serializer.errors
-            })
+                "message": "Cannot complete course. All lessons must be completed first.",
+                "total_lessons": total_lessons,
+                "completed_lessons": completed_lessons
+            }, status=400)
 
-        student_id = serializer.validated_data["student_id"]
-
-        try:
-            enrollment = Enrollment.objects.get(
-                student_id=student_id,
-                course_id=course_id
-            )
-
-        except Enrollment.DoesNotExist:
-            return Response({
-                "success": False,
-                "message": "Student is not enrolled in this course"
-            })
-
-        # Mark course as completed
-        enrollment.status = "COMPLETED"
+        enrollment.completed = True
+        enrollment.completed_at = timezone.now()
         enrollment.save()
 
         return Response({
             "success": True,
-            "message": "Course marked as completed by admin",
+            "message": "Course marked as completed successfully",
             "data": {
-                "student_id": student_id,
+                "student_id": student.id,
                 "course_id": course_id
             }
         })
         
-
 class AdminCourseStudentsProgressAPIView(APIView):
     """
     Admin can view progress of all students enrolled in a course
