@@ -80,7 +80,6 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         content_type = attrs.get("content_type")
-<<<<<<< HEAD
         lesson = attrs.get("lesson") or getattr(self.instance, "lesson", None)
         order = attrs.get("order") or getattr(self.instance, "order", None)
 
@@ -94,9 +93,6 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
                 )
 
         # ensure appropriate field is filled
-=======
-
->>>>>>> 2d673be (Added progress APIs with lesson percentage calculation)
         if content_type == "video" and not attrs.get("video_url"):
             raise serializers.ValidationError({
                 "video_url": "Video URL is required for video content."

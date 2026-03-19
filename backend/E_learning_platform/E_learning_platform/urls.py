@@ -9,7 +9,7 @@ urlpatterns = [
     path('api/', include('courses_app.urls')),
     path('api/', include('enrollments_app.urls')),
     path('api/progress/', include('progress_app.urls')),
-    path('api/payments/', include('payments_app.urls')),
+    # path('api/payments/', include('payments_app.urls')),
 ]
 
 
