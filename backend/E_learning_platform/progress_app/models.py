@@ -85,44 +85,28 @@ class LessonProgress(models.Model):
 # =========================
 class LearningSession(models.Model):
 
-    student = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="learning_sessions"
-    )
-
-    course = models.ForeignKey(
-        Course,
-        on_delete=models.CASCADE,
-        related_name="learning_sessions"
-    )
-
-    enrollment = models.ForeignKey(
-        Enrollment,
-        on_delete=models.CASCADE,
-        related_name="learning_sessions"
-    )
-
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name="learning_sessions")
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="learning_sessions")
+    enrollment = models.ForeignKey(Enrollment, on_delete=models.CASCADE, related_name="learning_sessions")
     started_at = models.DateTimeField(default=timezone.now)
-
     ended_at = models.DateTimeField(null=True, blank=True)
-
     duration_minutes = models.PositiveIntegerField(default=0)
-
     is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["-started_at"]
-
+        
     def end_session(self):
         """
         Ends the learning session and calculates duration.
         """
-        if not self.ended_at:
+        if self.is_active:
             self.ended_at = timezone.now()
-            self.is_active = False
+
             duration = (self.ended_at - self.started_at).total_seconds() / 60
             self.duration_minutes = int(duration)
+
+            self.is_active = False
             self.save()
 
     def __str__(self):
