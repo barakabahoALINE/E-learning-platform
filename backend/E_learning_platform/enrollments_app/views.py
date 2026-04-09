@@ -8,6 +8,8 @@ from .permissions import IsAdmin,IsStudent
 from enrollments_app.models import Enrollment
 from courses_app.models import Course
 from rest_framework import generics
+from django.core.mail import send_mail
+from django.conf import settings
 
   
 
@@ -207,6 +209,28 @@ class AdminCreateEnrollmentView(APIView):
 
         if serializer.is_valid():
             enrollment = serializer.save()
+
+            student_email = enrollment.student.email
+            course_title = enrollment.course.title
+
+            send_mail(
+                subject="Course Enrollment Successful",
+                message=f"""
+Hello {enrollment.student.full_name},
+
+You have been successfully enrolled in the course:
+
+Course: {course_title}
+
+You can now log in to the platform and start learning.
+
+Best regards,
+E-Learning Platform
+""",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[student_email],
+                fail_silently=False,
+            )
 
             return Response({
                 "success": True,

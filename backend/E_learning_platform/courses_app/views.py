@@ -295,37 +295,7 @@ class LessonContentCreateAPIView(generics.CreateAPIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-# class LessonContentCreateAPIView(generics.CreateAPIView):
-#     serializer_class = LessonContentCreateUpdateSerializer
-#     permission_classes = [IsAuthenticated, IsAdmin]
 
-#     def create(self, request, *args, **kwargs):
-#         serializer = self.get_serializer(data=request.data)
-
-#         try:
-#             serializer.is_valid(raise_exception=True)
-#             self.perform_create(serializer)
-
-#             return Response(
-#                 {
-#                     "success": True,
-#                     "message": "Content created successfully",
-#                     "data": serializer.data
-#                 },
-#                 status=status.HTTP_201_CREATED
-#             )
-
-#         except ValidationError as e:
-#             return Response(
-#                 {
-#                     "success": False,
-#                     "message": "Validation error",
-#                     "errors": e.detail
-#                 },
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-# Retrieve content
 class LessonContentRetrieveAPIView(generics.RetrieveAPIView):
     serializer_class = LessonContentDetailSerializer
     permission_classes = [AllowAny]

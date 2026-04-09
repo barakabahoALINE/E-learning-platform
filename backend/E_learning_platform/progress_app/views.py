@@ -103,29 +103,61 @@ class ContinueLearningAPIView(APIView):
 
     def get(self, request, course_id):
 
+        # 1️⃣ Check active session
         session = LearningSession.objects.filter(
+            student=request.user,
+            course_id=course_id,
+            is_active=True
+        ).first()
+
+        if session:
+            return Response({
+                "status": "success",
+                "message": "Continue learning.",
+                "data": LearningSessionSerializer(session).data
+            })
+
+        # 2️⃣ Check enrollment
+        try:
+            enrollment = Enrollment.objects.get(
+                student=request.user,
+                course_id=course_id,
+                status=Enrollment.Status.ACTIVE
+            )
+        except Enrollment.DoesNotExist:
+            return Response({
+                "status": "failed",
+                "message": "You are not enrolled in this course.",
+                "data": None
+            })
+
+        # 3️⃣ Check if user has previous session
+        last_session = LearningSession.objects.filter(
             student=request.user,
             course_id=course_id
         ).order_by("-started_at").first()
 
-        if not session:
-            return Response(
-                {
-                    "status": "failed",
-                    "message": "No learning history found.",
-                    "data": None
-                }
-            )
+        if not last_session:
+            return Response({
+                "status": "failed",
+                "message": "You have not started this course yet.",
+                "data": None
+            })
 
-        return Response(
-            {
-                "status": "success",
-                "message": "Continue learning data retrieved.",
-                "data": LearningSessionSerializer(session).data
-            }
+        # 4️⃣ Create new session
+        session = LearningSession.objects.create(
+            student=request.user,
+            course_id=course_id,
+            enrollment=enrollment,
+            started_at=timezone.now(),
+            is_active=True
         )
-   
 
+        return Response({
+            "status": "success",
+            "message": "Learning session resumed.",
+            "data": LearningSessionSerializer(session).data
+        })
 #.....................
 #POST /progress/content/{content_id}/complete/
 # 1️. Mark content completed
@@ -788,32 +820,36 @@ class AdminCourseStudentsProgressAPIView(APIView):
 # --------------------------------------------------
 # LEARNING HOURS KPI API
 # --------------------------------------------------
+
 class LearningHoursKPIAPIView(APIView):
     """
-    Return total hours learned by the student.
-
-    Calculated from LearningSession.duration_minutes and active session elapsed time.
+    Return total hours learned by the student
     """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
 
-        # Sum all completed session durations
-        total_minutes = LearningSession.objects.filter(
+        # 1️⃣ Get total minutes from completed sessions
+        completed_minutes = LearningSession.objects.filter(
             student=request.user,
             is_active=False
         ).aggregate(total=Sum("duration_minutes"))["total"] or 0
 
-        # Include active sessions live duration (not yet ended)
+        # 2️⃣ Add time from active sessions
         active_sessions = LearningSession.objects.filter(
             student=request.user,
             is_active=True
         )
 
+        active_minutes = 0
+
         for session in active_sessions:
-            elapsed_minutes = (timezone.now() - session.started_at).total_seconds() / 60
-            total_minutes += int(elapsed_minutes)
+            elapsed = (timezone.now() - session.started_at).total_seconds() / 60
+            active_minutes += int(elapsed)
+
+        # 3️⃣ Total minutes
+        total_minutes = completed_minutes + active_minutes
 
         total_hours = round(total_minutes / 60, 2)
 
@@ -823,6 +859,8 @@ class LearningHoursKPIAPIView(APIView):
             "data": {
                 "total_hours_learned": total_hours,
                 "total_minutes_learned": total_minutes,
+                "completed_sessions_minutes": completed_minutes,
+                "active_sessions_minutes": active_minutes,
                 "active_sessions_count": active_sessions.count()
             }
         })
