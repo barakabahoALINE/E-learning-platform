@@ -2,8 +2,9 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from './components/ui/sonner';
 import { AppProvider } from './context/AppContext';
+import { DataProvider } from './context/DataContext';
 import { useAppSelector } from '../hooks/reduxHooks';
-import { selectIsAuthenticated } from '../features/auth/authSelectors';
+import { selectIsAuthenticated, selectCurrentUser } from '../features/auth/authSelectors';
 
 // Auth Pages
 import { LoginPage } from './pages/LoginPage';
@@ -15,7 +16,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 // Onboarding
 import { OnboardingPage } from './pages/OnboardingPage';
 
-// Main Pages
+// Main Pages (Learner)
 import { DashboardPage } from './pages/DashboardPage';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseDetailPage } from './pages/CourseDetailPage';
@@ -26,7 +27,19 @@ import { PricingPage } from './pages/PricingPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 
+// Admin Pages
+import { DashboardLayout } from './components/layout/DashboardLayout';
+import { DashboardPage as AdminDashboardPage } from './pages/Dashboard';
+import { LearnersPage } from './pages/Learners';
+import { CoursesPage as AdminCoursesPage } from './pages/Courses';
+import { CourseBuilderPage } from './pages/CourseBuilder';
+import { AnalyticsPage } from './pages/Analytics';
+import { SecurityPage } from './pages/Security';
+import { SettingsPage as AdminSettingsPage } from './pages/Settings';
+
 function AppRoutes() {
+  const user = useAppSelector(selectCurrentUser);
+
   // Protected Route Component
   const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
@@ -38,12 +51,29 @@ function AppRoutes() {
     return <>{children}</>;
   };
 
+  // Admin Route Component
+  const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const isAuthenticated = useAppSelector(selectIsAuthenticated);
+    const currentUser = useAppSelector(selectCurrentUser);
+    
+    if (!isAuthenticated) {
+      return <Navigate to="/login" replace />;
+    }
+
+    if (currentUser?.role !== 'admin') {
+      return <Navigate to="/dashboard" replace />;
+    }
+    
+    return <>{children}</>;
+  };
+
   // Public Route Component (redirect to dashboard if already authenticated)
   const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
+    const userRole = useAppSelector(selectCurrentUser)?.role;
     
     if (isAuthenticated) {
-      return <Navigate to="/dashboard" replace />;
+      return <Navigate to={userRole === 'admin' ? '/admin' : '/dashboard'} replace />;
     }
     
     return <>{children}</>;
@@ -104,11 +134,12 @@ function AppRoutes() {
           }
         />
 
+        {/* Learner Routes */}
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <DashboardPage />
+              {user?.role === 'admin' ? <Navigate to="/admin" replace /> : <DashboardPage />}
             </ProtectedRoute>
           }
         />
@@ -116,7 +147,7 @@ function AppRoutes() {
           path="/courses"
           element={
             <ProtectedRoute>
-              <CoursesPage />
+              {user?.role === 'admin' ? <Navigate to="/admin/courses" replace /> : <CoursesPage />}
             </ProtectedRoute>
           }
         />
@@ -172,12 +203,29 @@ function AppRoutes() {
           path="/settings"
           element={
             <ProtectedRoute>
-              <SettingsPage />
+              {user?.role === 'admin' ? <Navigate to="/admin/settings" replace /> : <SettingsPage />}
             </ProtectedRoute>
           }
         />
 
-        {/* Default Route */}
+        {/* Admin Routes */}
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <DashboardLayout />
+            </AdminRoute>
+          }
+        >
+          <Route index element={<AdminDashboardPage />} />
+          <Route path="learners" element={<LearnersPage />} />
+          <Route path="courses" element={<AdminCoursesPage />} />
+          <Route path="courses/builder/:id" element={<CourseBuilderPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="security" element={<SecurityPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
+        </Route>
+
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
@@ -189,7 +237,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AppProvider>
-      <AppRoutes />
+      <DataProvider>
+        <AppRoutes />
+      </DataProvider>
     </AppProvider>
   );
 }

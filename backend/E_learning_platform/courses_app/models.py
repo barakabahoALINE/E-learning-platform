@@ -30,6 +30,7 @@ class Course(models.Model):
     price = models.DecimalField(max_digits=8, decimal_places=2,default=0.00)
     is_published = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
+    final_assessment = models.JSONField(blank=True, null=True)
     
     class Meta:
         ordering = ["-created_at"]
@@ -56,6 +57,7 @@ class Content(models.Model):
     CONTENT_TYPES = (
         ("video", "Video"),
         ("note", "Note"),
+        ("image", "Image"),
         ("file", "File"),
         ('quiz', 'Quiz'),
     )
@@ -83,3 +85,10 @@ class Content(models.Model):
 
     def __str__(self):
         return f"{self.lesson.title} - {self.title} ({self.content_type})"
+
+class MediaUpload(models.Model):
+    file = models.FileField(upload_to="course_media/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Upload {self.id} - {self.file.name}"

@@ -1,12 +1,21 @@
+# Media and Large Files
+media/
+course_thumbnails/
+*.mp4
+*.mov
+*.avi
+*.mkv
+
 # Python
 __pycache__/
 *.pyc
 
 # Virtual Environment
-backend/venv/
+venv/
 venv1/
 env/
 myvenv/
+
 # Django
 db.sqlite3
 *.log
@@ -14,9 +23,8 @@ staticfiles/
 
 # Environment variables
 .env
-venv
 
-# VS Code
+# IDEs
 .vscode/
 
 # OS
