@@ -24,6 +24,24 @@ class EnrollCourseAPIView(generics.CreateAPIView):
 
         enrollment = serializer.save()
 
+        # Send Email
+        send_mail(
+            subject="Enrollment Confirmation",
+            message=f"""
+Hello {request.user.full_name},
+
+You have successfully enrolled in:
+{enrollment.course.title}
+
+Start learning now and enjoy!
+
+Best regards,
+E-Learning Team
+""",
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=[request.user.email],
+            fail_silently=False,
+        )
         # Use detailed serializer for response
         response_serializer = StudentEnrollmentListSerializer(enrollment)
 
