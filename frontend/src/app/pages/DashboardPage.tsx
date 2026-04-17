@@ -19,14 +19,49 @@ import {
   Target,
   Zap,
 } from "lucide-react";
-import { useApp } from "../context/AppContext";
 import { MainLayout } from "../components/MainLayout";
-import { useAppSelector } from "../../hooks/reduxHooks";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
+import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
+import { fetchMyEnrollments } from "../../features/enrollments/enrollmentSlice";
+import { fetchCourses } from "../../features/courses/courseSlice";
+import { fetchCourseProgress, fetchLearningHoursKPI, fetchCoursesKPI, continueLearning } from "../../features/progress/progressSlice";
 
 export const DashboardPage: React.FC = () => {
-  const { enrolledCourses } = useApp();
+  const dispatch = useAppDispatch();
   const reduxUser = useAppSelector(selectCurrentUser);
+  const { myEnrollments } = useAppSelector((state) => state.enrollments);
+  const { courses } = useAppSelector((state) => state.courses);
+  const { courseProgress, learningHours, coursesKPI } = useAppSelector((state) => state.progress);
+
+  const [isReturningUser, setIsReturningUser] = React.useState(false);
+
+  React.useEffect(() => {
+    dispatch(fetchMyEnrollments());
+    dispatch(fetchCourses(false));
+    dispatch(fetchLearningHoursKPI());
+    dispatch(fetchCoursesKPI());
+  }, [dispatch]);
+
+  React.useEffect(() => {
+    if (reduxUser?.id) {
+      const key = `has_visited_dashboard_${reduxUser.id}`;
+      const visited = localStorage.getItem(key);
+      if (visited) {
+        setIsReturningUser(true);
+      } else {
+        localStorage.setItem(key, 'true');
+        setIsReturningUser(false);
+      }
+    }
+  }, [reduxUser?.id]);
+
+  React.useEffect(() => {
+    if (myEnrollments.length > 0) {
+      myEnrollments.slice(0, 3).forEach(enrollment => {
+        dispatch(fetchCourseProgress(enrollment.course));
+      });
+    }
+  }, [dispatch, myEnrollments]);
 
   const user = reduxUser ? {
     ...reduxUser,
@@ -34,18 +69,34 @@ export const DashboardPage: React.FC = () => {
     achievements: [], 
   } : null;
 
+  const getCourseDetails = (courseId: number) => {
+    return courses.find(c => c.id === courseId);
+  };
+
+  const getProgress = (courseId: number) => {
+    return courseProgress[courseId];
+  };
+
+  const getImageUrl = (url: string | null | undefined) => {
+    if (!url) return "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80";
+    if (url.startsWith("http")) return url;
+    return `http://localhost:8000${url}`;
+  };
+
   // Mock progress data
   const weeklyProgress = [
-    { day: "Mon", hours: 2 },
-    { day: "Tue", hours: 1.5 },
-    { day: "Wed", hours: 3 },
-    { day: "Thu", hours: 2.5 },
-    { day: "Fri", hours: 1 },
+    { day: "Mon", hours: 0 },
+    { day: "Tue", hours: 0 },
+    { day: "Wed", hours: 0 },
+    { day: "Thu", hours: 0 },
+    { day: "Fri", hours: 0 },
     { day: "Sat", hours: 0 },
     { day: "Sun", hours: 0 },
   ];
 
-  const totalHours = weeklyProgress.reduce((sum, day) => sum + day.hours, 0);
+  const totalHours = learningHours?.total_hours_learned || 0;
+  const enrolledCount = coursesKPI?.total_courses_enrolled || myEnrollments.length;
+  const completedCount = coursesKPI?.courses_completed || 0;
 
   return (
     <MainLayout>
@@ -55,7 +106,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div>
               <h1 className="text-3xl mb-2">
-                Welcome back, {user?.name?.split(" ")[0] || "User"}! 👋
+                {isReturningUser ? 'Welcome back' : 'Welcome'}, {user?.name?.split(" ")[0] || "User"}! 👋
               </h1>
               <p className="text-blue-100 mb-4">
                 You've learned {totalHours} hours this week. Keep up the great
@@ -89,7 +140,7 @@ export const DashboardPage: React.FC = () => {
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Courses Enrolled</p>
-                  <p className="text-2xl">{enrolledCourses.length}</p>
+                  <p className="text-2xl">{enrolledCount}</p>
                   <p className="text-xs text-green-600 mt-1 flex items-center">
                     <TrendingUp className="w-3 h-3 mr-1" />
                     +2 this month
@@ -121,8 +172,8 @@ export const DashboardPage: React.FC = () => {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Achievements</p>
-                  <p className="text-2xl">{user?.achievements?.length || 0}</p>
+                  <p className="text-sm text-gray-600 mb-1">Course Completed</p>
+                  <p className="text-2xl">{completedCount}</p>
                   <p className="text-xs text-gray-500 mt-1">Unlocked</p>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center">
@@ -163,7 +214,7 @@ export const DashboardPage: React.FC = () => {
               </Link>
             </div>
 
-            {enrolledCourses.length === 0 ? (
+            {myEnrollments.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -177,53 +228,72 @@ export const DashboardPage: React.FC = () => {
                 </CardContent>
               </Card>
             ) : (
-              enrolledCourses.map((course) => (
-                <Card
-                  key={course.id}
-                  className="hover:shadow-lg transition-shadow"
-                >
-                  <CardContent className="p-6">
-                    <div className="flex gap-4">
-                      <img
-                        src={course.thumbnail}
-                        alt={course.title}
-                        className="w-32 h-32 object-cover rounded-lg"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <Badge variant="secondary" className="mb-2">
-                              {course.category}
-                            </Badge>
-                            <h3 className="font-medium mb-1">{course.title}</h3>
-                            <p className="text-sm text-gray-600 mb-3">
-                              By {course.instructor.name}
-                            </p>
-                          </div>
+              myEnrollments.slice(0, 3).map((enrollment) => {
+                const courseDetail = getCourseDetails(enrollment.course);
+                const progress = getProgress(enrollment.course);
+                const completionPercentage = Math.round(progress?.completion_percentage || 0);
+
+                if (!courseDetail) return null;
+
+                return (
+                  <Card
+                    key={enrollment.id}
+                    className="hover:shadow-lg transition-shadow bg-gray-50 mb-4"
+                  >
+                    <CardContent className="p-6">
+                      <div className="flex flex-col sm:flex-row gap-6">
+                        <div className="relative group overflow-hidden rounded-xl w-full sm:w-32 h-32 flex-shrink-0">
+                          <img
+                            src={getImageUrl(courseDetail.thumbnail)}
+                            alt={courseDetail.title}
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
                         </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-gray-600">Progress</span>
-                            <span className="font-medium">45%</span>
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between mb-2">
+                            <div>
+                              <Badge variant="secondary" className="mb-2 bg-white text-primary border-none">
+                                {courseDetail.category_name || "Course"}
+                              </Badge>
+                              <h3 className="font-bold text-lg mb-1">{courseDetail.title}</h3>
+                              <p className="text-sm text-gray-600">
+                                {courseDetail.admin || courseDetail.instructor || "Platform Instructor"}
+                              </p>
+                            </div>
                           </div>
-                          <Progress value={45} />
-                          <div className="flex items-center justify-between pt-2">
-                            <span className="text-sm text-gray-600">
-                              12 of 27 lessons completed
-                            </span>
-                            <Link to={`/lesson/${course.id}/1-1-1`}>
-                              <Button className="bg-[#4BA847]" size="sm">
+                          <div className="space-y-3 mt-4">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-gray-500 font-medium">Progress</span>
+                              <span className="font-bold text-primary">{completionPercentage}%</span>
+                            </div>
+                            <Progress value={completionPercentage} className="h-2" />
+                            <div className="flex items-center justify-between pt-2">
+                              <span className="text-sm text-gray-500 font-medium">
+                                {progress?.completed_lessons || 0} of {progress?.total_lessons || 0} lessons completed
+                              </span>
+                              <Button 
+                                className="bg-[#4BA847] hover:bg-[#4BA847]/90" 
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    await dispatch(continueLearning(courseDetail.id)).unwrap();
+                                  } catch (error) {
+                                    console.error("Failed to continue session:", error);
+                                  }
+                                  window.location.href = `/course/${courseDetail.id}`;
+                                }}
+                              >
                                 <PlayCircle className="mr-2 h-4 w-4" />
                                 Continue
                               </Button>
-                            </Link>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
+                    </CardContent>
+                  </Card>
+                );
+              })
             )}
           </div>
 

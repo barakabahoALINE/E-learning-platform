@@ -4,7 +4,7 @@ import { CourseCreationModal } from "../components/courses/CourseCreationModal";
 import StatusModal from "../components/ui/StatusModal";
 import { useNavigate } from "react-router-dom";
 import { fetchCourses, deleteCourse, publishCourse, unpublishCourse, fetchCategories } from "../../features/courses/courseSlice";
-import { Course, Category } from "../../features/courses/types";
+import { Course } from "../../features/courses/types";
 import { Button } from "../components/ui/button";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { selectAllCourses, selectCourseCategories, selectCoursesLoading } from "../../features/courses/courseSelectors";
@@ -121,8 +121,8 @@ export function CoursesPage() {
     <div className="max-w-[1440px] mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Courses</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">Courses</h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">
             Create and manage learning courses
           </p>
         </div>
@@ -131,12 +131,12 @@ export function CoursesPage() {
           className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
         >
           <Plus className="w-5 h-5" />
-          Create Course
+           <span className="hidden sm:block">Create</span> Course
         </button>
       </div>
 
       <div className="flex flex-col gap-6 mb-8">
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -148,7 +148,7 @@ export function CoursesPage() {
             />
           </div>
           
-          <div className="relative">
+          <div className="relative flex justify-end sm:justify-start">
             <button 
               onClick={() => setShowFilterDropdown(!showFilterDropdown)}
               className={`flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer ${statusFilter !== 'all' ? 'border-blue-500 text-blue-600' : ''}`}
@@ -256,7 +256,13 @@ export function CoursesPage() {
                       className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium cursor-pointer"
                     >
                       <Layers className="w-4 h-4" />
-                      Build Course
+                      {course.is_published ? 
+                      (
+                        <>
+                           Edit <span className="hidden sm:block"> Course </span> Content
+                        </>
+                      )
+                       : "Build Course"}
                     </button>
                     <button
                       onClick={() => handleEditCourse(course)}

@@ -8,7 +8,6 @@ interface CourseState {
   currentCourse: Course | null;
   levels: Level[];
   categories: Category[];
-  lessons: Lesson[];
   isLoading: boolean;
   error: string | null;
   status: 'idle' | 'loading' | 'succeeded' | 'failed';
@@ -39,7 +38,6 @@ const initialState: CourseState = {
   currentCourse: null,
   levels: [],
   categories: [],
-  lessons: [],
   isLoading: false,
   error: null,
   status: 'idle',
@@ -126,33 +124,6 @@ export const unpublishCourse = createAsyncThunk(
       return id;
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to unpublish course');
-    }
-  }
-);
-
-export const createLesson = createAsyncThunk(
-  'courses/createLesson',
-  async ({ courseId, data }: { courseId: number; data: LessonCreateData & { contents: any[] } }, { rejectWithValue }) => {
-    try {
-      const response = await courseAPI.createLesson(courseId, data);
-      if (response.success) {
-        return response.data;
-      }
-      return rejectWithValue('Failed to create lesson');
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to create lesson');
-    }
-  }
-);
-
-export const updateLesson = createAsyncThunk(
-  'courses/updateLesson',
-  async ({ lessonId, data }: { lessonId: number; data: Partial<LessonCreateData> & { contents: any[] } }, { rejectWithValue }) => {
-    try {
-      const response = await api.patch(`lessons/${lessonId}/update/`, data);
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to update lesson');
     }
   }
 );
@@ -261,18 +232,6 @@ const courseSlice = createSlice({
         if (course) course.is_published = false;
         state.unpublishedChanges[action.payload] = false;
         saveUnpublishedChanges(state.unpublishedChanges);
-        state.status = 'succeeded';
-      })
-      // Lessons
-      .addCase(createLesson.fulfilled, (state, action: PayloadAction<Lesson>) => {
-        state.lessons.push(action.payload);
-        state.status = 'succeeded';
-      })
-      .addCase(updateLesson.fulfilled, (state, action: PayloadAction<Lesson>) => {
-        const index = state.lessons.findIndex(l => l.id === action.payload.id);
-        if (index !== -1) {
-          state.lessons[index] = action.payload;
-        }
         state.status = 'succeeded';
       })
       // Levels & Categories

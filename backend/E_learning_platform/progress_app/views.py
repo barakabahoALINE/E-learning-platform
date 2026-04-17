@@ -223,7 +223,7 @@ class CompleteContentAPIView(APIView):
         lesson_progress.save()
 
         # -----------------------------------------
-        # 3️⃣ Course Auto Completion
+        # 3️⃣ Course Auto Completion (only if no final assessment exists)
         # -----------------------------------------
         total_lessons = Lesson.objects.filter(
             course_id=course_id
@@ -236,12 +236,15 @@ class CompleteContentAPIView(APIView):
         ).count()
 
         course_completed = False
+        course = get_object_or_404(Course, id=course_id)
+        has_final = course.final_assessment and isinstance(course.final_assessment, dict) and course.final_assessment.get('questions')
 
-        if total_lessons > 0 and completed_lessons == total_lessons:
-            enrollment.completed = True
+        if total_lessons > 0 and completed_lessons == total_lessons and not has_final:
+            enrollment.status = Enrollment.Status.COMPLETED
             enrollment.completed_at = timezone.now()
             enrollment.save()
-
+            course_completed = True
+        elif enrollment.status == Enrollment.Status.COMPLETED:
             course_completed = True
 
         # -----------------------------------------
@@ -409,13 +412,16 @@ class CourseLessonsProgressAPIView(APIView):
         lessons_data = []
 
         for lesson in lessons:
-            total_contents = lesson.contents.count()
-            completed_contents = ContentProgress.objects.filter(
+            contents = lesson.contents.all()
+            total_contents = contents.count()
+            
+            completed_content_progress = ContentProgress.objects.filter(
                 student=request.user,
-                enrollment=enrollment,
                 content__lesson=lesson,
                 completed=True
-            ).count()
+            )
+            completed_contents_count = completed_content_progress.count()
+            completed_content_ids = list(completed_content_progress.values_list("content_id", flat=True))
 
             progress, _ = LessonProgress.objects.get_or_create(
                 student=request.user,
@@ -423,7 +429,7 @@ class CourseLessonsProgressAPIView(APIView):
                 enrollment=enrollment
             )
 
-            percentage = round((completed_contents / total_contents) * 100) if total_contents > 0 else 0
+            percentage = round((completed_contents_count / total_contents) * 100) if total_contents > 0 else 0
 
             if progress.completed:
                 completed_lessons += 1
@@ -433,7 +439,8 @@ class CourseLessonsProgressAPIView(APIView):
                 "lesson_title": lesson.title,
                 "order": lesson.order,
                 "total_contents": total_contents,
-                "completed_contents": completed_contents,
+                "completed_contents": completed_contents_count,
+                "completed_content_ids": completed_content_ids,
                 "progress_percentage": percentage,       
                 "lesson_completed": progress.completed,
                 "completed_at": progress.completed_at
@@ -507,6 +514,49 @@ class CompletedCourseLessonsAPIView(APIView):
             "course_id": course_id,
             "total_completed": lessons.count(),
             "data": data
+        })
+
+# 7️⃣ Complete Final Assessment
+class CompleteFinalAssessmentAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsEnrolled]
+
+    def post(self, request, course_id):
+        enrollment = get_object_or_404(
+            Enrollment,
+            student=request.user,
+            course_id=course_id,
+            status="active"
+        )
+        course = enrollment.course
+
+        # Validate that all lessons are completed before allowing final assessment completion
+        total_lessons = Lesson.objects.filter(course_id=course_id).count()
+        completed_lessons = LessonProgress.objects.filter(
+            student=request.user,
+            lesson__course_id=course_id,
+            completed=True
+        ).count()
+
+        if total_lessons != completed_lessons:
+            return Response({
+                "status": "failed",
+                "message": "You must complete all lessons before finishing the final assessment."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark course as completed
+        enrollment.status = Enrollment.Status.COMPLETED
+        enrollment.completed_at = timezone.now()
+        enrollment.save()
+
+        return Response({
+            "status": "success",
+            "message": "Final assessment passed. Course completed!",
+            "data": {
+                "course_id": course_id,
+                "course_title": course.title,
+                "completed": True,
+                "completed_at": enrollment.completed_at
+            }
         })
         
 # --------------------------------------------------
@@ -641,10 +691,32 @@ class StudentCourseProgressAPIView(APIView):
             completed=True
         ).count()
 
+        # Total contents in the course
+        lessons_in_course = Lesson.objects.filter(course_id=course_id)
+        total_contents = Content.objects.filter(lesson__in=lessons_in_course).count()
+
+        # Check if course has a final assessment
+        course = get_object_or_404(Course, id=course_id)
+        has_final = hasattr(course, 'final_assessment') and course.final_assessment is not None
+        
+        if has_final:
+            total_contents += 1
+
+        # Completed contents in the course
+        completed_contents = ContentProgress.objects.filter(
+            student=student,
+            content__lesson__course_id=course_id,
+            completed=True
+        ).count()
+
+        # If has final and enrollment is completed, count it as a completed content
+        if has_final and enrollment.status == Enrollment.Status.COMPLETED:
+            completed_contents += 1
+
         progress_percentage = 0
 
-        if total_lessons > 0:
-            progress_percentage = round((completed_lessons / total_lessons) * 100)
+        if total_contents > 0:
+            progress_percentage = round((completed_contents / total_contents) * 100)
 
         return Response({
             "success": True,
@@ -653,7 +725,11 @@ class StudentCourseProgressAPIView(APIView):
                 "course_id": course_id,
                 "total_lessons": total_lessons,
                 "completed_lessons": completed_lessons,
-                "progress_percentage": progress_percentage
+                "total_contents": total_contents,
+                "completed_contents": completed_contents,
+                "progress_percentage": progress_percentage,
+                "has_final_assessment": has_final,
+                "is_course_completed": enrollment.status == Enrollment.Status.COMPLETED
             }
         })
     

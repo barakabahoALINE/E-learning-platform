@@ -2,6 +2,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import Course, Lesson, Content, Level, Category
 import json
+from django.db import transaction
 
 
 class CourseCreateUpdateSerializer(serializers.ModelSerializer):
@@ -69,23 +70,23 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
                     content = Content.objects.filter(id=content_id, lesson=lesson).first() if content_id else None
                     
                     if not content:
-                            Content.objects.create(
-                                lesson=lesson,
-                                title=content_data.get("title", ""),
-                                content_type=content_data.get("content_type", "note"),
-                                description=content_data.get("description", ""),
-                                video_url=content_data.get("video_url", ""),
-                                note_text=content_data.get("text_content", "") or content_data.get("note_text", ""),
-                                file=content_data.get("file", None),
-                                quiz=content_data.get("quiz", None),
-                                order=content_data.get("order", 0)
-                            )
+                        Content.objects.create(
+                            lesson=lesson,
+                            title=content_data.get("title", ""),
+                            content_type=content_data.get("content_type", "note"),
+                            description=content_data.get("description", ""),
+                            video_url=content_data.get("video_url", ""),
+                            note_text=content_data.get("note_text") or content_data.get("text_content", ""),
+                            file=content_data.get("file"),
+                            quiz=content_data.get("quiz"),
+                            order=content_data.get("order", 0)
+                        )
                     else:
                         content.title = content_data.get("title", content.title)
                         content.content_type = content_data.get("content_type", content.content_type)
                         content.description = content_data.get("description", content.description)
                         content.video_url = content_data.get("video_url", content.video_url)
-                        content.note_text = content_data.get("text_content", content.note_text) or content_data.get("note_text", content.note_text)
+                        content.note_text = content_data.get("note_text") or content_data.get("text_content", content.note_text)
                         content.file = content_data.get("file", content.file)
                         content.quiz = content_data.get("quiz", content.quiz)
                         content.order = content_data.get("order", content.order)
@@ -129,35 +130,13 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         lessons = obj.lessons.all()
         return LessonSerializer(lessons, many=True).data
 
-class LessonSerializer(serializers.ModelSerializer):
-    contents = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Lesson
-        fields = "__all__"
-        read_only_fields = ["course"]
-
-    def get_contents(self, obj):
-        contents = obj.contents.all()
-        return LessonContentDetailSerializer(contents, many=True).data
-
-    def validate(self, attrs):
-        view = self.context.get("view")
-        course_id = view.kwargs.get("course_id")
-        order = attrs.get("order")
-
-        if Lesson.objects.filter(course_id=course_id, order=order).exists():
-            raise serializers.ValidationError(
-                f"A lesson with order {order} already exists in this course."
-            )
-
-        return attrs
-
 class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
+    file = serializers.CharField(required=False, allow_null=True)
 
     class Meta:
         model = Content
         fields = [
+            "id",
             "title",
             "content_type",
             "description",
@@ -211,13 +190,67 @@ class LessonContentCreateUpdateSerializer(serializers.ModelSerializer):
 
         return attrs
 
-
-class LessonContentListSerializer(serializers.ModelSerializer):
+class LessonSerializer(serializers.ModelSerializer):
+    contents = LessonContentCreateUpdateSerializer(many=True, required=False)
 
     class Meta:
-        model = Content
-        fields = ["id", "title", "content_type", "order"]
+        model = Lesson
+        fields = ["id", "course", "title", "order", "contents"]
+        read_only_fields = ["course"]
 
+    def create(self, validated_data):
+        contents_data = validated_data.pop('contents', [])
+        with transaction.atomic():
+            lesson = Lesson.objects.create(**validated_data)
+            for content_data in contents_data:
+                Content.objects.create(lesson=lesson, **content_data)
+        return lesson
+
+    def update(self, instance, validated_data):
+        contents_data = validated_data.pop('contents', [])
+        with transaction.atomic():
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+
+            # Manage nested contents
+            provided_ids = [c.get('id') for c in contents_data if c.get('id')]
+            instance.contents.exclude(id__in=provided_ids).delete()
+
+            for content_data in contents_data:
+                content_id = content_data.get('id')
+                if content_id:
+                    content_instance = Content.objects.filter(id=content_id, lesson=instance).first()
+                    if content_instance:
+                        for attr, value in content_data.items():
+                            setattr(content_instance, attr, value)
+                        content_instance.save()
+                    else:
+                        Content.objects.create(lesson=instance, **content_data)
+                else:
+                    Content.objects.create(lesson=instance, **content_data)
+        return instance
+
+    def validate(self, attrs):
+        view = self.context.get("view")
+        course_id = view.kwargs.get("course_id")
+        order = attrs.get("order")
+
+        queryset = Lesson.objects.filter(course_id=course_id, order=order)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+
+        if queryset.exists():
+            raise serializers.ValidationError(
+                f"A lesson with order {order} already exists in this course."
+            )
+
+        return attrs
+
+class LessonContentListSerializer(serializers.ModelSerializer): 
+    class Meta:
+        model = Content
+        fields = "__all__"
 
 class LevelSerializer(serializers.ModelSerializer):
     class Meta:

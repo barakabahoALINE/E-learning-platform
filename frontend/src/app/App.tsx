@@ -160,7 +160,7 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/lesson/:courseId/:lessonId"
+          path="/lesson/:courseId/:lessonId/:contentId?"
           element={
             <ProtectedRoute>
               <LessonPage />

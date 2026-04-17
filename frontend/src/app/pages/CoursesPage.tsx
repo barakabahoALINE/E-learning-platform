@@ -5,6 +5,10 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Checkbox } from "../components/ui/checkbox";
 import { Label } from "../components/ui/label";
+import { Input } from "../components/ui/input";
+import { ScrollArea, ScrollBar } from "../components/ui/scroll-area";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../components/ui/sheet";
+import { MainLayout } from "../components/MainLayout";
 import {
   Select,
   SelectContent,
@@ -19,28 +23,35 @@ import {
   Star,
   Filter,
   Search,
+  Loader2,
 } from "lucide-react";
-import { useApp } from "../context/AppContext";
-import { MainLayout } from "../components/MainLayout";
-import { Input } from "../components/ui/input";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "../components/ui/sheet";
-import { ScrollArea, ScrollBar } from "../components/ui/scroll-area";
+import { fetchCourses, fetchCategories, fetchLevels } from "../../features/courses/courseSlice";
+import { Category, Level } from "../../features/courses/types";
+import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 
 export const CoursesPage: React.FC = () => {
-  const { courses } = useApp();
+  const dispatch = useAppDispatch();
+  const { courses, categories, levels, isLoading } = useAppSelector((state) => state.courses);
+  
+  const getImageUrl = (url: string | null | undefined) => {
+    if (!url) return "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80";
+    if (url.startsWith("http")) return url;
+    return `http://localhost:8000${url}`;
+  };
+  
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
   const [priceFilter, setPriceFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState("popular");
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    dispatch(fetchCourses(false));
+    dispatch(fetchCategories());
+    dispatch(fetchLevels());
+  }, [dispatch]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -52,16 +63,13 @@ export const CoursesPage: React.FC = () => {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const categories = Array.from(new Set(courses.map((c) => c.category)));
-  const levels = ["Beginner", "Intermediate", "Advanced"];
-
-  const toggleCategory = (category: string) => {
-    setSelectedCategory((prev) => (prev === category ? null : category));
+  const toggleCategory = (categoryId: number) => {
+    setSelectedCategory((prev) => (prev === categoryId ? null : categoryId));
   };
 
-  const toggleLevel = (level: string) => {
+  const toggleLevel = (levelId: number) => {
     setSelectedLevels((prev) =>
-      prev.includes(level) ? prev.filter((l) => l !== level) : [...prev, level],
+      prev.includes(levelId) ? prev.filter((l) => l !== levelId) : [...prev, levelId],
     );
   };
 
@@ -73,22 +81,22 @@ export const CoursesPage: React.FC = () => {
     const matchesCategory = !selectedCategory || course.category === selectedCategory;
 
     const matchesLevel =
-      selectedLevels.length === 0 || selectedLevels.includes(course.level);
+      selectedLevels.length === 0 || (course.level !== null && selectedLevels.includes(course.level));
 
+    const isFree = parseFloat(course.price) === 0;
     const matchesPrice =
       priceFilter === "all" ||
-      (priceFilter === "free" && course.isFree) ||
-      (priceFilter === "paid" && !course.isFree);
+      (priceFilter === "free" && isFree) ||
+      (priceFilter === "paid" && !isFree);
 
     return matchesSearch && matchesCategory && matchesLevel && matchesPrice;
   });
 
   const sortedCourses = [...filteredCourses].sort((a, b) => {
-    if (sortBy === "popular") return b.studentsCount - a.studentsCount;
-    if (sortBy === "rating") return b.rating - a.rating;
-    if (sortBy === "newest") return 0; // Mock - would use date
-    if (sortBy === "price-low") return a.price - b.price;
-    if (sortBy === "price-high") return b.price - a.price;
+    if (sortBy === "popular") return (b.enrolled_students_count || 0) - (a.enrolled_students_count || 0);
+    if (sortBy === "newest") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    if (sortBy === "price-low") return parseFloat(a.price) - parseFloat(b.price);
+    if (sortBy === "price-high") return parseFloat(b.price) - parseFloat(a.price);
     return 0;
   });
 
@@ -202,13 +210,13 @@ export const CoursesPage: React.FC = () => {
             </Button>
             {categories.map((category) => (
               <Button
-                key={category}
-                variant={selectedCategory === category ? "default" : "outline"}
+                key={category.id}
+                variant={selectedCategory === category.id ? "default" : "outline"}
                 size="sm"
-                onClick={() => toggleCategory(category)}
+                onClick={() => toggleCategory(category.id)}
                 className="rounded-full px-5 h-9"
               >
-                {category}
+                {category.name}
               </Button>
             ))}
           </div>
@@ -238,22 +246,29 @@ export const CoursesPage: React.FC = () => {
 
           {/* Course Grid */}
           <div className="flex-1">
-            <div className="mb-4 text-sm text-gray-600">
-              Showing {sortedCourses.length} of {courses.length} courses
-            </div>
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-24">
+                <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+                <p className="text-gray-600 font-medium">Loading courses...</p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-4 text-sm text-gray-600">
+                  Showing {sortedCourses.length} of {courses.length} courses
+                </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {sortedCourses.map((course) => (
                 <Link key={course.id} to={`/course/${course.id}`}>
                   <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
                     <CardContent className="p-0">
                       <div className="relative">
                         <img
-                          src={course.thumbnail}
+                          src={getImageUrl(course.thumbnail)}
                           alt={course.title}
                           className="w-full h-48 object-cover rounded-t-lg"
                         />
-                        {course.isFree && (
+                        {parseFloat(course.price) === 0 && (
                           <Badge className="absolute top-3 right-3 bg-green-600">
                             Free
                           </Badge>
@@ -261,7 +276,7 @@ export const CoursesPage: React.FC = () => {
                       </div>
                       <div className="p-4">
                         <Badge variant="secondary" className="mb-2">
-                          {course.category}
+                          {categories.find(c => c.id === course.category)?.name || "Uncategorized"}
                         </Badge>
                         <h3 className="font-medium mb-2 line-clamp-2">
                           {course.title}
@@ -271,25 +286,23 @@ export const CoursesPage: React.FC = () => {
                         </p>
 
                         <div className="flex items-center space-x-2 mb-3">
-                          <img
-                            src={course.instructor.avatar}
-                            alt={course.instructor.name}
-                            className="w-6 h-6 rounded-full"
-                          />
+                          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold">
+                            {course.admin ? course.admin.substring(0, 2).toUpperCase() : course.instructor ? course.instructor.substring(0, 2).toUpperCase() : "AD"}
+                          </div>
                           <span className="text-sm text-gray-600">
-                            {course.instructor.name}
+                            {course.admin || course.instructor || "Platform Instructor"}
                           </span>
                         </div>
 
                         <div className="flex items-center justify-between mb-3 text-sm text-gray-600">
                           <div className="flex items-center">
                             <Star className="w-4 h-4 text-yellow-500 mr-1 fill-yellow-500" />
-                            <span>{course.rating}</span>
+                            <span>{course?.rating || 0}</span>
                           </div>
                           <div className="flex items-center">
                             <Users className="w-4 h-4 mr-1" />
                             <span>
-                              {(course.studentsCount / 1000).toFixed(1)}k
+                              {course.enrolled_students_count || 0}
                             </span>
                           </div>
                           <div className="flex items-center">
@@ -299,12 +312,17 @@ export const CoursesPage: React.FC = () => {
                         </div>
 
                         <div className="flex items-center justify-between pt-3 border-t">
-                          <Badge variant="outline">{course.level}</Badge>
+                          <Badge variant="outline">
+                            {levels.find(l => l.id === course.level)?.name || "All Levels"}
+                          </Badge>
                           <div className="font-medium">
-                            {course.isFree ? (
+                            {parseFloat(course.price) === 0 ? (
                               <span className="text-green-600">Free</span>
                             ) : (
-                              <span>Frw {course.price}</span>
+                              <span>Frw {parseFloat(course.price).toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2
+                            })}</span>
                             )}
                           </div>
                         </div>
@@ -327,6 +345,8 @@ export const CoursesPage: React.FC = () => {
                 </CardContent>
               </Card>
             )}
+            </>
+          )}
           </div>
         </div>
       </div>
@@ -335,12 +355,12 @@ export const CoursesPage: React.FC = () => {
 };
 
 interface FilterSectionsProps {
-  categories: string[];
-  selectedCategory: string | null;
-  toggleCategory: (category: string) => void;
-  levels: string[];
-  selectedLevels: string[];
-  toggleLevel: (level: string) => void;
+  categories: Category[];
+  selectedCategory: number | null;
+  toggleCategory: (categoryId: number) => void;
+  levels: Level[];
+  selectedLevels: number[];
+  toggleLevel: (levelId: number) => void;
   priceFilter: string;
   setPriceFilter: (value: string) => void;
   activeFiltersCount: number;
@@ -381,7 +401,7 @@ const FilterSections = ({
             { id: "free", label: "Free" },
             { id: "paid", label: "Paid" },
           ].map((price) => (
-            <div key={price.id} className="flex items-center space-x-3 group cursor-pointer" onClick={() => setPriceFilter(price.id)}>
+            <div key={price.id} className="flex items-center space-x-3 group cursor-pointer">
               <Checkbox
                 id={`price-${price.id}`}
                 checked={priceFilter === price.id}
@@ -390,7 +410,7 @@ const FilterSections = ({
               />
               <Label
                 htmlFor={`price-${price.id}`}
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-primary transition-colors cursor-pointer"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-primary transition-colors cursor-pointer flex-1 py-1"
               >
                 {price.label}
               </Label>
@@ -404,18 +424,18 @@ const FilterSections = ({
         <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">Level</h4>
         <div className="space-y-3">
           {levels.map((level) => (
-            <div key={level} className="flex items-center space-x-3 group cursor-pointer">
+            <div key={level.id} className="flex items-center space-x-3 group cursor-pointer">
               <Checkbox
-                id={`level-${level}`}
-                checked={selectedLevels.includes(level)}
-                onCheckedChange={() => toggleLevel(level)}
+                id={`level-${level.id}`}
+                checked={selectedLevels.includes(level.id)}
+                onCheckedChange={() => toggleLevel(level.id)}
                 className="rounded-sm"
               />
               <Label
-                htmlFor={`level-${level}`}
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-primary transition-colors cursor-pointer"
+                htmlFor={`level-${level.id}`}
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-primary transition-colors cursor-pointer flex-1 py-1"
               >
-                {level}
+                {level.name}
               </Label>
             </div>
           ))}
