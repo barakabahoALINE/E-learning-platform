@@ -6,7 +6,7 @@ from django.utils.http import urlsafe_base64_decode,urlsafe_base64_encode
 from .tokens import email_verification_token
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated
-from .serializers import SignupSerializer, LoginSerializer, LogoutSerializer, GoogleLoginSerializer
+from .serializers import *
 from django.contrib.auth.tokens import PasswordResetTokenGenerator 
 from django.utils.encoding import force_bytes, force_str
 from django.http import HttpResponse
@@ -236,3 +236,45 @@ class UserDeleteView(generics.DestroyAPIView):
             },
             status=status.HTTP_200_OK
         )
+        
+class UpdateProfilePictureAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        user = request.user
+
+        serializer = ProfilePictureSerializer(user, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "status": "success",
+                "message": "Profile picture updated successfully",
+                "data": serializer.data
+            }, status=200)
+
+        return Response({
+            "status": "failed",
+            "errors": serializer.errors
+        }, status=400)
+        
+class UpdateNameAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        user = request.user
+
+        serializer = UpdateNameSerializer(user, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "status": "success",
+                "message": "Name updated successfully",
+                "data": serializer.data
+            }, status=200)
+
+        return Response({
+            "status": "failed",
+            "errors": serializer.errors
+        }, status=400)

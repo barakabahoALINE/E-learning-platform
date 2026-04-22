@@ -1,4 +1,5 @@
-from rest_framework import serializers
+from rest_framework import serializers, status
+from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.conf import settings
@@ -179,3 +180,13 @@ class UserDeleteSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id"]
+    
+class ProfilePictureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['profile_picture']
+        
+class UpdateNameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['full_name']
