@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'courses_app',
     'enrollments_app',
     'progress_app',
+    'assessments_app',
     
 ]
 
@@ -127,6 +128,7 @@ STATIC_URL = 'static/'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
