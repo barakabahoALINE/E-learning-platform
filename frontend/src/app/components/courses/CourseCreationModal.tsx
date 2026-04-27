@@ -55,13 +55,23 @@ export function CourseCreationModal({
 
   useEffect(() => {
     if (editCourse) {
+      let numericPart = "";
+      let unitPart = "weeks";
+      
+      const rawDuration = editCourse.duration || "";
+      const match = rawDuration.match(/^(\d+)?\s*(.*)$/);
+      if (match) {
+        numericPart = match[1] || "";
+        unitPart = match[2]?.toLowerCase() || "weeks";
+      }
+
       setFormData({
         title: editCourse.title || "",
         description: editCourse.description || "",
         category: editCourse.category || null,
         level: editCourse.level || null,
         price: editCourse.price?.toString() || "0",
-        duration: editCourse.duration || "",
+        duration: `${numericPart} ${unitPart}`,
         is_published: editCourse.is_published || false,
       });
       setThumbnailPreview(getImageUrl(editCourse.thumbnail));
@@ -72,7 +82,7 @@ export function CourseCreationModal({
         category: null,
         level: null,
         price: "0",
-        duration: "",
+        duration: "1 weeks",
         is_published: false,
       });
       setThumbnailPreview("");
@@ -222,7 +232,7 @@ export function CourseCreationModal({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Category <span className="text-red-500">*</span>
@@ -265,7 +275,7 @@ export function CourseCreationModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Price (Rwf)
@@ -285,15 +295,34 @@ export function CourseCreationModal({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Duration
                   </label>
-                  <input
-                    type="text"
-                    value={formData.duration}
-                    onChange={(e) =>
-                      setFormData({ ...formData, duration: e.target.value })
-                    }
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., 4 weeks"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.duration.split(" ")[0] || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const unit = formData.duration.split(" ")[1] || "weeks";
+                        setFormData({ ...formData, duration: `${val} ${unit}` });
+                      }}
+                      className="w-24 px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="e.g., 4"
+                    />
+                    <select
+                      value={formData.duration.split(" ")[1] || "weeks"}
+                      onChange={(e) => {
+                        const val = formData.duration.split(" ")[0] || "";
+                        const unit = e.target.value;
+                        setFormData({ ...formData, duration: `${val} ${unit}` });
+                      }}
+                      className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="hours">Hours</option>
+                      <option value="days">Days</option>
+                      <option value="weeks">Weeks</option>
+                      <option value="months">Months</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>

@@ -18,6 +18,7 @@ urlpatterns = [
     # Completed Lessons
     path("courses/lessons/completed/", CompletedLessonsAPIView.as_view(), name="completed-lessons"),
     path("courses/<int:course_id>/lessons/completed/", CompletedCourseLessonsAPIView.as_view(), name="completed-course-lessons"),
+    path("courses/<int:course_id>/final/complete/", CompleteFinalAssessmentAPIView.as_view(), name="complete-final-assessment"),
 
     # Learning Sessions
     path("courses/<int:course_id>/start/", StartLearningAPIView.as_view()),
