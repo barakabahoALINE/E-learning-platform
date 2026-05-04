@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Assessment, Question, Choice
+from .models import Assessment, Question, Choice,Attempt
 import random
 
 class CreateAssessmentSerializer(serializers.ModelSerializer):
@@ -14,6 +14,7 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             'duration',
             'instructions'
         ]
+        
 class ChoiceCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Choice
@@ -89,3 +90,16 @@ class QuestionSerializer(serializers.ModelSerializer):
         random.shuffle(choices)  # 🔥 shuffle choices
 
         return ChoiceSerializer(choices, many=True).data
+
+class StartAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Attempt
+        fields = [
+            "id",
+            "assessment",
+            "attempt_number",
+            "started_at",
+            "is_locked",
+            "is_submitted",
+        ]
+        read_only_fields = fields
