@@ -976,3 +976,40 @@ class CoursesKPIAPIView(APIView):
                 "courses_completed": completed_courses
             }
         })
+
+class CompletionRateAPIView(APIView):
+    """
+    Completion rate based on courses
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        student = request.user
+
+        # Total enrolled courses
+        total_courses = Enrollment.objects.filter(
+            student=student
+        ).count()
+
+        # Completed courses
+        completed_courses = Enrollment.objects.filter(
+            student=student,
+            status=Enrollment.Status.COMPLETED
+        ).count()
+
+        completion_rate = 0
+
+        if total_courses > 0:
+            completion_rate = round((completed_courses / total_courses) * 100)
+
+        return Response({
+            "success": True,
+            "message": "Course completion rate retrieved successfully",
+            "data": {
+                "total_courses": total_courses,
+                "completed_courses": completed_courses,
+                "completion_rate": completion_rate
+            }
+        })

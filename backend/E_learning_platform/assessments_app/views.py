@@ -7,7 +7,7 @@ from .models import Attempt
 from .permissions import IsAdmin
 from .models import Assessment
 from .serializers import *
-from .utils import is_student_enrolled
+from .utils import *
 
 # ✅ Create Assessment API
 
@@ -58,23 +58,34 @@ class StartAssessmentAPIView(APIView):
     def get(self, request, assessment_id):
         assessment = get_object_or_404(Assessment, id=assessment_id)
 
-        # ✅ CALL FUNCTION HERE
+        # ✅ 1. CHECK ENROLLMENT
         if not is_student_enrolled(request.user, assessment.course):
             return Response({
                 "status": "failed",
                 "message": "You are not enrolled in this course."
             }, status=403)
 
+        # 🔒 2. BLOCK FINAL ASSESSMENT IF NOT COMPLETED
+        if assessment.is_final:
+            if not has_completed_all_lessons(request.user, assessment.course):
+                return Response({
+                    "status": "failed",
+                    "message": "Complete all lessons before accessing final assessment."
+                }, status=403)
+
+        # ✅ 3. ALLOW ACCESS (ONLY IF PASSED ALL CHECKS)
         return Response({
             "status": "success",
             "data": {
                 "id": assessment.id,
                 "title": assessment.title,
+                "is_final": assessment.is_final,
                 "duration": assessment.duration,
-                "instructions": assessment.instructions
+                "instructions": assessment.instructions,
+                "total_questions": assessment.questions.count(),
             }
         }, status=200)
-
+        
 # ✅ Get Questions API
 class GetAssessmentQuestionsAPIView(APIView):
     permission_classes = [IsAuthenticated]
