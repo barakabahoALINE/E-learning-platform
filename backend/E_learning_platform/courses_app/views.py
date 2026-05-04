@@ -10,17 +10,7 @@ from django.shortcuts import get_object_or_404
 from courses_app.models import Lesson
 from rest_framework.exceptions import ValidationError
 from .models import Content, Lesson, Course, Level, Category, MediaUpload
-from .serializers import (
-    CourseCreateUpdateSerializer,
-    CourseListSerializer,
-    CourseDetailSerializer,
-    LessonSerializer,
-    LessonContentCreateUpdateSerializer,
-    LessonContentListSerializer,
-    LessonContentDetailSerializer,
-    LevelSerializer,
-    CategorySerializer,
-)
+from .serializers import *
 
 # =====================================
 # 1️⃣ LIST COURSES (Public - Published Only)
