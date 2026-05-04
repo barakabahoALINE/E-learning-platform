@@ -3,17 +3,6 @@ from .models import Assessment, Question, Choice, Attempt
 
 # Register your models here.
 
-@admin.register(Assessment)
-class AssessmentAdmin(admin.ModelAdmin):
-    list_display = ('title', 'course', 'is_final', 'pass_mark', 'max_attempts', 'duration')
-    list_filter = ('is_final', 'course')
-    search_fields = ('title', 'course__title')
-
-@admin.register(Question)
-class QuestionAdmin(admin.ModelAdmin):
-    list_display = ('question_text', 'assessment', 'question_type', 'marks')
-    list_filter = ('question_type', 'assessment')
-    search_fields = ('question_text', 'assessment__title')
 
 @admin.register(Choice)
 class ChoiceAdmin(admin.ModelAdmin):  
@@ -21,3 +10,63 @@ class ChoiceAdmin(admin.ModelAdmin):
     list_filter = ('is_correct', 'question')
     search_fields = ('text', 'question__question_text')
 
+
+# -----------------------------
+# Choice Inline (inside Question)
+# -----------------------------
+class ChoiceInline(admin.TabularInline):
+    model = Choice
+    extra = 2
+
+
+# -----------------------------
+# Question Admin
+# -----------------------------
+class QuestionAdmin(admin.ModelAdmin):
+    list_display = ("id", "question_text", "assessment", "question_type")
+    list_filter = ("assessment", "question_type")
+    search_fields = ("question_text",)
+    inlines = [ChoiceInline]
+
+
+# -----------------------------
+# Assessment Admin
+# -----------------------------
+class AssessmentAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "title",
+        "course",
+        "is_final",
+        "pass_mark",
+        "max_attempts",
+        "time_limit_minutes",
+    )
+    list_filter = ("is_final", "course")
+    search_fields = ("title",)
+
+
+# -----------------------------
+# Attempt Admin
+# -----------------------------
+class AttemptAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "student",
+        "assessment",
+        "attempt_number",
+        "is_locked",
+        "is_submitted",
+        "passed",
+        "started_at",
+    )
+    list_filter = ("is_locked", "is_submitted", "passed")
+    search_fields = ("student__email",)
+
+
+# -----------------------------
+# Register Models
+# -----------------------------
+admin.site.register(Assessment, AssessmentAdmin)
+admin.site.register(Question, QuestionAdmin)
+admin.site.register(Attempt, AttemptAdmin)

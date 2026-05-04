@@ -10,16 +10,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RenameField(
-            model_name='attempt',
-            old_name='created_at',
-            new_name='started_at',
-        ),
-        migrations.RenameField(
-            model_name='question',
-            old_name='text',
-            new_name='question_text',
-        ),
         migrations.AddField(
             model_name='assessment',
             name='max_attempts',
