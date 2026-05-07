@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Assessment, Question, Choice, Attempt
+from .models import Assessment, Question, Choice, Attempt,Feedback,StudentAnswer
 
 # Register your models here.
 
@@ -63,10 +63,26 @@ class AttemptAdmin(admin.ModelAdmin):
     list_filter = ("is_locked", "is_submitted", "passed")
     search_fields = ("student__email",)
 
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display = ('id', 'student', 'course')
+    search_fields = ('student__username', 'course__title')
 
+@admin.register(StudentAnswer)
+class StudentAnswerAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'attempt',
+        'question',
+        'selected_choice',
+        'is_correct'
+    )
+
+    list_filter = ('is_correct',)
 # -----------------------------
 # Register Models
 # -----------------------------
 admin.site.register(Assessment, AssessmentAdmin)
 admin.site.register(Question, QuestionAdmin)
 admin.site.register(Attempt, AttemptAdmin)
+

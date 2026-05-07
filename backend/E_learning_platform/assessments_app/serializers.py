@@ -25,7 +25,7 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Question
-        fields = ['assessment', 'question_text', 'question_type', 'marks', 'choices']
+        fields = ['assessment', 'question_text', 'question_type', 'marks','order', 'choices']
 
     def validate(self, data):
         # 🔥 1. Validate question text
@@ -83,7 +83,7 @@ class QuestionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Question
-        fields = ['id', 'question_text', 'question_type', 'choices']
+        fields = ['id', 'question_text', 'question_type', 'marks', 'order', 'choices']
 
     def get_choices(self, obj):
         choices = list(obj.choices.all())

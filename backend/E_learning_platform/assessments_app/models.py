@@ -47,6 +47,7 @@ class Question(models.Model):
     question_text = models.TextField()
 
     question_type = models.CharField(max_length=10,choices=QuestionType.choices,default=QuestionType.SINGLE)
+    correct_text_answer = models.TextField(blank=True, null=True)
     marks = models.PositiveIntegerField(default=1)
     order = models.PositiveIntegerField()
 
@@ -73,6 +74,8 @@ class Attempt(models.Model):
     is_locked = models.BooleanField(default=False)
     submitted_at = models.DateTimeField(null=True, blank=True)
     is_submitted = models.BooleanField(default=False)
+    percentage = models.FloatField(default=0)
+    next_allowed_attempt = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ["student", "assessment", "attempt_number"]
@@ -93,3 +96,31 @@ class AttemptAnswer(models.Model):
 
     def __str__(self):
         return f"{self.attempt.student} - Q{self.question.id}"
+    
+class StudentAnswer(models.Model):
+     attempt = models.ForeignKey(Attempt, on_delete=models.CASCADE)
+     question = models.ForeignKey(Question, on_delete=models.CASCADE)
+
+     selected_choice = models.ForeignKey(
+        Choice,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="single_answers"   # ✅ FIX
+    )
+
+     selected_choices = models.ManyToManyField(
+        Choice,
+        blank=True,
+        related_name="multi_answers"    # ✅ FIX
+    )
+
+     text_answer = models.TextField(blank=True, null=True)
+
+     is_correct = models.BooleanField(default=False)
+     is_final=models.BooleanField(default=False)
+
+class Feedback(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE)
+    course = models.ForeignKey("courses_app.Course", on_delete=models.CASCADE)
+    comment = models.TextField()
