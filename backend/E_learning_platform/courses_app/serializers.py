@@ -224,7 +224,7 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
 
-        # ── optional: inline modules update via multipart ──────────────
+        #  optional: inline modules update via multipart 
         modules_data_str = self.initial_data.get("modules")
         final_assessment_str = self.initial_data.get("finalAssessment")
 
