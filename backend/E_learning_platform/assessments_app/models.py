@@ -91,5 +91,9 @@ class AttemptAnswer(models.Model):
     class Meta:
         unique_together = ["attempt", "question"]
 
-    def __str__(self):
-        return f"{self.attempt.student} - Q{self.question.id}"
+
+    
+class Feedback(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE)
+    course = models.ForeignKey("courses_app.Course", on_delete=models.CASCADE)
+    comment = models.TextField()

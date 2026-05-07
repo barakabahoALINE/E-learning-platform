@@ -110,11 +110,21 @@ class GetAssessmentQuestionsAPIView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+# ═══════════════════════════════════════════════
+# 1. START ATTEMPT
+# POST /api/assessments/attempts/start/
+# ═══════════════════════════════════════════════
 class StartAttemptAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, assessment_id):
         user = request.user
+
+        if not assessment_id:
+            return Response({
+                "success": False,
+                "message": "assessment_id is required"
+            }, status=400)
 
         try:
             assessment = Assessment.objects.get(id=assessment_id)
@@ -192,6 +202,8 @@ class LockAttemptAPIView(APIView):
 
         attempt.is_locked = True
         attempt.save()
+
+        message = "Congratulations! You passed." if passed else "You failed. Try again."
 
         return Response({
             "status": "success",
