@@ -135,7 +135,10 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'AUTH_HEADER_TYPES': ('Bearer',),
     'ALGORITHM': 'HS256',
+    "SIGNING_KEY": "your-secret-key-that-is-at-least-32-characters-long",
+    # ... rest of your config
 }
+
 
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

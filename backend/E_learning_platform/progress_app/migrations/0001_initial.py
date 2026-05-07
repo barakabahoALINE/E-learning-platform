@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import migrations, models
 import django.db.models.deletion
 import django.utils.timezone
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -11,9 +12,8 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('enrollments_app', '0002_initial'),
-        ('courses_app', '0002_initial'),
+        ('courses_app', '0001_initial'),
+        ('enrollments_app', '0001_initial'),
     ]
 
     operations = [
@@ -34,19 +34,20 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
-            name='LessonProgress',
+            name='SectionProgress',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('completed', models.BooleanField(default=False)),
                 ('completed_at', models.DateTimeField(blank=True, null=True)),
-                ('enrollment', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='lesson_progress', to='enrollments_app.enrollment')),
-                ('lesson', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='progress', to='courses_app.lesson')),
-                ('student', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='lesson_progress', to=settings.AUTH_USER_MODEL)),
+                ('enrollment', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='section_progress', to='enrollments_app.enrollment')),
+                ('section', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='progress', to='courses_app.section')),
+                ('student', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='section_progress', to=settings.AUTH_USER_MODEL)),
             ],
-            options={
-                'unique_together': {('student', 'lesson')},
+             options={
+                'unique_together': {('student', 'section')},
             },
         ),
+
         migrations.CreateModel(
             name='ContentProgress',
             fields=[
