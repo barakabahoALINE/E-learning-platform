@@ -73,17 +73,24 @@ class CompleteContentAPIView(APIView):
         module_pct = round((done_module_sections / total_module_sections) * 100) if total_module_sections else 0
         module_prog = ModuleProgress.objects.filter(student=request.user, module=module).first()
 
-        completed_lessons = LessonProgress.objects.filter(
+        course = get_object_or_404(Course, id=course_id)
+        total_sections = Section.objects.filter(module__course_id=course_id).count()
+        completed_sections = SectionProgress.objects.filter(
             student=request.user,
-            lesson__course_id=course_id,
+            section__module__course_id=course_id,
             completed=True
+        ).count()
+        total_contents = Content.objects.filter(section__module__course_id=course_id).count()
+        completed_contents = ContentProgress.objects.filter(
+            student=request.user,
+            content__section__module__course_id=course_id,
+            completed=True,
         ).count()
 
         course_completed = False
-        course = get_object_or_404(Course, id=course_id)
         has_final = course.final_assessment and isinstance(course.final_assessment, dict) and course.final_assessment.get('questions')
 
-        if total_lessons > 0 and completed_lessons == total_lessons and not has_final:
+        if total_sections > 0 and completed_sections == total_sections and not has_final:
             enrollment.status = Enrollment.Status.COMPLETED
             enrollment.completed_at = timezone.now()
             enrollment.save()
@@ -99,8 +106,8 @@ class CompleteContentAPIView(APIView):
         ) if total_contents > 0 else 0
 
         course_percentage = round(
-            (completed_lessons / total_lessons) * 100
-        ) if total_lessons > 0 else 0
+            (completed_sections / total_sections) * 100
+        ) if total_sections > 0 else 0
 
         # -----------------------------------------
         # Response
@@ -616,7 +623,7 @@ class AdminCompleteCourseAPIView(APIView):
 
         completed_sections = SectionProgress.objects.filter(
             student=student,
-            section__course_id=course_id,
+            section__module__course_id=course_id,
             completed=True
         ).count()
 

@@ -13,13 +13,13 @@ from .views import *
 urlpatterns = [
 
      # ──-------Courses ───────────────────────────────────────────────────────
-  path("courses/",                            CourseListAPIView.as_view(),      name="course-list"),
-  path("courses/create/",                     CourseCreateAPIView.as_view(),    name="course-create"),
-  path("courses/<int:pk>/",                   CourseRetrieveAPIView.as_view(),  name="course-detail"),
-  path("courses/<int:pk>/update/",            CourseUpdateAPIView.as_view(),    name="course-update"),
-  path("courses/<int:pk>/delete/",            CourseDeleteAPIView.as_view(),    name="course-delete"),
-  path("courses/<int:pk>/publish/",           CoursePublishAPIView.as_view(),   name="course-publish"),
-  path("courses/<int:pk>/unpublish/",         CourseUnpublishAPIView.as_view(), name="course-unpublish"),
+  path("courses/", CourseListAPIView.as_view(),      name="course-list"),
+  path("courses/create/", CourseCreateAPIView.as_view(),    name="course-create"),
+  path("courses/<int:pk>/", CourseRetrieveAPIView.as_view(),  name="course-detail"),
+  path("courses/<int:pk>/update/", CourseUpdateAPIView.as_view(),    name="course-update"),
+  path("courses/<int:pk>/delete/", CourseDeleteAPIView.as_view(),    name="course-delete"),
+  path("courses/<int:pk>/publish/", CoursePublishAPIView.as_view(),   name="course-publish"),
+  path("courses/<int:pk>/unpublish/", CourseUnpublishAPIView.as_view(), name="course-unpublish"),
 
         # ── Modules ───────────────────────────────────────────────────────
        
@@ -34,8 +34,8 @@ urlpatterns = [
 
            # ── Sections (replaces Lessons) ───────────────────────────────────
     
-  path("courses/<int:course_id>/modules/<int:module_id>/sections/",SectionListAPIView.as_view(),   name="section-list"),
-  path("courses/<int:course_id>/modules/<int:module_id>/sections/create/",SectionCreateAPIView.as_view(), name="section-create"),
+  path("courses/modules/<int:module_id>/sections/",SectionListAPIView.as_view(),   name="section-list"),
+  path("courses/modules/<int:module_id>/sections/create/",SectionCreateAPIView.as_view(), name="section-create"),
   path("courses/<int:course_id>/modules/<int:module_id>/sections/<int:pk>/update/",SectionUpdateAPIView.as_view(), name="section-update"),
   path("courses/<int:course_id>/modules/<int:module_id>/sections/<int:pk>/delete/",SectionDeleteAPIView.as_view(), name="section-delete"),
 

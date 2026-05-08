@@ -1,5 +1,6 @@
 
 # 
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import Course, Module, Section, Content, Level, Category
@@ -88,7 +89,7 @@ class SectionSerializer(serializers.ModelSerializer):
         module_id = view.kwargs.get("module_id") if view else None
         order = attrs.get("order")
 
-        if module_id and order:
+        if module_id and order is not None:
             qs = Section.objects.filter(module_id=module_id, order=order)
             if self.instance:
                 qs = qs.exclude(pk=self.instance.pk)
@@ -101,10 +102,10 @@ class SectionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         contents_data = validated_data.pop('contents', [])
         with transaction.atomic():
-            Section = Section.objects.create(**validated_data)
+            section = Section.objects.create(**validated_data)
             for content_data in contents_data:
-                Content.objects.create(Section=Section, **content_data)
-        return Section
+                Content.objects.create(section=section, **content_data)
+        return section
 
     def update(self, instance, validated_data):
         contents_data = validated_data.pop('contents', [])
@@ -120,32 +121,16 @@ class SectionSerializer(serializers.ModelSerializer):
             for content_data in contents_data:
                 content_id = content_data.get('id')
                 if content_id:
-                    content_instance = Content.objects.filter(id=content_id, Section=instance).first()
+                    content_instance = Content.objects.filter(id=content_id, section=instance).first()
                     if content_instance:
                         for attr, value in content_data.items():
                             setattr(content_instance, attr, value)
                         content_instance.save()
                     else:
-                        Content.objects.create(Section=instance, **content_data)
+                        Content.objects.create(section=instance, **content_data)
                 else:
-                    Content.objects.create(Section=instance, **content_data)
+                    Content.objects.create(section=instance, **content_data)
         return instance
-
-    def validate(self, attrs):
-        view = self.context.get("view")
-        course_id = view.kwargs.get("course_id")
-        order = attrs.get("order")
-
-        queryset = Section.objects.filter(course_id=course_id, order=order)
-        if self.instance:
-            queryset = queryset.exclude(pk=self.instance.pk)
-
-        if queryset.exists():
-            raise serializers.ValidationError(
-                f"A sectionwith order {order} already exists in this course."
-            )
-
-        return attrs
 
 class SectionContentListSerializer(serializers.ModelSerializer): 
     class Meta:

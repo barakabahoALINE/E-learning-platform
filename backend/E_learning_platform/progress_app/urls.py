@@ -5,14 +5,14 @@ urlpatterns = [
 
     # Course Progress APIS
     path("courses/<int:course_id>/", StudentCourseProgressAPIView.as_view(), name="student-course-progress"),
-    path("courses/<int:course_id>/final/complete/", CompleteFinalAssessmentAPIView.as_view(), name="complete-final-assessment"),    
+#     path("courses/<int:course_id>/final/complete/", CompleteFinalAssessmentAPIView.as_view(), name="complete-final-assessment"),    
     path("courses/<int:course_id>/complete/", CompleteCourseAPIView.as_view(),        name="complete-course"),
     
     
     # Admin Progress APIs
     path("admin/students/<int:student_id>/courses/<int:course_id>/", AdminStudentCourseProgressAPIView.as_view(), name="admin-student-course-progress"),
-    path("admin/courses/<int:course_id>/students-progress/", AdminCourseStudentsProgressAPIView.as_view(), name="admin-course-students-progress"),
-    path("admin/students/<int:student_id>/courses/<int:co urse_id>/complete/", AdminCompleteCourseAPIView.as_view(), name="admin-complete-course"),
+#     path("admin/courses/<int:course_id>/students-progress/", AdminCourseStudentsProgressAPIView.as_view(), name="admin-course-students-progress"),
+    path("admin/students/<int:student_id>/courses/<int:course_id>/complete/", AdminCompleteCourseAPIView.as_view(), name="admin-complete-course"),
     
     
     # Content APIS

@@ -218,7 +218,7 @@ class SectionCreateAPIView(generics.CreateAPIView):
         return get_object_or_404(
             Module,
             id=self.kwargs["module_id"],
-            course_id=self.kwargs["course_id"],
+            # course_id=self.kwargs["course_id"],
         )
 
     def create(self, request, *args, **kwargs):

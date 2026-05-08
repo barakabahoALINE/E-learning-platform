@@ -1,7 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-from courses_app.models import Module
+
 
 User = settings.AUTH_USER_MODEL
 
