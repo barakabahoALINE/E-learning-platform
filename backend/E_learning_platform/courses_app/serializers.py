@@ -1,14 +1,12 @@
+from optparse import Option
 
-# 
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import Course, Module, Section, Content, Level, Category
 import json
 
-# ─────────────────────────────────────────────
 # Content
-# ─────────────────────────────────────────────
 
 class ContentDetailSerializer(serializers.ModelSerializer):
     section = serializers.StringRelatedField()
@@ -35,7 +33,6 @@ class ContentCreateUpdateSerializer(serializers.ModelSerializer):
             "video_url",
             "text_content",   # ✅ FIXED
             "file",
-            "quiz",
             "order",
             "is_preview",
         ]
@@ -61,17 +58,9 @@ class ContentCreateUpdateSerializer(serializers.ModelSerializer):
                 {"file": "File is required for file content."}
             )
 
-        # QUIZ
-        if content_type == "quiz" and not attrs.get("quiz"):
-            raise serializers.ValidationError(
-                {"quiz": "Quiz data is required."}
-            )
-
         return attrs
 
-# ─────────────────────────────────────────────
 # Section  (replaces Section)
-# ─────────────────────────────────────────────
 
 class SectionSerializer(serializers.ModelSerializer):
     contents = serializers.SerializerMethodField()
@@ -147,16 +136,15 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = "__all__"
 
-# ─────────────────────────────────────────────
+
 # Module
-# ─────────────────────────────────────────────
 
 class ModuleSerializer(serializers.ModelSerializer):
     sections = serializers.SerializerMethodField()
 
     class Meta:
         model = Module
-        fields = ["id", "course", "title", "description", "order", "quiz", "sections"]
+        fields = ["id", "course", "title", "description", "order", "sections"]
         read_only_fields = ["course"]
 
     def get_sections(self, obj):
@@ -177,10 +165,7 @@ class ModuleSerializer(serializers.ModelSerializer):
                 )
         return attrs
 
-
-# ─────────────────────────────────────────────
 # Course
-# ─────────────────────────────────────────────
 
 class CourseCreateUpdateSerializer(serializers.ModelSerializer):
     title = serializers.CharField(
@@ -249,13 +234,11 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
                         title=module_data.get("title", ""),
                         description=module_data.get("description", ""),
                         order=module_data.get("order", 0),
-                        quiz=module_data.get("quiz", None),
                     )
                 else:
                     module.title = module_data.get("title", module.title)
                     module.description = module_data.get("description", module.description)
                     module.order = module_data.get("order", module.order)
-                    module.quiz = module_data.get("quiz", module.quiz)
                     module.save()
 
                 # ── sections inside module ─────────────────────────────
@@ -300,7 +283,6 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
                             video_url=content_data.get("video_url", ""),
                             text_content=content_data.get("text_content", ""),
                             file=content_data.get("file", None),
-                            quiz=content_data.get("quiz", None),
                             order=content_data.get("order", 0),
                         )
 
@@ -316,22 +298,38 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
 
 class CourseListSerializer(serializers.ModelSerializer):
     admin = serializers.CharField(source="created_by.username", read_only=True)
+
+    category = serializers.CharField(source="category.name", read_only=True)
+    level = serializers.CharField(source="level.name", read_only=True)
+
     modules_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
         fields = [
-            "id", "title", "description", "duration", "price",
-            "category", "level", "thumbnail", "is_published",
-            "admin", "modules_count", "created_at", "updated_at",
+            "id",
+            "title",
+            "description",
+            "duration",
+            "price",
+            "category",
+            "level",
+            "thumbnail",
+            "is_published",
+            "admin",
+            "modules_count",
+            "created_at",
+            "updated_at",
         ]
 
     def get_modules_count(self, obj):
         return obj.modules.count()
 
-
 class CourseDetailSerializer(serializers.ModelSerializer):
     modules = serializers.SerializerMethodField()
+
+    category = serializers.CharField(source="category.name", read_only=True)
+    level = serializers.CharField(source="level.name", read_only=True)
 
     class Meta:
         model = Course
@@ -339,12 +337,9 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
     def get_modules(self, obj):
-        return ModuleSerializer(obj.modules.all(), many=True, context=self.context).data
+        return ModuleSerializer(obj.modules.all(), many=True, context=self.context ).data
 
-
-# ─────────────────────────────────────────────
 # Level / Category
-# ─────────────────────────────────────────────
 
 class LevelSerializer(serializers.ModelSerializer):
     class Meta:
@@ -356,42 +351,10 @@ class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ["id", "name", "level", "level_name"]
-
-        
-        
-
-from rest_framework import serializers
-from .models import Quiz, Question, Option, Attempt, StudentAnswer
     
-class OptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Option
         fields = ["id", "text"]
-
-
-class QuestionSerializer(serializers.ModelSerializer):
-    options = OptionSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Question
-        fields = ["id", "text", "mark", "options"]
-
-
-class QuizSerializer(serializers.ModelSerializer):
-    questions = QuestionSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Quiz
-        fields = ["id", "title", "description", "questions"]
-        
-class StudentAnswerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = StudentAnswer
-        fields = ["question", "selected_option"]
-        
-class SubmitQuizSerializer(serializers.Serializer):
-    quiz_id = serializers.IntegerField()
-    answers = StudentAnswerSerializer(many=True)
-        
+    
 
 

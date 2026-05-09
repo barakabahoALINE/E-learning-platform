@@ -30,12 +30,12 @@ class CompleteContentAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
     def post(self, request, course_id, section_id, content_id):
-        content = get_object_or_404(Content, id=content_id)
+        content = get_object_or_404(Content, id=content_id, section__module__course_id=course_id)
         enrollment = get_object_or_404(
             Enrollment,
             student=request.user,
-            course=content.section.module.course,
-            status="active",
+            course_id=course_id,
+            status__in=["active", "completed"],
         )
 
         # ── Mark content complete ──────────────────────────────────────
@@ -153,9 +153,9 @@ class SectionContentsProgressAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
     def get(self, request, course_id, section_id):
-        section = get_object_or_404(Section, id=section_id)
+        section = get_object_or_404(Section, id=section_id, module__course_id=course_id)
         enrollment = get_object_or_404(
-            Enrollment, student=request.user, course=section.module.course, status="active"
+            Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
         contents = section.contents.all()
         total = contents.count()
@@ -189,9 +189,9 @@ class SectionProgressAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
     def get(self, request, course_id, section_id):
-        section = get_object_or_404(Section, id=section_id)
+        section = get_object_or_404(Section, id=section_id, module__course_id=course_id)
         enrollment = get_object_or_404(
-            Enrollment, student=request.user, course=section.module.course, status="active"
+            Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
         prog, _ = SectionProgress.objects.get_or_create(
             student=request.user, section=section, defaults={"enrollment": enrollment}
@@ -232,7 +232,7 @@ class ModuleProgressAPIView(APIView):
     def get(self, request, course_id, module_id):
         module = get_object_or_404(Module, id=module_id, course_id=course_id)
         enrollment = get_object_or_404(
-            Enrollment, student=request.user, course_id=course_id, status="active"
+            Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
 
         # Ensure ModuleProgress row exists
@@ -295,7 +295,7 @@ class CourseSectionsProgressAPIView(APIView):
 
     def get(self, request, course_id):
         enrollment = get_object_or_404(
-            Enrollment, student=request.user, course_id=course_id, status="active"
+            Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
         sections = Section.objects.filter(
             module__course_id=course_id
@@ -352,7 +352,7 @@ class CourseModulesProgressAPIView(APIView):
 
     def get(self, request, course_id):
         enrollment = get_object_or_404(
-            Enrollment, student=request.user, course_id=course_id, status="active"
+            Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
         modules = Module.objects.filter(course_id=course_id).order_by("order")
 
@@ -469,7 +469,9 @@ class StartLearningAPIView(APIView):
     def post(self, request, course_id):
         try:
             enrollment = Enrollment.objects.get(
-                student=request.user, course_id=course_id, status=Enrollment.Status.ACTIVE
+                student=request.user,
+                course_id=course_id,
+                status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED],
             )
         except Enrollment.DoesNotExist:
             return Response(
@@ -514,13 +516,33 @@ class ContinueLearningAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, course_id):
-        session = LearningSession.objects.filter(
+        active_session = LearningSession.objects.filter(
+            student=request.user, course_id=course_id, is_active=True
+        ).order_by("-started_at").first()
+        if active_session:
+            return Response(
+                {"status": "success", "message": "Continue learning data retrieved.", "data": LearningSessionSerializer(active_session).data}
+            )
+
+        last_session = LearningSession.objects.filter(
             student=request.user, course_id=course_id
         ).order_by("-started_at").first()
-        if not session:
-            return Response({"status": "failed", "message": "No learning history found.", "data": None})
+        if not last_session:
+            return Response(
+                {"status": "failed", "message": "No learning history found.", "data": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        resumed_session = LearningSession.objects.create(
+            student=request.user,
+            course_id=course_id,
+            enrollment=last_session.enrollment,
+            started_at=timezone.now(),
+            is_active=True,
+        )
         return Response(
-            {"status": "success", "message": "Continue learning data retrieved.", "data": LearningSessionSerializer(session).data}
+            {"status": "success", "message": "Learning session resumed.", "data": LearningSessionSerializer(resumed_session).data},
+            status=status.HTTP_201_CREATED,
         )
 
 
@@ -580,21 +602,21 @@ class AdminStudentCourseProgressAPIView(APIView):
         if not Enrollment.objects.filter(student=student, course_id=course_id).exists():
             return Response({"success": False, "message": "Student is not enrolled in this course"})
 
-        total_sections = Section.objects.filter(module__course_id=course_id).count()
-        done_sections = SectionProgress.objects.filter(
-            student=student, section__module__course_id=course_id, completed=True
+        total_modules = Module.objects.filter(course_id=course_id).count()
+        done_modules = ModuleProgress.objects.filter(
+            student=student, module__course_id=course_id, completed=True
         ).count()
-        pct = round((done_sections / total_sections) * 100) if total_sections else 0
+        pct = round((done_modules / total_modules) * 100) if total_modules else 0
 
         return Response({
             "success": True,
             "message": "Student course progress retrieved successfully",
             "data": {
                 "student_id": student.id,
-                "student_name": student.username,
+                "student_name": student.full_name,
                 "course_id": course_id,
-                "total_sections": total_sections,
-                "completed_sections": done_sections,
+                "total_modules": total_modules,
+                "completed_modules": done_modules,
                 "progress_percentage": pct,
             },
         })
@@ -665,7 +687,7 @@ class CompleteCourseAPIView(APIView):
         ).count()
 
         if done < total:
-            return Response({"success": False, "message": "You must complete all sections before finishing the course"})
+            return Response({"success": False, "message": "You must complete all modules before finishing the course"})
 
         enrollment.status = "COMPLETED"
         enrollment.save()
@@ -731,8 +753,8 @@ class CoursesKPIAPIView(APIView):
             "message": "Courses KPI retrieved successfully",
             "data": {
                 "total_courses_enrolled": enrollments.count(),
-                "courses_in_progress": enrollments.filter(status="ACTIVE").count(),
-                "courses_completed": enrollments.filter(status="COMPLETED").count(),
+                "courses_in_progress": enrollments.filter(status="active").count(),
+                "courses_completed": enrollments.filter(status="completed").count(),
             },
         })
 

@@ -1,5 +1,3 @@
-
-
 from rest_framework import serializers
 from users_app.models import User
 from .models import ContentProgress, SectionProgress, ModuleProgress, LearningSession
