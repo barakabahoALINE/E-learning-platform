@@ -1,10 +1,6 @@
-# # from django.db import models
-# # from django.conf import settings
-# # from django.utils import timezone
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-
 from courses_app.models import Section, Module, Content, Course
 from enrollments_app.models import Enrollment
 
@@ -12,9 +8,7 @@ from enrollments_app.models import Enrollment
 User = settings.AUTH_USER_MODEL
 
 
-# ══════════════════════════════════════════════
 # CONTENT PROGRESS
-# ══════════════════════════════════════════════
 class ContentProgress(models.Model):
     student = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="content_progress"
@@ -44,10 +38,7 @@ class ContentProgress(models.Model):
         if self.completed and self.enrollment:
             _refresh_section_progress(self.student, self.content.section, self.enrollment)
 
-
-# ══════════════════════════════════════════════
 # SECTION PROGRESS
-# ══════════════════════════════════════════════
 class SectionProgress(models.Model):
     student = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="section_progress"
@@ -73,10 +64,7 @@ class SectionProgress(models.Model):
         if self.completed:
             _refresh_module_progress(self.student, self.section.module, self.enrollment)
 
-
-# ══════════════════════════════════════════════
 # MODULE PROGRESS
-# ══════════════════════════════════════════════
 class ModuleProgress(models.Model):
     student = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="module_progress"
@@ -96,10 +84,7 @@ class ModuleProgress(models.Model):
     def __str__(self):
         return f"{self.student} - {self.module}"
 
-
-# ══════════════════════════════════════════════
 # LEARNING SESSION
-# ══════════════════════════════════════════════
 class LearningSession(models.Model):
     student = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="learning_sessions"
@@ -134,11 +119,7 @@ class LearningSession(models.Model):
     def __str__(self):
         return f"{self.student} - {self.course} ({self.duration_minutes} mins)"
 
-
-# ══════════════════════════════════════════════
 # CASCADE HELPERS
-# ══════════════════════════════════════════════
-
 def _refresh_section_progress(student, section, enrollment):
     """
     After a ContentProgress is saved, recompute whether the parent Section

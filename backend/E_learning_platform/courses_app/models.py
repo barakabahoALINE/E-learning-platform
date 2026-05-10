@@ -2,7 +2,6 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 
-
 User = settings.AUTH_USER_MODEL
 
 
@@ -63,8 +62,6 @@ class Module(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     order = models.PositiveIntegerField()
-    # End-of-module quiz — optional JSONField
-    quiz = models.JSONField(blank=True, null=True)
 
     class Meta:
         unique_together = ("course", "order")
@@ -101,7 +98,6 @@ class Content(models.Model):
         ("file", "File"),
         ("text", "Text"),
         ("shell", "Shell"),
-        ("quiz", "Quiz"),
     )
 
     section = models.ForeignKey(
@@ -117,7 +113,6 @@ class Content(models.Model):
     video_url = models.URLField(blank=True, null=True)
     text_content= models.TextField(blank=True, null=True)   # text & shell
     file = models.FileField(upload_to="content_files/", blank=True, null=True)
-    quiz = models.JSONField(blank=True, null=True)
     is_preview = models.BooleanField(default=False)
     order = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -136,76 +131,3 @@ class MediaUpload(models.Model):
 
     def __str__(self):
         return f"Upload {self.id} - {self.file.name}"
-    
-    
-    
-class Quiz(models.Model):
-    module = models.OneToOneField(
-        Module,
-        on_delete=models.CASCADE,
-        related_name="module_quiz"   # 🔥 FIX: avoid conflict
-    )
-    title = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    pass_mark = models.IntegerField(default=70)
-    def __str__(self):
-        return self.title
-
-
-class Question(models.Model):
-    quiz = models.ForeignKey(
-        Quiz,
-        on_delete=models.CASCADE,
-        related_name="questions"
-    )
-    text = models.TextField()
-    mark = models.PositiveIntegerField(default=1)
-
-    def __str__(self):
-        return self.text
-
-
-class Option(models.Model):
-    question = models.ForeignKey(
-        Question,
-        on_delete=models.CASCADE,
-        related_name="options"
-    )
-    text = models.CharField(max_length=255)
-    is_correct = models.BooleanField(default=False)
-
-    def __str__(self):
-        return self.text
-
-
-class Attempt(models.Model):
-    student = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="quiz_attempts"   # 🔥 FIX: avoid clash with other app
-    )
-    quiz = models.ForeignKey(
-        Quiz,
-        on_delete=models.CASCADE,
-        related_name="attempts"
-    )
-    score = models.FloatField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
-    passed = models.BooleanField(default=False)  # 👈 ongeraho iri
-
-
-class StudentAnswer(models.Model):
-    attempt = models.ForeignKey(
-        Attempt,
-        on_delete=models.CASCADE,
-        related_name="answers"
-    )
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    selected_option = models.ForeignKey(
-        Option,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True
-    )
-    is_correct = models.BooleanField(default=False)
-

@@ -6,23 +6,9 @@ from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from .models import Content, Section, Module, Course, Level, Category
 from .permissions import IsAdmin
-from .models import Quiz, Attempt, StudentAnswer, Option, Question
-from .serializers import QuizSerializer, SubmitQuizSerializer
 from rest_framework.exceptions import ValidationError
 from .models import Content, Section, Module, Course
-from .serializers import (
-    CourseCreateUpdateSerializer,
-    CourseListSerializer,
-    CourseDetailSerializer,
-    ModuleSerializer,
-    SectionSerializer,
-    ContentCreateUpdateSerializer,
-    ContentListSerializer,
-    ContentDetailSerializer,
-    LevelSerializer,        # ✅ ADD THIS
-    CategorySerializer 
-)
-
+from .serializers import *
 
 # ═══════════════════════════════════════════════
 # COURSE VIEWS  (unchanged logic, updated names)
@@ -337,6 +323,44 @@ class ContentRetrieveAPIView(generics.RetrieveAPIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+class ModuleContentsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, module_id):
+
+        module = get_object_or_404(Module, id=module_id)
+
+        contents = Content.objects.filter(
+            section__module=module
+        ).select_related(
+            "section"
+        ).order_by(
+            "section__order",
+            "order"
+        )
+
+        data = [
+            {
+                "id": content.id,
+                "title": content.title,
+                "content_type": content.content_type,
+                "description": content.description,
+                "video_url": content.video_url,
+                "text_content": content.text_content,
+                "file": content.file.url if content.file else None,
+                "order": content.order,
+                "section_id": content.section.id,
+                "section_title": content.section.title,
+            }
+            for content in contents
+        ]
+
+        return Response({
+            "success": True,
+            "module_id": module.id,
+            "module_title": module.title,
+            "contents": data
+        })
 
 class ContentUpdateAPIView(generics.UpdateAPIView):
     serializer_class = ContentCreateUpdateSerializer
@@ -378,206 +402,6 @@ class ContentDeleteAPIView(generics.DestroyAPIView):
                 {"success": False, "message": "Failed to delete content", "errors": str(e)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-##--------   addeed APIS related to QUIZ -----------
-
-class QuizCreateAPIView(APIView):
-     permission_classes = [IsAuthenticated]
-     
-     def post(self, request, course_id, module_id):
-        data = request.data
-
-        module = get_object_or_404(
-            Module,
-            id=module_id,
-            course_id=course_id
-        )
-
-        # Prevent multiple quizzes per module
-        if Quiz.objects.filter(module=module).exists():
-            return Response({
-                "success": False,
-                "message": "This module already has a quiz"
-            }, status=400)
-
-        quiz = Quiz.objects.create(
-            module=module,
-            title=data.get("title"),
-            description=data.get("description", ""),
-            pass_mark=data.get("pass_mark", 70)
-        )
-
-        # QUESTIONS LOOP
-        for q in data.get("questions", []):
-
-            question = Question.objects.create(
-                quiz=quiz,
-                text=q["text"],
-                mark=q.get("mark", 1)
-            )
-
-            # OPTIONS LOOP
-            for opt in q.get("options", []):
-                Option.objects.create(
-                    question=question,
-                    text=opt["text"],
-                    is_correct=opt.get("is_correct", False)
-                )
-
-        return Response({
-            "success": True,
-            "message": "Quiz created successfully",
-            "quiz_id": quiz.id,
-            "module_id": module.id
-        }, status=201)
-
-
-
-
-
-class QuizDetailAPIView(generics.RetrieveAPIView):
-    permission_classes = [IsAuthenticated]
-    queryset = Quiz.objects.all()
-
-    def get(self, request, course_id, module_id):
-        quiz = get_object_or_404(Quiz, module_id=module_id)
-
-        data = {
-            "id": quiz.id,
-            "title": quiz.title,
-            "description": quiz.description,
-            "questions": [
-                {
-                    "id": q.id,
-                    "text": q.text,
-                    "mark": q.mark,
-                    "options": [
-                        {"id": o.id, "text": o.text}
-                        for o in q.options.all()
-                    ]
-                }
-                for q in quiz.questions.all()
-            ]
-        }
-
-        return Response(data)
-    
-    
-class StartAttemptAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-    def post(self, request):
-        quiz_id = request.data.get("quiz_id")
-        quiz = get_object_or_404(Quiz, id=quiz_id)
-
-        # prevent duplicate attempts (optional rule)
-        existing = Attempt.objects.filter(
-            student=request.user,
-            quiz=quiz
-        ).first()
-
-        if existing:
-            return Response({
-                "message": "You already attempted this quiz",
-                "attempt_id": existing.id
-            })
-
-        attempt = Attempt.objects.create(
-            student=request.user,
-            quiz=quiz
-        )
-
-        return Response({
-            "attempt_id": attempt.id,
-            "message": "Attempt started"
-        }, status=status.HTTP_201_CREATED)
-    
-# 
-class SubmitQuizAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-    
-    def post(self, request, attempt_id):  # 👈 iri mu URL
-        answers = request.data.get("answers", [])
-
-        attempt = get_object_or_404(Attempt, id=attempt_id, student=request.user)
-
-        total_marks = 0
-        obtained_marks = 0
-
-        for item in answers:
-            question = get_object_or_404(Question, id=item["question"])
-            option = get_object_or_404(Option, id=item["selected_option"])
-            is_correct = option.is_correct
-
-            StudentAnswer.objects.create(
-                attempt=attempt,
-                question=question,
-                selected_option=option,
-                is_correct=is_correct
-            )
-
-            total_marks += question.mark
-            if is_correct:
-                obtained_marks += question.mark
-
-        score = (obtained_marks / total_marks) * 100 if total_marks > 0 else 0
-        passed = score >= attempt.quiz.pass_mark
-        attempt.score = round(score, 2)
-        attempt.passed = passed
-        attempt.save()
-
-        message = "Congratulations! You passed the quiz." if passed else "You failed the quiz. Try again."
-
-        return Response({
-            "success": True,
-            "message": message,
-            "status": "passed" if passed else "failed",
-            "score": attempt.score,
-            "passed": attempt.passed,
-            "total_marks": total_marks,
-            "obtained_marks": obtained_marks
-        })
-
-class AttemptDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, pk):
-        attempt = get_object_or_404(Attempt, id=pk, student=request.user)
-
-        return Response({
-            "quiz": attempt.quiz.title,
-            "score": attempt.score,
-            "passed": attempt.passed,
-            "created_at": attempt.created_at,
-            "answers": [
-                {
-                    "question": a.question.text,
-                    "selected_option": a.selected_option.text if a.selected_option else None,
-                    "is_correct": a.is_correct
-                }
-                # 👇 Hindura studentanswer_set -> StudentAnswer.objects.filter()
-                for a in StudentAnswer.objects.filter(attempt=attempt)
-            ]
-        })
-
-
-class CheckAttemptAPIView(APIView):
-    permission_classes = [IsAuthenticated]  # 👈 ongeraho
-
-    def get(self, request, quiz_id):
-        attempt = Attempt.objects.filter(
-            student=request.user,
-            quiz_id=quiz_id
-        ).first()
-
-        if not attempt:
-            return Response({"attempted": False})
-
-        return Response({
-            "attempted": True,
-            "attempt_id": attempt.id,
-            "score": attempt.score,
-            "passed": attempt.passed
-        })
-        
 
         
 class LevelListAPIView(generics.ListAPIView):
@@ -613,6 +437,26 @@ class LevelListAPIView(generics.ListAPIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class LevelCreateAPIView(generics.CreateAPIView):
+    serializer_class = LevelSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            return Response(
+                {"success": True, "message": "Level created successfully", "data": serializer.data},
+                status=status.HTTP_201_CREATED,
+            )
+        except ValidationError as e:
+            return Response(
+                {"success": False, "message": "Validation error", "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
 class CategoryListAPIView(generics.ListAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -644,6 +488,26 @@ class CategoryListAPIView(generics.ListAPIView):
                 "message": "Failed to retrieve categories",
                 "error": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CategoryCreateAPIView(generics.CreateAPIView):
+    serializer_class = CategorySerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            return Response(
+                {"success": True, "message": "Category created successfully", "data": serializer.data},
+                status=status.HTTP_201_CREATED,
+            )
+        except ValidationError as e:
+            return Response(
+                {"success": False, "message": "Validation error", "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         
     
 
