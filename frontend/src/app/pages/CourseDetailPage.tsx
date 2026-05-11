@@ -33,36 +33,33 @@ import {
 } from "lucide-react";
 import { fetchCourseDetails, fetchCategories, fetchLevels } from "../../features/courses/courseSlice";
 import { fetchMyEnrollments, enrollInCourse } from "../../features/enrollments/enrollmentSlice";
-import { fetchCourseProgress, startLearning, continueLearning } from "../../features/progress/progressSlice";
+import { fetchCourseProgress, startLearning, continueLearning, fetchCourseModulesProgress } from "../../features/progress/progressSlice";
 import { MainLayout } from "../components/MainLayout";
 import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
+import { getMediaUrl } from "../utils/media";
 
 export const CourseDetailPage: React.FC = () => {
   const { courseId } = useParams();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
 
-  const { currentCourse: course, isLoading: isCourseLoading, categories, levels } = useAppSelector((state) => state.courses);
+  const { currentCourse: course, isLoading: isCourseLoading, categories, levels, status: courseStatus } = useAppSelector((state) => state.courses);
   
-  const getImageUrl = (url: string | null | undefined) => {
-    if (!url) return "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80";
-    if (url.startsWith("http")) return url;
-    return `http://localhost:8000${url}`;
-  };
-
   const { myEnrollments, loading: isEnrollmentLoading } = useAppSelector((state) => state.enrollments);
-  const { courseProgress } = useAppSelector((state) => state.progress);
+  const { courseProgress, courseModulesProgress } = useAppSelector((state) => state.progress);
   const { user } = useAppSelector((state) => state.auth);
 
   const numericCourseId = Number(courseId);
   const isEnrolled = myEnrollments.some((e) => e.course === numericCourseId);
   const progress = courseProgress[numericCourseId];
+  const isCurrentCourseLoaded = Boolean(course && Number(course.id) === numericCourseId);
 
   useEffect(() => {
     if (numericCourseId) {
       dispatch(fetchCourseDetails(numericCourseId));
       dispatch(fetchCourseProgress(numericCourseId));
+      dispatch(fetchCourseModulesProgress(numericCourseId));
     }
   }, [dispatch, numericCourseId]);
 
@@ -77,7 +74,20 @@ export const CourseDetailPage: React.FC = () => {
     if (levels.length === 0) dispatch(fetchLevels());
   }, [dispatch]);
 
-  if (isCourseLoading && !course) {
+  if (courseStatus === "failed" && !isCurrentCourseLoaded) {
+    return (
+      <MainLayout>
+        <div className="text-center py-12">
+          <h2 className="text-2xl mb-4">Course not found</h2>
+          <Link to="/courses">
+            <Button>Browse Courses</Button>
+          </Link>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (isCourseLoading || !isCurrentCourseLoaded) {
     return (
       <MainLayout>
         <div className="flex flex-col items-center justify-center py-20">
@@ -127,12 +137,20 @@ export const CourseDetailPage: React.FC = () => {
       console.error("Failed to update learning session:", error);
     }
 
-    const firstLesson = course.lessons?.[0];
-    const firstContent = firstLesson?.contents?.[0];
-    if (firstLesson && firstContent) {
-      navigate(`/lesson/${course.id}/${firstLesson.id}/${firstContent.id}`);
-    } else if (firstLesson) {
-      navigate(`/lesson/${course.id}/${firstLesson.id}`);
+    // Smart resume navigation - find the first incomplete module
+    const modulesProgress = courseModulesProgress[numericCourseId] || [];
+    const incompleteModuleProgress = modulesProgress.find(m => !m.module_completed);
+    
+    let targetModule = course.modules?.[0];
+    if (incompleteModuleProgress) {
+      const foundModule = course.modules?.find(m => Number(m.id) === Number(incompleteModuleProgress.module_id));
+      if (foundModule) {
+        targetModule = foundModule;
+      }
+    }
+    
+    if (targetModule) {
+      navigate(`/learning/${course.id}/${targetModule.id}`);
     }
   };
 
@@ -140,14 +158,20 @@ export const CourseDetailPage: React.FC = () => {
     navigate(`/certificate/${course.id}`);
   };
 
-  const totalLessons = course.lessons?.length || 0;
-  const totalContents = course.lessons?.reduce(
-    (sum, lesson) => sum + (lesson.contents?.length || 0),
+  const totalModules = course.modules?.length || 0;
+  const totalItems = course.modules?.reduce(
+    (sum, module) => sum + module.sections.reduce((sSum, section) => sSum + (section.contents?.length || 0), 0),
     0,
   ) || 0;
 
-  const categoryName = categories.find(c => c.id === course.category)?.name || "Uncategorized";
-  const levelName = levels.find(l => l.id === course.level)?.name || "All Levels";
+  const categoryName =
+    (typeof course.category === "string" && course.category) ||
+    categories.find(c => c.id === course.category_id || c.id === Number(course.category))?.name ||
+    "Uncategorized";
+  const levelName =
+    (typeof course.level === "string" && course.level) ||
+    levels.find(l => l.id === course.level_id || l.id === Number(course.level))?.name ||
+    "All Levels";
 
   return (
     <MainLayout>
@@ -165,7 +189,7 @@ export const CourseDetailPage: React.FC = () => {
           <div className="lg:col-span-2">
             <div className="relative rounded-xl overflow-hidden mb-6 group">
               <img
-                src={getImageUrl(course.thumbnail)}
+                src={getMediaUrl(course.thumbnail)}
                 alt={course.title}
                 className="w-full h-[400px] object-cover transition-transform duration-500 group-hover:scale-105"
               />
@@ -210,11 +234,11 @@ export const CourseDetailPage: React.FC = () => {
                   <CardContent className="p-6">
                     <h3 className="text-xl mb-4">What you'll learn</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                      {course.lessons && course.lessons.length > 0 ? (
-                        course.lessons.map((lesson) => (
-                          <div key={lesson.id} className="flex items-start space-x-2">
+                      {course.modules && course.modules.length > 0 ? (
+                        course.modules.map((module) => (
+                          <div key={module.id} className="flex items-start space-x-2">
                             <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                            <span className="text-sm">{lesson.title}</span>
+                            <span className="text-sm font-medium">{module.title}</span>
                           </div>
                         ))
                       ) : (
@@ -236,10 +260,10 @@ export const CourseDetailPage: React.FC = () => {
                         </div>
                         <div>
                           <div className="text-sm text-gray-600">
-                            Total Lessons
+                            Total Modules
                           </div>
                           <div className="font-medium">
-                            {totalLessons} lessons
+                            {totalModules} modules
                           </div>
                         </div>
                       </div>
@@ -278,51 +302,33 @@ export const CourseDetailPage: React.FC = () => {
               </TabsContent>
 
               <TabsContent value="curriculum" className="mt-6">
-                <Card className="border-none shadow-sm">
+                <Card>
                   <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-xl font-bold">Course Curriculum</h3>
-                      <div className="text-sm text-gray-500">
-                        {totalLessons} {totalLessons === 1 ? "lesson" : "lessons"} • {totalContents} {totalContents === 1 ? "item" : "items"}
-                      </div>
-                    </div>
-                    <Accordion type="single" collapsible className="w-full space-y-3">
-                      {course.lessons?.map((lesson, index) => (
-                        <AccordionItem key={lesson.id} value={`lesson-${lesson.id}`} className="border rounded-xl px-4 overflow-hidden">
-                          <AccordionTrigger className="hover:no-underline py-4 cursor-pointer">
-                            <div className="flex items-center justify-between w-full pr-4 text-left">
-                              <span className="font-bold text-gray-800">
-                                {index + 1}. {lesson.title}
-                              </span>
-                              <div className="flex items-center space-x-4 text-sm text-gray-600 font-normal">
-                                <span className="bg-gray-100 px-2 py-1 rounded">{lesson.contents?.length || 0} {lesson.contents?.length === 1 ? "item" : "items"}</span>
+                    <h3 className="text-xl mb-4">Course Curriculum</h3>
+                    <Accordion type="single" collapsible className="w-full">
+                      {course.modules?.flatMap((module) => module.sections ?? []).map((section, index) => (
+                        <AccordionItem key={section.id} value={section.id.toString()}>
+                          <AccordionTrigger>
+                            <div className="flex items-center justify-between w-full pr-4">
+                              <span className="font-medium">{index + 1}. {section.title}</span>
+                              <div className="flex items-center space-x-4 text-sm text-gray-600">
+                                <span>{section.contents?.length ?? 0} {section.contents?.length === 1 ? "lesson" : "lessons"}</span>
                               </div>
                             </div>
                           </AccordionTrigger>
                           <AccordionContent>
-                            <div className="space-y-2 pt-2 pb-4">
-                              {lesson.contents?.map((content) => (
+                            <div className="space-y-2 pt-2">
+                              {section.contents?.map((lesson) => (
                                 <div
-                                  key={content.id}
-                                  className="flex items-center justify-between p-3 rounded-xl hover:bg-primary/5 transition-colors border border-transparent hover:border-primary/10"
+                                  key={lesson.id}
+                                  className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50"
                                 >
-                                  <div className="flex items-center space-x-4">
-                                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 text-primary">
-                                      {content.content_type === "video" && <PlayCircle className="w-4 h-4" />}
-                                      {content.content_type === "note" && <FileText className="w-4 h-4" />}
-                                      {content.content_type === "quiz" && <CheckCircle className="w-4 h-4" />}
-                                      {(content.content_type === "file" || content.content_type === "image") && <FileText className="w-4 h-4" />}
-                                    </div>
-                                    <div>
-                                      <p className="text-sm font-medium text-gray-800">{content.title}</p>
-                                      {content.is_preview && <Badge variant="secondary" className="text-[10px] h-4 mt-1">Preview</Badge>}
-                                    </div>
+                                  <div className="flex items-center space-x-3">
+                                      <FileText className="w-5 h-5 text-gray-400" />
+                                    <span className="text-sm">{lesson.title}</span>
                                   </div>
                                 </div>
                               ))}
-                              {(!lesson.contents || lesson.contents.length === 0) && (
-                                <p className="text-sm text-gray-500 italic py-2">No content available in this lesson yet.</p>
-                              )}
                             </div>
                           </AccordionContent>
                         </AccordionItem>
@@ -417,7 +423,7 @@ export const CourseDetailPage: React.FC = () => {
                       </div>
                       <Progress value={progress?.completion_percentage || 0} className="h-2" />
                       <p className="text-xs text-gray-500 text-center">
-                        {progress?.completed_lessons || 0} of {progress?.total_lessons ?? totalLessons} {(progress?.total_lessons ?? totalLessons) === 1 ? "lesson" : "lessons"} completed
+                        {progress?.completed_lessons || 0} of {progress?.total_lessons ?? totalItems} {(progress?.total_lessons ?? totalItems) === 1 ? "item" : "items"} completed
                       </p>
                     </div>
                     <Button
@@ -430,7 +436,7 @@ export const CourseDetailPage: React.FC = () => {
                 ) : (
                   <div className="space-y-6">
                     <div className="text-center py-4 rounded-2xl">
-                      {parseFloat(course.price) === 0 ? (
+                      {Number(course.price) === 0 ? (
                         <div>
                           <div className="text-3xl text-green-600 mb-2">Free</div>
                           <p className="text-sm text-gray-600">Full access to all content</p>
@@ -438,7 +444,7 @@ export const CourseDetailPage: React.FC = () => {
                       ) : (
                         <div className="space-y-1">
                           <div className="text-3xl mb-2">
-                            Frw {parseFloat(course.price).toLocaleString('en-US', {
+                            Frw {Number(course.price).toLocaleString('en-US', {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2
                             })}
@@ -467,8 +473,12 @@ export const CourseDetailPage: React.FC = () => {
                   <h4 className="font-medium mb-3">This course includes:</h4>
                   <div className="space-y-4 text-sm">
                     <div className="flex items-center text-gray-600">
+                      <BookOpen className="w-4 h-4 mr-3 text-primary" />
+                      <span>{totalModules} {totalModules === 1 ? "Module" : "Modules"}</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
                       <FileText className="w-4 h-4 mr-3 text-primary" />
-                      <span>{totalLessons} {totalLessons === 1 ? "Lesson" : "Lessons"}</span>
+                      <span>{totalItems} Learning items</span>
                     </div>
                     <div className="flex items-center text-gray-600">
                       <Smartphone className="w-4 h-4 mr-3 text-primary" />

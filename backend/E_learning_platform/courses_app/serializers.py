@@ -3,13 +3,17 @@ from optparse import Option
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from .models import Course, Module, Section, Content, Level, Category
+from .models import Course, Module, Section, Content, Level, Category, MediaUpload
 import json
+
+class MediaUploadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MediaUpload
+        fields = ['id', 'file', 'uploaded_at']
 
 # Content
 
 class ContentDetailSerializer(serializers.ModelSerializer):
-    section = serializers.StringRelatedField()
 
     class Meta:
         model = Content
@@ -18,9 +22,30 @@ class ContentDetailSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
+        is_admin = True
         if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            is_admin = False
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
+            
+        if is_admin:
+            if instance.draft_title:
+                data['title'] = instance.draft_title
+            if instance.draft_content_type:
+                data['content_type'] = instance.draft_content_type
+            if instance.draft_description:
+                data['description'] = instance.draft_description
+            if instance.draft_video_url:
+                data['video_url'] = instance.draft_video_url
+            if instance.draft_text_content:
+                data['text_content'] = instance.draft_text_content
+            if instance.draft_file:
+                if request and hasattr(instance.draft_file, 'url') and instance.draft_file:
+                    data['file'] = request.build_absolute_uri(instance.draft_file.url)
+                elif hasattr(instance.draft_file, 'url') and instance.draft_file:
+                    data['file'] = instance.draft_file.url
+            if instance.draft_order is not None:
+                data['order'] = instance.draft_order
         return data
 
 
@@ -84,13 +109,27 @@ class SectionSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
+        is_admin = True
         if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            is_admin = False
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
+
+        if is_admin:
+            if instance.draft_title:
+                data['title'] = instance.draft_title
+            if instance.draft_order is not None:
+                data['order'] = instance.draft_order
         return data
 
     def get_contents(self, obj):
-        return ContentDetailSerializer(obj.contents.all(), many=True, context=self.context).data
+        contents = obj.contents.all()
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            contents = contents.filter(is_published=True)
+        else:
+            contents = list(contents)
+        return ContentDetailSerializer(contents, many=True, context=self.context).data
 
     def validate(self, attrs):
         view = self.context.get("view")
@@ -160,22 +199,52 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class ModuleSerializer(serializers.ModelSerializer):
     sections = serializers.SerializerMethodField()
+    quiz = serializers.SerializerMethodField()
+    quizEnabled = serializers.BooleanField(source='quiz_enabled', required=False)
 
     class Meta:
         model = Module
-        fields = ["id", "course", "title", "description", "order", "sections","has_unpublished_changes", "pending_delete", "is_published"]
+        fields = ["id", "course", "title", "description", "order", "sections","has_unpublished_changes", "pending_delete","quizEnabled", "quiz", "is_published"]
         read_only_fields = ["course"]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
+        is_admin = True
         if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            is_admin = False
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
+
+        if is_admin:
+            if instance.draft_title:
+                data['title'] = instance.draft_title
+            if instance.draft_description:
+                data['description'] = instance.draft_description
+            if instance.draft_order is not None:
+                data['order'] = instance.draft_order
         return data
 
     def get_sections(self, obj):
-        return SectionSerializer(obj.sections.all(), many=True, context=self.context).data
+        sections = obj.sections.all()
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            sections = sections.filter(is_published=True)
+        else:
+            sections = list(sections)
+        return SectionSerializer(sections, many=True, context=self.context).data
+
+    def get_quiz(self, obj):
+        from assessments_app.models import Assessment
+        from assessments_app.serializers import AssessmentDetailSerializer
+        quizzes = Assessment.objects.filter(module=obj, assessment_type="QUIZ")
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            quizzes = quizzes.filter(is_published=True)
+        quiz = quizzes.first()
+        if quiz:
+            return AssessmentDetailSerializer(quiz).data
+        return None
 
     def validate(self, attrs):
         view = self.context.get("view")
@@ -262,11 +331,13 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
                         title=module_data.get("title", ""),
                         description=module_data.get("description", ""),
                         order=module_data.get("order", 0),
+                        quiz_enabled=module_data.get("quizEnabled", False),
                     )
                 else:
                     module.title = module_data.get("title", module.title)
                     module.description = module_data.get("description", module.description)
                     module.order = module_data.get("order", module.order)
+                    module.quiz_enabled = module_data.get("quizEnabled", module.quiz_enabled)
                     module.save()
 
                 # ── sections inside module ─────────────────────────────
@@ -331,15 +402,6 @@ class CourseListSerializer(serializers.ModelSerializer):
     level = serializers.CharField(source="level.name", read_only=True)
 
     modules_count = serializers.SerializerMethodField()
-    category_name = serializers.CharField(
-        source="category.name",
-        read_only=True
-    )
-
-    level_name = serializers.CharField(
-        source="level.name",
-        read_only=True
-    )
 
     class Meta:
         model = Course
@@ -350,9 +412,9 @@ class CourseListSerializer(serializers.ModelSerializer):
             "duration",
             "price",
             "category",
-            "category_name",
+            "category_id",
             "level",
-            "level_name",
+            # "level_name",
             "thumbnail",
             "is_published",
             "admin",
@@ -364,11 +426,61 @@ class CourseListSerializer(serializers.ModelSerializer):
     def get_modules_count(self, obj):
         return obj.modules.count()
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        is_admin = True
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            is_admin = False
+
+        if is_admin:
+            if instance.draft_title:
+                data['title'] = instance.draft_title
+            if instance.draft_description:
+                data['description'] = instance.draft_description
+            if instance.draft_duration:
+                data['duration'] = instance.draft_duration
+            if instance.draft_level:
+                data['level'] = instance.draft_level.name
+            if instance.draft_category:
+                data['category'] = instance.draft_category.name
+            if instance.draft_thumbnail:
+                if request and hasattr(instance.draft_thumbnail, 'url') and instance.draft_thumbnail:
+                    data['thumbnail'] = request.build_absolute_uri(instance.draft_thumbnail.url)
+                elif hasattr(instance.draft_thumbnail, 'url') and instance.draft_thumbnail:
+                    data['thumbnail'] = instance.draft_thumbnail.url
+            if instance.draft_price is not None:
+                data['price'] = str(instance.draft_price)
+        return data
+
 class CourseDetailSerializer(serializers.ModelSerializer):
     modules = serializers.SerializerMethodField()
+    final_assessment = serializers.SerializerMethodField()
 
     category = serializers.CharField(source="category.name", read_only=True)
     level = serializers.CharField(source="level.name", read_only=True)
+
+    def get_modules(self, obj):
+        modules = obj.modules.all()
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            modules = modules.filter(is_published=True)
+        else:
+            modules = list(modules)
+        return ModuleSerializer(modules, many=True, context=self.context).data
+
+    def get_final_assessment(self, obj):
+        from assessments_app.models import Assessment
+        from assessments_app.serializers import AssessmentDetailSerializer
+        finals = Assessment.objects.filter(course=obj, assessment_type="FINAL")
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            finals = finals.filter(is_published=True)
+        final = finals.first()
+        if final:
+            return AssessmentDetailSerializer(final).data
+        
+        return obj.final_assessment if obj.final_assessment else None
 
     class Meta:
         model = Course
@@ -378,13 +490,40 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
+        is_admin = True
         if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            is_admin = False
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
+
+        if is_admin:
+            if instance.draft_title:
+                data['title'] = instance.draft_title
+            if instance.draft_description:
+                data['description'] = instance.draft_description
+            if instance.draft_duration:
+                data['duration'] = instance.draft_duration
+            if instance.draft_level:
+                data['level'] = instance.draft_level.name
+            if instance.draft_category:
+                data['category'] = instance.draft_category.name
+            if instance.draft_thumbnail:
+                if request and hasattr(instance.draft_thumbnail, 'url') and instance.draft_thumbnail:
+                    data['thumbnail'] = request.build_absolute_uri(instance.draft_thumbnail.url)
+                elif hasattr(instance.draft_thumbnail, 'url') and instance.draft_thumbnail:
+                    data['thumbnail'] = instance.draft_thumbnail.url
+            if instance.draft_price is not None:
+                data['price'] = str(instance.draft_price)
         return data
 
     def get_modules(self, obj):
-        return ModuleSerializer(obj.modules.all(), many=True, context=self.context ).data
+        modules = obj.modules.all()
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            modules = modules.filter(is_published=True)
+        else:
+            modules = list(modules)
+        return ModuleSerializer(modules, many=True, context=self.context ).data
 
 # Level / Category
 

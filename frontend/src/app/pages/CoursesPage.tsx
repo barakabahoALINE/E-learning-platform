@@ -28,16 +28,11 @@ import {
 import { fetchCourses, fetchCategories, fetchLevels } from "../../features/courses/courseSlice";
 import { Category, Level } from "../../features/courses/types";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
+import { getMediaUrl } from "../utils/media";
 
 export const CoursesPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const { courses, categories, levels, isLoading } = useAppSelector((state) => state.courses);
-  
-  const getImageUrl = (url: string | null | undefined) => {
-    if (!url) return "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80";
-    if (url.startsWith("http")) return url;
-    return `http://localhost:8000${url}`;
-  };
   
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -78,12 +73,10 @@ export const CoursesPage: React.FC = () => {
       course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       course.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesCategory = !selectedCategory || course.category === selectedCategory;
+    const matchesCategory = !selectedCategory || Number(course.category_id) === selectedCategory;
+    const matchesLevel = selectedLevels.length === 0 || (course.level_id !== undefined && course.level_id !== null && selectedLevels.includes(Number(course.level_id)));
 
-    const matchesLevel =
-      selectedLevels.length === 0 || (course.level !== null && selectedLevels.includes(course.level));
-
-    const isFree = parseFloat(course.price) === 0;
+    const isFree = Number(course.price) === 0;
     const matchesPrice =
       priceFilter === "all" ||
       (priceFilter === "free" && isFree) ||
@@ -94,9 +87,9 @@ export const CoursesPage: React.FC = () => {
 
   const sortedCourses = [...filteredCourses].sort((a, b) => {
     if (sortBy === "popular") return (b.enrolled_students_count || 0) - (a.enrolled_students_count || 0);
-    if (sortBy === "newest") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    if (sortBy === "price-low") return parseFloat(a.price) - parseFloat(b.price);
-    if (sortBy === "price-high") return parseFloat(b.price) - parseFloat(a.price);
+    if (sortBy === "newest") return new Date(b.created_at || "").getTime() - new Date(a.created_at || "").getTime();
+    if (sortBy === "price-low") return a.price - b.price;
+    if (sortBy === "price-high") return b.price - a.price;
     return 0;
   });
 
@@ -264,11 +257,11 @@ export const CoursesPage: React.FC = () => {
                     <CardContent className="p-0">
                       <div className="relative">
                         <img
-                          src={getImageUrl(course.thumbnail)}
+                          src={getMediaUrl(course.thumbnail)}
                           alt={course.title}
                           className="w-full h-48 object-cover rounded-t-lg"
                         />
-                        {parseFloat(course.price) === 0 && (
+                        {Number(course.price) === 0 && (
                           <Badge className="absolute top-3 right-3 bg-green-600">
                             Free
                           </Badge>
@@ -276,7 +269,7 @@ export const CoursesPage: React.FC = () => {
                       </div>
                       <div className="p-4">
                         <Badge variant="secondary" className="mb-2">
-                          {categories.find(c => c.id === course.category)?.name || "Uncategorized"}
+                          {categories.find(c => c.id === course.category_id)?.name || "Uncategorized"}
                         </Badge>
                         <h3 className="font-medium mb-2 line-clamp-2">
                           {course.title}
@@ -313,13 +306,13 @@ export const CoursesPage: React.FC = () => {
 
                         <div className="flex items-center justify-between pt-3 border-t">
                           <Badge variant="outline">
-                            {levels.find(l => l.id === course.level)?.name || "All Levels"}
+                            {levels.find(l => l.id === course.level_id)?.name || "All Levels"}
                           </Badge>
                           <div className="font-medium">
-                            {parseFloat(course.price) === 0 ? (
+                            {Number(course.price) === 0 ? (
                               <span className="text-green-600">Free</span>
                             ) : (
-                              <span>Frw {parseFloat(course.price).toLocaleString('en-US', {
+                              <span>Frw {Number(course.price).toLocaleString('en-US', {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2
                             })}</span>

@@ -12,10 +12,11 @@ import {
 } from "../components/ui/card";
 import { Separator } from "../components/ui/separator";
 import { Checkbox } from "../components/ui/checkbox";
-import { User, Mail, Lock, Chrome, Github, Building2, ExternalLink, Eye, EyeOff } from "lucide-react";
+import { User, Mail, Lock, Github, Building2, ExternalLink, Eye, EyeOff } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
-import { signup, resetStatus, clearError } from "../../features/auth/authSlice";
+import { signup, googleLogin, resetStatus, clearError } from "../../features/auth/authSlice";
 import { selectAuthLoading, selectAuthError, selectAuthStatus } from "../../features/auth/authSelectors";
+import { GoogleLogin } from "@react-oauth/google";
 import Logo from "../assets/R.png";
 import Loader from "../components/ui/Loader";
 import StatusModal from "../components/ui/StatusModal";
@@ -31,6 +32,7 @@ export const SignupPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [hasActuallyReadTerms, setHasActuallyReadTerms] = useState(false);
+  const [isGoogleAuth, setIsGoogleAuth] = useState(false);
 
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
@@ -40,14 +42,19 @@ export const SignupPage: React.FC = () => {
   const status = useAppSelector(selectAuthStatus);
 
   useEffect(() => {
-    if (status === 'succeeded' || status === 'failed') {
+    if (status === 'failed') {
+      setIsModalOpen(true);
+    } else if (status === 'succeeded' && isGoogleAuth) {
+      navigate("/dashboard");
+    } else if (status === 'succeeded') {
       setIsModalOpen(true);
     }
-  }, [status]);
+  }, [status, isGoogleAuth, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (acceptTerms && hasActuallyReadTerms) {
+      setIsGoogleAuth(false);
       dispatch(signup({ full_name: name, email, institution, password }));
     }
   };
@@ -82,10 +89,6 @@ export const SignupPage: React.FC = () => {
     setHasActuallyReadTerms(true);
     setAcceptTerms(true);
     setIsTermsModalOpen(false);
-  };
-
-  const handleSocialSignup = (provider: string) => {
-    console.log(`Social signup with ${provider}`);
   };
 
   return (
@@ -246,20 +249,22 @@ export const SignupPage: React.FC = () => {
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="min-w-0">
+                  <GoogleLogin
+                    onSuccess={(credentialResponse) => {
+                      if (credentialResponse.credential) {
+                        setIsGoogleAuth(true);
+                        dispatch(googleLogin(credentialResponse.credential));
+                      }
+                    }}
+                    onError={() => setIsModalOpen(true)}
+                    width="100%"
+                  />
+                </div>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => handleSocialSignup("google")}
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  <Chrome className="mr-2 h-4 w-4" />
-                  Google
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleSocialSignup("github")}
+                  onClick={() => setIsModalOpen(true)}
                   className="w-full"
                   disabled={isLoading}
                 >

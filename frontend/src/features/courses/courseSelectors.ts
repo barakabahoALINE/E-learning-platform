@@ -45,9 +45,3 @@ export const selectCourseById = (state: RootState, courseId: number | null) => {
   if (!courseId) return null;
   return state.courses.courses.find((course) => course.id === courseId) || null;
 };
-
-// Parameterized selector to check for unpublished changes
-export const selectHasUnpublishedChanges = (state: RootState, courseId: number | null) => {
-  if (!courseId) return false;
-  return state.courses.unpublishedChanges[courseId] || false;
-};

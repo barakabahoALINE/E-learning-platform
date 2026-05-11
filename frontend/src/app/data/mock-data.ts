@@ -1,5 +1,17 @@
 // Mock data for the e-learning platform
 
+export interface LearningHistoryItem {
+  courseId: string;
+  courseName: string;
+  status: 'in-progress' | 'completed';
+  progress: number; // 0-100
+  lastAccessedAt: string;
+  completedAt?: string;
+  certificateUrl?: string;
+  thumbnail?: string;
+  category?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -13,6 +25,7 @@ export interface User {
   learningGoals?: string[];
   skillLevel?: string;
   learningPace?: string;
+  learningHistory: LearningHistoryItem[];
 }
 
 export interface Course {
@@ -363,13 +376,21 @@ export const mockQuiz: Quiz = {
 
 export const mockUser: User = {
   id: '1',
-  name: 'Prince GATAMBA',
-  email: 'prince.gatamba@example.com',
-  avatar: '',
+  name: 'Alex Thompson',
+  email: 'alex.thompson@example.com',
+  avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400',
   role: 'student',
   enrolledCourses: ['1', '2'],
   completedCourses: [],
   completedLessons: [],
+  completedSubChapters: [
+    { courseId: '1', subChapterId: '1-1-1' },
+    { courseId: '1', subChapterId: '1-1-2' },
+  ],
+  completedChapters: [],
+  completedModules: [],
+  completedModuleQuizzes: [],
+  courseFeedback: [],
   achievements: [
     {
       id: 'a1',
@@ -386,7 +407,47 @@ export const mockUser: User = {
       unlockedAt: '2026-01-20',
     },
   ],
+  learningHistory: [
+    {
+      courseId: '1',
+      courseName: 'Complete Web Development Bootcamp',
+      status: 'in-progress',
+      progress: 18,
+      lastAccessedAt: '2026-04-22T14:30:00Z',
+      thumbnail: 'https://images.unsplash.com/photo-1637937459053-c788742455be?w=800',
+      category: 'Web Development',
+    },
+    {
+      courseId: '2',
+      courseName: 'Data Science and Machine Learning',
+      status: 'in-progress',
+      progress: 5,
+      lastAccessedAt: '2026-04-20T10:15:00Z',
+      thumbnail: 'https://images.unsplash.com/photo-1666875753105-c63a6f3bdc86?w=800',
+      category: 'Data Science',
+    },
+  ],
+  lastVisited: [
+    { courseId: '1', moduleId: 'module-1-1', chapterId: '1-1', subChapterId: '1-1-3' },
+  ],
   learningGoals: ['Web Development', 'Data Science'],
   skillLevel: 'Beginner',
   learningPace: '5-10 hours/week',
+  savedCode: [],
+  quizAttempts: [],
+  assessmentAttempts: [],
+  engagedContent: [],
+  completedFinalAssessments: [],
+  subscription: null,
+  paymentMethods: [],
+  billingHistory: [],
+  privacyPreferences: {
+    profileVisible: true,
+    certificatesVisible: true,
+  },
+  notificationPreferences: {
+    email: true,
+    courseUpdates: true,
+    marketing: false,
+  },
 };

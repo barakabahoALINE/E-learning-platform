@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from './components/ui/sonner';
 import { AppProvider } from './context/AppContext';
 import { DataProvider } from './context/DataContext';
+import { ThemeProvider } from 'next-themes';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { useAppSelector } from '../hooks/reduxHooks';
 import { selectIsAuthenticated, selectCurrentUser } from '../features/auth/authSelectors';
 
@@ -22,6 +24,7 @@ import { CoursesPage } from './pages/CoursesPage';
 import { CourseDetailPage } from './pages/CourseDetailPage';
 import { LessonPage } from './pages/LessonPage';
 import { QuizPage } from './pages/QuizPage';
+import { FinalAssessmentPage } from './pages/FinalAssessmentPage';
 import { CertificatePage } from './pages/CertificatePage';
 import { PricingPage } from './pages/PricingPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -160,7 +163,7 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/lesson/:courseId/:lessonId/:contentId?"
+          path="/learning/:courseId/:moduleId"
           element={
             <ProtectedRoute>
               <LessonPage />
@@ -168,10 +171,18 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/quiz/:courseId/:lessonId"
+          path="/learning/:courseId/quiz/:moduleId"
           element={
             <ProtectedRoute>
               <QuizPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/learning/:courseId/final-assessment"
+          element={
+            <ProtectedRoute>
+              <FinalAssessmentPage />
             </ProtectedRoute>
           }
         />
@@ -235,11 +246,23 @@ function AppRoutes() {
 }
 
 export default function App() {
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "979040117820-9qgcmv76nbqpa250ioal8qf3mj54un9t.apps.googleusercontent.com";
+
   return (
-    <AppProvider>
-      <DataProvider>
-        <AppRoutes />
-      </DataProvider>
-    </AppProvider>
+    <GoogleOAuthProvider clientId={googleClientId}>
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="light"
+        enableSystem
+        storageKey="learnhub-theme"
+        disableTransitionOnChange={false}
+      >
+        <AppProvider>
+          <DataProvider>
+            <AppRoutes />
+          </DataProvider>
+        </AppProvider>
+      </ThemeProvider>
+    </GoogleOAuthProvider>
   );
 }

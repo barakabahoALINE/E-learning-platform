@@ -6,6 +6,7 @@ import { logout } from "../../../features/auth/authSlice";
 import { useData } from "../../context/DataContext";
 import { useNavigate } from "react-router-dom";
 import { NotificationPanel } from "../notifications/NotificationPanel";
+import { ThemeToggle } from "../ThemeToggle";
 
 interface Notification {
   id: number;
@@ -123,6 +124,8 @@ export function TopNav() {
               )}
             </button>
           </div>
+
+          {/* <ThemeToggle /> */}
 
           {/* User Profile Dropdown */}
           <div className="relative">

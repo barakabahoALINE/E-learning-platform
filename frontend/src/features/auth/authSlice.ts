@@ -12,10 +12,23 @@ interface AuthState {
 }
 
 const extractErrorMessage = (errorData: ErrorResponse | string | unknown): string => {
-  if (typeof errorData === 'string') return errorData;
+  if (typeof errorData === 'string') {
+    const trimmed = errorData.trim();
+    if (trimmed.startsWith('<') || trimmed.includes('<!DOCTYPE') || trimmed.includes('<html')) {
+      return 'A server error occurred. Please try again later.';
+    }
+    return errorData;
+  }
   if (!errorData) return 'An unknown error occurred';
   
-  const err = errorData as ErrorResponse;
+  const err = errorData as any;
+  
+  if (err.message && typeof err.message === 'string') {
+    return err.message;
+  }
+  if (err.detail && typeof err.detail === 'string') {
+    return err.detail;
+  }
   
   // DRF returns { non_field_errors: [...] }
   if (err.non_field_errors && Array.isArray(err.non_field_errors)) {
@@ -36,6 +49,10 @@ const extractErrorMessage = (errorData: ErrorResponse | string | unknown): strin
   }
   
   return String(errorData);
+};
+
+const isSuccessResponse = (success: string | boolean | undefined): boolean => {
+  return success === true || success === 'True' || success === 'true';
 };
 
 const initialState: AuthState = {
@@ -65,7 +82,7 @@ export const login = createAsyncThunk<LoginResponseData, LoginCredentials>(
   async (credentials, { rejectWithValue }) => {
     try {
       const response = await authAPI.login(credentials);
-      if (response.success === "True") {
+      if (isSuccessResponse(response.success)) {
         const { user, access, refresh } = response.data;
         localStorage.setItem('e-learning-user', JSON.stringify(user));
         localStorage.setItem('e-learning-access_token', access);
@@ -77,6 +94,27 @@ export const login = createAsyncThunk<LoginResponseData, LoginCredentials>(
     } catch (error: any) {
       const message = extractErrorMessage(error.response?.data?.message || error.response?.data || error.message);
       return rejectWithValue(message || 'Login failed');
+    }
+  }
+);
+
+export const googleLogin = createAsyncThunk<LoginResponseData, string>(
+  'auth/googleLogin',
+  async (credential, { rejectWithValue }) => {
+    try {
+      const response = await authAPI.googleLogin(credential);
+      if (isSuccessResponse(response.success)) {
+        const { user, access, refresh } = response.data;
+        localStorage.setItem('e-learning-user', JSON.stringify(user));
+        localStorage.setItem('e-learning-access_token', access);
+        localStorage.setItem('e-learning-refresh_token', refresh);
+        return { user, access, refresh };
+      }
+      const message = extractErrorMessage(response.message || 'Google login failed');
+      return rejectWithValue(message);
+    } catch (error: any) {
+      const message = extractErrorMessage(error.response?.data?.message || error.response?.data || error.message);
+      return rejectWithValue(message || 'Google login failed');
     }
   }
 );
@@ -141,6 +179,45 @@ export const resetPassword = createAsyncThunk<any, { uid: string; token: string;
   }
 );
 
+export const updateProfileName = createAsyncThunk<User, string>(
+  'auth/updateProfileName',
+  async (fullName, { getState, rejectWithValue }) => {
+    try {
+      const response = await authAPI.updateName(fullName);
+      const state = getState() as { auth: AuthState };
+      const updatedUser = {
+        ...state.auth.user,
+        full_name: response.data.full_name,
+      } as User;
+      localStorage.setItem('e-learning-user', JSON.stringify(updatedUser));
+      return updatedUser;
+    } catch (error: any) {
+      const message = extractErrorMessage(error.response?.data?.errors || error.response?.data?.message || error.response?.data || error.message);
+      return rejectWithValue(message || 'Profile update failed');
+    }
+  }
+);
+
+export const updateProfilePicture = createAsyncThunk<User, File>(
+  'auth/updateProfilePicture',
+  async (file, { getState, rejectWithValue }) => {
+    try {
+      const response = await authAPI.updateProfilePicture(file);
+      const state = getState() as { auth: AuthState };
+      const updatedUser = {
+        ...state.auth.user,
+        profile_picture: response.data.profile_picture,
+        avatar: response.data.profile_picture,
+      } as User;
+      localStorage.setItem('e-learning-user', JSON.stringify(updatedUser));
+      return updatedUser;
+    } catch (error: any) {
+      const message = extractErrorMessage(error.response?.data?.errors || error.response?.data?.message || error.response?.data || error.message);
+      return rejectWithValue(message || 'Profile picture update failed');
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -181,6 +258,23 @@ const authSlice = createSlice({
         state.refreshToken = action.payload.refresh;
       })
       .addCase(login.rejected, (state, action) => {
+        state.isLoading = false;
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+      .addCase(googleLogin.pending, (state) => {
+        state.isLoading = true;
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(googleLogin.fulfilled, (state, action: PayloadAction<LoginResponseData>) => {
+        state.isLoading = false;
+        state.status = 'succeeded';
+        state.user = action.payload.user;
+        state.accessToken = action.payload.access;
+        state.refreshToken = action.payload.refresh;
+      })
+      .addCase(googleLogin.rejected, (state, action) => {
         state.isLoading = false;
         state.status = 'failed';
         state.error = action.payload as string;
@@ -232,6 +326,12 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.status = 'failed';
         state.error = action.payload as string;
+      })
+      .addCase(updateProfileName.fulfilled, (state, action: PayloadAction<User>) => {
+        state.user = action.payload;
+      })
+      .addCase(updateProfilePicture.fulfilled, (state, action: PayloadAction<User>) => {
+        state.user = action.payload;
       });
   },
 });

@@ -35,6 +35,7 @@ class Assessment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     is_published = models.BooleanField(default=False)
     has_unpublished_changes = models.BooleanField(default=False)
+    pending_delete = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
         self.clean()

@@ -14,7 +14,6 @@ from .permissions import IsAdmin
 from .utils import *
 from .services.rules import (
     check_attempt_limit,
-    check_course_completion,
     handle_attempt_state,
     unlock_attempt,
     apply_assessment_rules,
@@ -72,6 +71,34 @@ class CreateAssessmentAPIView(APIView):
             "success": False,
             "error": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request):
+        assessment_id = request.data.get("assessment_id") or request.query_params.get("assessment_id")
+        module_id = request.data.get("module_id") or request.query_params.get("module_id")
+
+        if assessment_id:
+            assessment = get_object_or_404(Assessment, id=assessment_id)
+            if assessment.course.is_published and assessment.is_published:
+                assessment.pending_delete = True
+                assessment.has_unpublished_changes = True
+                assessment.save(update_fields=["pending_delete", "has_unpublished_changes"])
+                assessment.course.has_unpublished_changes = True
+                assessment.course.save(update_fields=["has_unpublished_changes"])
+                return Response({"success": True, "message": "Assessment marked for deletion. Publish changes to apply deletion."})
+            assessment.delete()
+            return Response({"success": True, "message": "Assessment deleted successfully"})
+        elif module_id:
+            quizzes = Assessment.objects.filter(module_id=module_id, assessment_type="QUIZ")
+            quiz = quizzes.first()
+            if quiz and quiz.course.is_published and quiz.is_published:
+                quizzes.update(pending_delete=True, has_unpublished_changes=True)
+                quiz.course.has_unpublished_changes = True
+                quiz.course.save(update_fields=["has_unpublished_changes"])
+                return Response({"success": True, "message": "Module quiz marked for deletion. Publish changes to apply deletion."})
+            quizzes.delete()
+            return Response({"success": True, "message": "Module quiz deleted successfully"})
+
+        return Response({"success": False, "error": "Assessment ID or Module ID is required"}, status=400)
         
         
 # ✅ Create Question API (Admin only)
@@ -114,7 +141,17 @@ class StartAssessmentAPIView(APIView):
 
     def get(self, request, assessment_id):
 
-        assessment = get_object_or_404(Assessment, id=assessment_id)
+        assessment = get_object_or_404(
+            Assessment,
+            id=assessment_id,
+            is_published=True
+        )
+
+        if not assessment.is_published:
+            return Response({
+                "status": "failed",
+                "message": "Assessment is not published"
+            }, status=404)
 
         # check enrollment
         if not is_student_enrolled(request.user, assessment.course):
@@ -129,15 +166,6 @@ class StartAssessmentAPIView(APIView):
                 return Response({
                     "status": "failed",
                     "message": "Complete module before quiz"
-                }, status=403)
-
-        # Final assessment rule
-        if assessment.assessment_type == "FINAL":
-
-            if not has_completed_all_modules(request.user, assessment.course):
-                return Response({
-                    "status": "failed",
-                    "message": "Complete all modules first"
                 }, status=403)
 
         response_data = {
@@ -164,7 +192,11 @@ class GetAssessmentQuestionsAPIView(APIView):
 
     def get(self, request, assessment_id):
 
-        assessment = get_object_or_404(Assessment, id=assessment_id)
+        assessment = get_object_or_404(
+            Assessment,
+            id=assessment_id,
+            is_published=True
+        )
 
         questions = assessment.questions.all()
 
@@ -177,6 +209,24 @@ class GetAssessmentQuestionsAPIView(APIView):
             "data": QuestionSerializer(questions, many=True).data
         })
 
+class UpdateQuestionAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def put(self, request, question_id):
+        question = get_object_or_404(Question, id=question_id)
+        serializer = QuestionCreateSerializer(question, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": "success", "data": QuestionSerializer(question).data})
+        return Response({"status": "failed", "errors": serializer.errors}, status=400)
+
+class DeleteQuestionAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def delete(self, request, question_id):
+        question = get_object_or_404(Question, id=question_id)
+        question.delete()
+        return Response({"status": "success", "message": "Question deleted"})
 
 # =========================================================
 # START ATTEMPT
@@ -191,7 +241,8 @@ class StartAttemptAPIView(APIView):
 
         try:
             assessment = Assessment.objects.get(
-                id=assessment_id
+                id=assessment_id,
+                is_published=True
             )
 
         except Assessment.DoesNotExist:
@@ -203,14 +254,6 @@ class StartAttemptAPIView(APIView):
             }, status=404)
 
         try:
-
-            # FINAL RULE
-            if assessment.assessment_type == "FINAL":
-
-                check_course_completion(
-                    user,
-                    assessment.course
-                )
 
             # RESUME ACTIVE ATTEMPT
             existing = Attempt.objects.filter(

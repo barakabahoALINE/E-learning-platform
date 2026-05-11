@@ -28,13 +28,49 @@ def _calculate_course_progress_percentage(total_modules, completed_modules, fina
     return round((completed_modules / total_modules) * 100) if total_modules else 0
 
 
+def _published_modules(course_id):
+    return Module.objects.filter(course_id=course_id, is_published=True)
+
+
+def _published_sections_for_course(course_id):
+    return Section.objects.filter(
+        module__course_id=course_id,
+        module__is_published=True,
+        is_published=True,
+    )
+
+
+def _published_contents_for_course(course_id):
+    return Content.objects.filter(
+        section__module__course_id=course_id,
+        section__module__is_published=True,
+        section__is_published=True,
+        is_published=True,
+    )
+
+
+def _published_final_assessment(course_id):
+    return Assessment.objects.filter(
+        course_id=course_id,
+        assessment_type="FINAL",
+        is_published=True,
+    ).first()
+
+
 # ═══════════════════════════════════════════════════════════════
 # 1. Mark content completed
 class CompleteContentAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
     def post(self, request, course_id, section_id, content_id):
-        content = get_object_or_404(Content, id=content_id, section__module__course_id=course_id)
+        content = get_object_or_404(
+            Content,
+            id=content_id,
+            section__module__course_id=course_id,
+            section__module__is_published=True,
+            section__is_published=True,
+            is_published=True,
+        )
         enrollment = get_object_or_404(
             Enrollment,
             student=request.user,
@@ -59,50 +95,55 @@ class CompleteContentAPIView(APIView):
         module = section.module
 
         # Section stats
-        total_section_contents = section.contents.count()
+        total_section_contents = section.contents.filter(is_published=True).count()
         done_section_contents = ContentProgress.objects.filter(
             student=request.user,
             content__section=section,
+            content__is_published=True,
             completed=True,
         ).count()
         section_pct = round((done_section_contents / total_section_contents) * 100) if total_section_contents else 0
         section_prog = SectionProgress.objects.filter(student=request.user, section=section).first()
 
         # Module stats
-        total_module_sections = Section.objects.filter(module=module).count()
+        total_module_sections = Section.objects.filter(module=module, is_published=True).count()
         done_module_sections = SectionProgress.objects.filter(
             student=request.user,
             section__module=module,
+            section__is_published=True,
             completed=True,
         ).count()
         module_pct = round((done_module_sections / total_module_sections) * 100) if total_module_sections else 0
         module_prog = ModuleProgress.objects.filter(student=request.user, module=module).first()
 
         course = get_object_or_404(Course, id=course_id)
-        total_sections = Section.objects.filter(module__course_id=course_id).count()
+        total_sections = _published_sections_for_course(course_id).count()
         completed_sections = SectionProgress.objects.filter(
             student=request.user,
             section__module__course_id=course_id,
+            section__module__is_published=True,
+            section__is_published=True,
             completed=True
         ).count()
-        total_contents = Content.objects.filter(section__module__course_id=course_id).count()
+        total_contents = _published_contents_for_course(course_id).count()
         completed_contents = ContentProgress.objects.filter(
             student=request.user,
             content__section__module__course_id=course_id,
+            content__section__module__is_published=True,
+            content__section__is_published=True,
+            content__is_published=True,
             completed=True,
         ).count()
 
-        total_modules = Module.objects.filter(course_id=course_id).count()
+        total_modules = _published_modules(course_id).count()
         completed_modules = ModuleProgress.objects.filter(
             student=request.user,
             module__course_id=course_id,
+            module__is_published=True,
             completed=True,
         ).count()
 
-        final_assessment = Assessment.objects.filter(
-            course=course,
-            assessment_type="FINAL"
-        ).first()
+        final_assessment = _published_final_assessment(course_id)
         final_passed = False
         if final_assessment:
             final_passed = Attempt.objects.filter(
@@ -200,14 +241,23 @@ class SectionContentsProgressAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
     def get(self, request, course_id, section_id):
-        section = get_object_or_404(Section, id=section_id, module__course_id=course_id)
+        section = get_object_or_404(
+            Section,
+            id=section_id,
+            module__course_id=course_id,
+            module__is_published=True,
+            is_published=True,
+        )
         enrollment = get_object_or_404(
             Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
-        contents = section.contents.all()
+        contents = section.contents.filter(is_published=True)
         total = contents.count()
         done = ContentProgress.objects.filter(
-            student=request.user, content__section=section, completed=True
+            student=request.user,
+            content__section=section,
+            content__is_published=True,
+            completed=True
         ).count()
         pct = round((done / total) * 100) if total else 0
 
@@ -236,16 +286,25 @@ class SectionProgressAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
     def get(self, request, course_id, section_id):
-        section = get_object_or_404(Section, id=section_id, module__course_id=course_id)
+        section = get_object_or_404(
+            Section,
+            id=section_id,
+            module__course_id=course_id,
+            module__is_published=True,
+            is_published=True,
+        )
         enrollment = get_object_or_404(
             Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
         prog, _ = SectionProgress.objects.get_or_create(
             student=request.user, section=section, defaults={"enrollment": enrollment}
         )
-        total = section.contents.count()
+        total = section.contents.filter(is_published=True).count()
         done = ContentProgress.objects.filter(
-            student=request.user, content__section=section, completed=True
+            student=request.user,
+            content__section=section,
+            content__is_published=True,
+            completed=True
         ).count()
         pct = round((done / total) * 100) if total else 0
 
@@ -277,7 +336,7 @@ class ModuleProgressAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
     def get(self, request, course_id, module_id):
-        module = get_object_or_404(Module, id=module_id, course_id=course_id)
+        module = get_object_or_404(Module, id=module_id, course_id=course_id, is_published=True)
         enrollment = get_object_or_404(
             Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
@@ -287,18 +346,24 @@ class ModuleProgressAPIView(APIView):
             student=request.user, module=module, defaults={"enrollment": enrollment}
         )
 
-        total_sections = Section.objects.filter(module=module).count()
+        total_sections = Section.objects.filter(module=module, is_published=True).count()
         done_sections = SectionProgress.objects.filter(
-            student=request.user, section__module=module, completed=True
+            student=request.user,
+            section__module=module,
+            section__is_published=True,
+            completed=True
         ).count()
         module_pct = round((done_sections / total_sections) * 100) if total_sections else 0
 
         # Per-section breakdown
         sections_data = []
-        for section in module.sections.all():
-            total_c = section.contents.count()
+        for section in module.sections.filter(is_published=True):
+            total_c = section.contents.filter(is_published=True).count()
             done_c = ContentProgress.objects.filter(
-                student=request.user, content__section=section, completed=True
+                student=request.user,
+                content__section=section,
+                content__is_published=True,
+                completed=True
             ).count()
             sec_pct = round((done_c / total_c) * 100) if total_c else 0
             sp = SectionProgress.objects.filter(student=request.user, section=section).first()
@@ -344,19 +409,19 @@ class CourseSectionsProgressAPIView(APIView):
         enrollment = get_object_or_404(
             Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
-        sections = Section.objects.filter(
-            module__course_id=course_id
-        ).select_related("module").order_by("module__order", "order")
+        sections = _published_sections_for_course(course_id).select_related("module").order_by("module__order", "order")
 
         total_sections = sections.count()
         completed_sections = 0
         sections_data = []
 
         for section in sections:
-            total_c = section.contents.count()
+            total_c = section.contents.filter(is_published=True).count()
             done_c = ContentProgress.objects.filter(
                 student=request.user, enrollment=enrollment,
-                content__section=section, completed=True,
+                content__section=section,
+                content__is_published=True,
+                completed=True,
             ).count()
             pct = round((done_c / total_c) * 100) if total_c else 0
             prog, _ = SectionProgress.objects.get_or_create(
@@ -377,11 +442,14 @@ class CourseSectionsProgressAPIView(APIView):
                 "completed_at": prog.completed_at,
             })
 
-        total_modules = Module.objects.filter(course_id=course_id).count()
+        total_modules = _published_modules(course_id).count()
         completed_modules = ModuleProgress.objects.filter(
-            student=request.user, module__course_id=course_id, completed=True
+            student=request.user,
+            module__course_id=course_id,
+            module__is_published=True,
+            completed=True
         ).count()
-        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_assessment = _published_final_assessment(course_id)
         final_passed = False
         if final_assessment:
             final_passed = Attempt.objects.filter(
@@ -424,22 +492,34 @@ class CourseModulesProgressAPIView(APIView):
         enrollment = get_object_or_404(
             Enrollment, student=request.user, course_id=course_id, status__in=["active", "completed"]
         )
-        modules = Module.objects.filter(course_id=course_id).order_by("order")
+        modules = _published_modules(course_id).order_by("order")
 
         total_modules = modules.count()
         completed_modules = 0
         modules_data = []
 
         for module in modules:
-            total_s = Section.objects.filter(module=module).count()
+            total_s = Section.objects.filter(module=module, is_published=True).count()
             done_s = SectionProgress.objects.filter(
-                student=request.user, section__module=module, completed=True
+                student=request.user,
+                section__module=module,
+                section__is_published=True,
+                completed=True
             ).count()
             mod_pct = round((done_s / total_s) * 100) if total_s else 0
 
             mod_prog, _ = ModuleProgress.objects.get_or_create(
                 student=request.user, module=module, defaults={"enrollment": enrollment}
             )
+            quiz = Assessment.objects.filter(module=module, assessment_type="QUIZ", is_published=True).first()
+            quiz_passed = True
+            if quiz:
+                quiz_passed = Attempt.objects.filter(
+                    student=request.user,
+                    assessment=quiz,
+                    is_submitted=True,
+                    is_passed=True,
+                ).exists()
             if mod_prog.completed:
                 completed_modules += 1
 
@@ -451,10 +531,11 @@ class CourseModulesProgressAPIView(APIView):
                 "completed_sections": done_s,
                 "progress_percentage": mod_pct,
                 "module_completed": mod_prog.completed,
+                "quiz_passed": quiz_passed,
                 "completed_at": mod_prog.completed_at,
             })
 
-        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_assessment = _published_final_assessment(course_id)
         final_passed = False
         if final_assessment:
             final_passed = Attempt.objects.filter(
@@ -589,7 +670,7 @@ class StartLearningAPIView(APIView):
         # AUTO CREATE PROGRESS RECORDS
         # =====================================================
 
-        modules = Module.objects.filter(course_id=course_id)
+        modules = _published_modules(course_id)
 
         for module in modules:
 
@@ -599,7 +680,7 @@ class StartLearningAPIView(APIView):
                 defaults={"enrollment": enrollment}
             )
 
-            for section in module.sections.all():
+            for section in module.sections.filter(is_published=True):
 
                 SectionProgress.objects.get_or_create(
                     student=request.user,
@@ -607,7 +688,7 @@ class StartLearningAPIView(APIView):
                     defaults={"enrollment": enrollment}
                 )
 
-                for content in section.contents.all():
+                for content in section.contents.filter(is_published=True):
 
                     ContentProgress.objects.get_or_create(
                         student=request.user,
@@ -688,17 +769,24 @@ class StudentCourseProgressAPIView(APIView):
         if not enrollment:
             return Response({"success": False, "message": "You are not enrolled in this course"})
 
-        total_modules = Module.objects.filter(course_id=course_id).count()
+        total_modules = _published_modules(course_id).count()
         done_modules = ModuleProgress.objects.filter(
-            student=request.user, module__course_id=course_id, completed=True
+            student=request.user,
+            module__course_id=course_id,
+            module__is_published=True,
+            completed=True
         ).count()
 
-        total_sections = Section.objects.filter(module__course_id=course_id).count()
+        total_sections = _published_sections_for_course(course_id).count()
         done_sections = SectionProgress.objects.filter(
-            student=request.user, section__module__course_id=course_id, completed=True
+            student=request.user,
+            section__module__course_id=course_id,
+            section__module__is_published=True,
+            section__is_published=True,
+            completed=True
         ).count()
 
-        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_assessment = _published_final_assessment(course_id)
         final_passed = False
         if final_assessment:
             final_passed = Attempt.objects.filter(
@@ -749,12 +837,15 @@ class AdminStudentCourseProgressAPIView(APIView):
         if not Enrollment.objects.filter(student=student, course_id=course_id).exists():
             return Response({"success": False, "message": "Student is not enrolled in this course"})
 
-        total_modules = Module.objects.filter(course_id=course_id).count()
+        total_modules = _published_modules(course_id).count()
         done_modules = ModuleProgress.objects.filter(
-            student=student, module__course_id=course_id, completed=True
+            student=student,
+            module__course_id=course_id,
+            module__is_published=True,
+            completed=True
         ).count()
 
-        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_assessment = _published_final_assessment(course_id)
         final_passed = False
         if final_assessment:
             final_passed = Attempt.objects.filter(
@@ -806,11 +897,13 @@ class AdminCompleteCourseAPIView(APIView):
             course_id=course_id
         )
 
-        total_sections = Section.objects.filter(module__course_id=course_id).count()
+        total_sections = _published_sections_for_course(course_id).count()
 
         completed_sections = SectionProgress.objects.filter(
             student=student,
             section__module__course_id=course_id,
+            section__module__is_published=True,
+            section__is_published=True,
             completed=True
         ).count()
 
@@ -822,7 +915,7 @@ class AdminCompleteCourseAPIView(APIView):
                 "completed_sections": completed_sections
             }, status=400)
 
-        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_assessment = _published_final_assessment(course_id)
         if final_assessment:
             final_passed = Attempt.objects.filter(
                 student=student,
@@ -859,15 +952,19 @@ class CompleteCourseAPIView(APIView):
         except Enrollment.DoesNotExist:
             return Response({"success": False, "message": "Enrollment not found"})
 
-        total = Section.objects.filter(module__course_id=course_id).count()
+        total = _published_sections_for_course(course_id).count()
         done = SectionProgress.objects.filter(
-            student=request.user, section__module__course_id=course_id, completed=True
+            student=request.user,
+            section__module__course_id=course_id,
+            section__module__is_published=True,
+            section__is_published=True,
+            completed=True
         ).count()
 
         if done < total:
             return Response({"success": False, "message": "You must complete all modules before finishing the course"})
 
-        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_assessment = _published_final_assessment(course_id)
         if final_assessment:
             final_passed = Attempt.objects.filter(
                 student=request.user,
@@ -1018,7 +1115,8 @@ class ModuleContentsAPIView(APIView):
         module = get_object_or_404(
             Module,
             id=module_id,
-            course_id=course_id
+            course_id=course_id,
+            is_published=True
         )
 
         # Validate enrollment
@@ -1029,7 +1127,7 @@ class ModuleContentsAPIView(APIView):
             status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED]
         )
 
-        sections = module.sections.all().order_by("order")
+        sections = module.sections.filter(is_published=True).order_by("order")
 
         sections_data = []
 
@@ -1038,7 +1136,7 @@ class ModuleContentsAPIView(APIView):
 
         for section in sections:
 
-            contents = section.contents.all().order_by("order")
+            contents = section.contents.filter(is_published=True).order_by("order")
 
             contents_data = []
 

@@ -101,8 +101,11 @@ class CourseProgress(models.Model):
     enrollment = models.ForeignKey(
         Enrollment, on_delete=models.CASCADE, related_name="course_progress"
     )
+    progress_percentage = models.FloatField(default=0.0)
     completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_column='started_at')
+    updated_at = models.DateTimeField(auto_now=True, db_column='last_updated')
 
     class Meta:
         unique_together = ["student", "course"]
@@ -256,11 +259,25 @@ def _refresh_course_progress(student, course, enrollment):
         completed=True,
     ).count()
 
-    course_prog, _ = CourseProgress.objects.get_or_create(
+    # Calculate progress percentage
+    if final_assessment:
+        if total == 0:
+            pct = 100.0 if final_passed else 0.0
+        else:
+            module_share = round((done / total) * 90)
+            pct = float(module_share + (10 if final_passed else 0))
+            pct = min(pct, 100.0)
+    else:
+        pct = float(round((done / total) * 100)) if total else 0.0
+
+    course_prog, created = CourseProgress.objects.get_or_create(
         student=student,
         course=course,
-        defaults={"enrollment": enrollment},
+        defaults={"enrollment": enrollment, "progress_percentage": pct},
     )
+
+    if not created:
+        course_prog.progress_percentage = pct
 
     now_complete = done == total
     if final_assessment:
@@ -271,10 +288,10 @@ def _refresh_course_progress(student, course, enrollment):
         course_prog.completed_at = timezone.now()
         enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()
-        course_prog.save()
     elif not now_complete and course_prog.completed:
         # edge case: a module or final assessment was un-completed
         course_prog.completed = False
         course_prog.completed_at = None
-        course_prog.save()
+
+    course_prog.save()
 

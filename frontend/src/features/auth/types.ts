@@ -5,6 +5,7 @@ export interface User {
   institution: string;
   role?: string;
   avatar?: string;
+  profile_picture?: string | null;
 }
 
 export interface SignupData {
@@ -26,7 +27,7 @@ export interface ResetPasswordData {
 }
 
 export interface AuthResponse<T = unknown> {
-  success: string;
+  success: string | boolean;
   message?: string;
   data: T;
 }
@@ -35,6 +36,14 @@ export interface LoginResponseData {
   user: User;
   access: string;
   refresh: string;
+}
+
+export interface UpdateNameResponseData {
+  full_name: string;
+}
+
+export interface UpdateProfilePictureResponseData {
+  profile_picture: string;
 }
 
 export interface ErrorResponse {

@@ -18,12 +18,14 @@ def is_student_enrolled(user, course):
 def has_completed_module_sections(user, module):
 
     total_sections = Section.objects.filter(
-        module=module
+        module=module,
+        is_published=True
     ).count()
 
     completed_sections = SectionProgress.objects.filter(
         student=user,
         section__module=module,
+        section__is_published=True,
         completed=True
     ).count()
 
@@ -34,11 +36,12 @@ def has_completed_module_sections(user, module):
 
 
 def has_completed_all_modules(user, course):
-    total_modules = course.modules.count()
+    total_modules = course.modules.filter(is_published=True).count()
 
     completed_modules = ModuleProgress.objects.filter(
         student=user,
         module__course=course,
+        module__is_published=True,
         completed=True
     ).count()
 

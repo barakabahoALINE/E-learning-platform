@@ -154,7 +154,8 @@ def can_access_module(user, module):
 
     quiz = Assessment.objects.filter(
         module=previous_module,
-        assessment_type="QUIZ"
+        assessment_type="QUIZ",
+        is_published=True
     ).first()
 
     # no quiz
@@ -184,7 +185,8 @@ def has_passed_module_quiz(user, module):
     """
     quiz = Assessment.objects.filter(
         module=module,
-        assessment_type="QUIZ"
+        assessment_type="QUIZ",
+        is_published=True
     ).first()
 
     # No quiz requirement - module can be completed

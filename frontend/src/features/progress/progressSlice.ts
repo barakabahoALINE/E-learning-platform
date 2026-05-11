@@ -1,13 +1,27 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import courseAPI from '../courses/courseAPI';
-import { CourseProgress, LearningHoursKPI, CoursesKPI, LessonContentProgress, LessonProgress } from '../courses/types';
+import {
+  CourseProgress,
+  CompletionRateKPI,
+  LearningHoursKPI,
+  CoursesKPI,
+  LessonContentProgress,
+  LessonProgress,
+  ModuleProgress,
+  SectionProgress,
+} from '../courses/types';
 
 interface ProgressState {
   courseProgress: Record<number, CourseProgress>;
   lessonContentProgress: Record<number, LessonContentProgress[]>;
   courseLessonsProgress: Record<number, LessonProgress[]>;
+  sectionContentProgress: Record<number, LessonContentProgress[]>;
+  courseSectionsProgress: Record<number, SectionProgress[]>;
+  courseModulesProgress: Record<number, ModuleProgress[]>;
+  moduleContentsProgress: Record<number, ModuleProgress>;
   learningHours: LearningHoursKPI | null;
   coursesKPI: CoursesKPI | null;
+  completionRateKPI: CompletionRateKPI | null;
   loading: boolean;
   error: string | null;
 }
@@ -16,8 +30,13 @@ const initialState: ProgressState = {
   courseProgress: {},
   lessonContentProgress: {},
   courseLessonsProgress: {},
+  sectionContentProgress: {},
+  courseSectionsProgress: {},
+  courseModulesProgress: {},
+  moduleContentsProgress: {},
   learningHours: null,
   coursesKPI: null,
+  completionRateKPI: null,
   loading: false,
   error: null,
 };
@@ -36,12 +55,11 @@ export const fetchCourseProgress = createAsyncThunk(
 
 export const markContentComplete = createAsyncThunk(
   'progress/markContentComplete',
-  async ({ courseId, lessonId, contentId }: { courseId: number; lessonId: number; contentId: number }, { rejectWithValue, dispatch }) => {
+  async ({ courseId, sectionId, contentId }: { courseId: number; sectionId: number; contentId: number }, { rejectWithValue, dispatch }) => {
     try {
-      await courseAPI.completeContent(courseId, lessonId, contentId);
-      // Refresh progress after marking complete
-      await dispatch(fetchCourseProgress(courseId)).unwrap();
-      return { courseId, contentId };
+      const response = await courseAPI.completeContent(courseId, sectionId, contentId);
+      dispatch(fetchCourseModulesProgress(courseId));
+      return { courseId, sectionId, contentId, data: response };
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to mark content complete');
     }
@@ -66,6 +84,17 @@ export const fetchCoursesKPI = createAsyncThunk(
       return await courseAPI.fetchCoursesKPI();
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to fetch courses KPI');
+    }
+  }
+);
+
+export const fetchCompletionRateKPI = createAsyncThunk(
+  'progress/fetchCompletionRateKPI',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await courseAPI.fetchCompletionRateKPI();
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to fetch completion rate KPI');
     }
   }
 );
@@ -117,6 +146,18 @@ export const fetchLessonContentsProgress = createAsyncThunk(
   }
 );
 
+export const fetchSectionContentsProgress = createAsyncThunk(
+  'progress/fetchSectionContentsProgress',
+  async ({ courseId, sectionId }: { courseId: number; sectionId: number }, { rejectWithValue }) => {
+    try {
+      const data = await courseAPI.fetchSectionContentsProgress(courseId, sectionId);
+      return { sectionId, contents: data.contents };
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to fetch section content progress');
+    }
+  }
+);
+
 export const fetchCourseLessonsProgress = createAsyncThunk(
   'progress/fetchCourseLessonsProgress',
   async (courseId: number, { rejectWithValue }) => {
@@ -125,6 +166,42 @@ export const fetchCourseLessonsProgress = createAsyncThunk(
       return { courseId, lessons: data.lessons };
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to fetch course lessons progress');
+    }
+  }
+);
+
+export const fetchCourseSectionsProgress = createAsyncThunk(
+  'progress/fetchCourseSectionsProgress',
+  async (courseId: number, { rejectWithValue }) => {
+    try {
+      const data = await courseAPI.fetchCourseSectionsProgress(courseId);
+      return { courseId, sections: data.sections };
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to fetch course sections progress');
+    }
+  }
+);
+
+export const fetchCourseModulesProgress = createAsyncThunk(
+  'progress/fetchCourseModulesProgress',
+  async (courseId: number, { rejectWithValue }) => {
+    try {
+      const data = await courseAPI.fetchCourseModulesProgress(courseId);
+      return { courseId, modules: data.modules };
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to fetch course modules progress');
+    }
+  }
+);
+
+export const fetchModuleContentsProgress = createAsyncThunk(
+  'progress/fetchModuleContentsProgress',
+  async ({ courseId, moduleId }: { courseId: number; moduleId: number }, { rejectWithValue }) => {
+    try {
+      const data = await courseAPI.fetchModuleContentsProgress(courseId, moduleId);
+      return { moduleId, progress: data.data };
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to fetch module content progress');
     }
   }
 );
@@ -165,11 +242,75 @@ const progressSlice = createSlice({
       .addCase(fetchCoursesKPI.fulfilled, (state, action) => {
         state.coursesKPI = action.payload;
       })
+      .addCase(fetchCompletionRateKPI.fulfilled, (state, action) => {
+        state.completionRateKPI = action.payload;
+      })
+      .addCase(markContentComplete.fulfilled, (state, action) => {
+        const { courseId, sectionId, contentId, data } = action.payload;
+        const courseProgress = data.course_progress;
+        state.courseProgress[courseId] = {
+          ...courseProgress,
+          completion_percentage: courseProgress.progress_percentage ?? courseProgress.completion_percentage ?? 0,
+        };
+
+        const sectionContents = state.sectionContentProgress[sectionId] || state.lessonContentProgress[sectionId] || [];
+        const updatedContents = sectionContents.map((content) =>
+          Number(content.id ?? content.content_id) === contentId
+            ? {
+              ...content,
+              completed: true,
+              completed_at: data.content_progress.completed_at,
+              progress_percentage: 100,
+            }
+            : content
+        );
+        state.sectionContentProgress[sectionId] = updatedContents;
+        state.lessonContentProgress[sectionId] = updatedContents;
+
+        const moduleId = data.module_progress.module_id;
+        const moduleContents = state.moduleContentsProgress[moduleId];
+        if (moduleContents?.sections) {
+          moduleContents.completed_contents = moduleContents.sections.reduce((total, section) => {
+            if (section.section_id !== sectionId) {
+              return total + section.contents.filter((content) => content.completed).length;
+            }
+
+            section.contents = section.contents.map((content) =>
+              Number(content.id ?? content.content_id) === contentId
+                ? {
+                  ...content,
+                  completed: true,
+                  completed_at: data.content_progress.completed_at,
+                  progress_percentage: 100,
+                }
+                : content
+            );
+            return total + section.contents.filter((content) => content.completed).length;
+          }, 0);
+          moduleContents.progress_percentage = data.module_progress.progress_percentage;
+        }
+      })
       .addCase(fetchLessonContentsProgress.fulfilled, (state, action) => {
         state.lessonContentProgress[action.payload.lessonId] = action.payload.contents;
+        state.sectionContentProgress[action.payload.lessonId] = action.payload.contents;
       })
       .addCase(fetchCourseLessonsProgress.fulfilled, (state, action) => {
         state.courseLessonsProgress[action.payload.courseId] = action.payload.lessons;
+        state.courseSectionsProgress[action.payload.courseId] = action.payload.lessons;
+      })
+      .addCase(fetchSectionContentsProgress.fulfilled, (state, action) => {
+        state.sectionContentProgress[action.payload.sectionId] = action.payload.contents;
+        state.lessonContentProgress[action.payload.sectionId] = action.payload.contents;
+      })
+      .addCase(fetchCourseSectionsProgress.fulfilled, (state, action) => {
+        state.courseSectionsProgress[action.payload.courseId] = action.payload.sections;
+        state.courseLessonsProgress[action.payload.courseId] = action.payload.sections;
+      })
+      .addCase(fetchCourseModulesProgress.fulfilled, (state, action) => {
+        state.courseModulesProgress[action.payload.courseId] = action.payload.modules;
+      })
+      .addCase(fetchModuleContentsProgress.fulfilled, (state, action) => {
+        state.moduleContentsProgress[action.payload.moduleId] = action.payload.progress;
       });
   },
 });

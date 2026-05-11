@@ -11,10 +11,11 @@ import {
   CardTitle,
 } from "../components/ui/card";
 import { Separator } from "../components/ui/separator";
-import { Mail, Lock, Chrome, Github, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, Github, Eye, EyeOff } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
-import { login, resetStatus, clearError } from "../../features/auth/authSlice";
+import { googleLogin, login, resetStatus, clearError } from "../../features/auth/authSlice";
 import { selectAuthLoading, selectAuthError, selectAuthStatus } from "../../features/auth/authSelectors";
+import { GoogleLogin } from "@react-oauth/google";
 import Logo from "../assets/R.png";
 import Loader from "../components/ui/Loader";
 import StatusModal from "../components/ui/StatusModal";
@@ -49,11 +50,6 @@ export const LoginPage: React.FC = () => {
     setIsModalOpen(false);
     dispatch(clearError());
     dispatch(resetStatus());
-  };
-
-  const handleSocialLogin = (provider: string) => {
-    // Mock social login logic can be added later
-    console.log(`Social login with ${provider}`);
   };
 
   return (
@@ -146,20 +142,21 @@ export const LoginPage: React.FC = () => {
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="min-w-0">
+                  <GoogleLogin
+                    onSuccess={(credentialResponse) => {
+                      if (credentialResponse.credential) {
+                        dispatch(googleLogin(credentialResponse.credential));
+                      }
+                    }}
+                    onError={() => setIsModalOpen(true)}
+                    width="100%"
+                  />
+                </div>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => handleSocialLogin("google")}
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  <Chrome className="mr-2 h-4 w-4" />
-                  Google
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleSocialLogin("github")}
+                  onClick={() => setIsModalOpen(true)}
                   className="w-full"
                   disabled={isLoading}
                 >

@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -18,28 +18,41 @@ import {
   Award,
   Target,
   Zap,
+  RotateCcw,
+  CheckCircle,
 } from "lucide-react";
 import { MainLayout } from "../components/MainLayout";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { fetchMyEnrollments } from "../../features/enrollments/enrollmentSlice";
-import { fetchCourses } from "../../features/courses/courseSlice";
-import { fetchCourseProgress, fetchLearningHoursKPI, fetchCoursesKPI, continueLearning } from "../../features/progress/progressSlice";
+import { fetchCourses, fetchCategories } from "../../features/courses/courseSlice";
+import { getMediaUrl } from "../utils/media";
+import {
+  fetchCourseProgress,
+  fetchLearningHoursKPI,
+  fetchCoursesKPI,
+  fetchCompletionRateKPI,
+  continueLearning,
+  fetchCourseSectionsProgress,
+} from "../../features/progress/progressSlice";
 
 export const DashboardPage: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const reduxUser = useAppSelector(selectCurrentUser);
   const { myEnrollments } = useAppSelector((state) => state.enrollments);
-  const { courses } = useAppSelector((state) => state.courses);
-  const { courseProgress, learningHours, coursesKPI } = useAppSelector((state) => state.progress);
+  const { courses, categories } = useAppSelector((state) => state.courses);
+  const { courseProgress, courseSectionsProgress, learningHours, coursesKPI, completionRateKPI } = useAppSelector((state) => state.progress);
 
   const [isReturningUser, setIsReturningUser] = React.useState(false);
 
   React.useEffect(() => {
     dispatch(fetchMyEnrollments());
     dispatch(fetchCourses(false));
+    dispatch(fetchCategories());
     dispatch(fetchLearningHoursKPI());
     dispatch(fetchCoursesKPI());
+    dispatch(fetchCompletionRateKPI());
   }, [dispatch]);
 
   React.useEffect(() => {
@@ -56,17 +69,16 @@ export const DashboardPage: React.FC = () => {
   }, [reduxUser?.id]);
 
   React.useEffect(() => {
-    if (myEnrollments.length > 0) {
-      myEnrollments.slice(0, 3).forEach(enrollment => {
-        dispatch(fetchCourseProgress(enrollment.course));
-      });
-    }
+    myEnrollments.forEach(enrollment => {
+      dispatch(fetchCourseProgress(Number(enrollment.course)));
+      dispatch(fetchCourseSectionsProgress(Number(enrollment.course)));
+    });
   }, [dispatch, myEnrollments]);
 
   const user = reduxUser ? {
     ...reduxUser,
     name: reduxUser.full_name,
-    achievements: [], 
+    achievements: [],
   } : null;
 
   const getCourseDetails = (courseId: number) => {
@@ -77,26 +89,50 @@ export const DashboardPage: React.FC = () => {
     return courseProgress[courseId];
   };
 
-  const getImageUrl = (url: string | null | undefined) => {
-    if (!url) return "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80";
-    if (url.startsWith("http")) return url;
-    return `http://localhost:8000${url}`;
+  const getItemProgress = (courseId: number) => {
+    const sections = courseSectionsProgress[courseId] || [];
+    const total = sections.reduce((sum, section) => sum + (section.total_contents || 0), 0);
+    const completed = sections.reduce((sum, section) => sum + (section.completed_contents || 0), 0);
+    return { total, completed };
   };
 
-  // Mock progress data
-  const weeklyProgress = [
-    { day: "Mon", hours: 0 },
-    { day: "Tue", hours: 0 },
-    { day: "Wed", hours: 0 },
-    { day: "Thu", hours: 0 },
-    { day: "Fri", hours: 0 },
-    { day: "Sat", hours: 0 },
-    { day: "Sun", hours: 0 },
-  ];
-
   const totalHours = learningHours?.total_hours_learned || 0;
-  const enrolledCount = coursesKPI?.total_courses_enrolled || myEnrollments.length;
-  const completedCount = coursesKPI?.courses_completed || 0;
+  const activeEnrollments = myEnrollments.filter(enrollment => enrollment.status !== "cancelled");
+  const learningHistory = activeEnrollments
+    .map((enrollment) => {
+      const course = getCourseDetails(enrollment.course);
+      if (!course) return null;
+      const progress = getProgress(enrollment.course);
+      const percent = Math.round(progress?.completion_percentage || progress?.progress_percentage || 0);
+      return {
+        id: enrollment.id,
+        courseId: enrollment.course,
+        courseName: course.title,
+        thumbnail: course.thumbnail,
+        category: typeof course.category === "string" ? course.category : categories.find(c => c.id === Number(course.category))?.name,
+        status: enrollment.status === "completed" || progress?.course_completed || percent >= 100 ? "completed" : "in-progress",
+        progress: percent,
+        lastAccessedAt: progress?.completed_at || enrollment.enrolled_at,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b!.lastAccessedAt).getTime() - new Date(a!.lastAccessedAt).getTime());
+
+  const inProgressEnrollments = activeEnrollments.filter(enrollment => {
+    const progress = getProgress(enrollment.course);
+    const percent = Math.round(progress?.completion_percentage || progress?.progress_percentage || 0);
+    const isCompleted = enrollment.status === "completed" || progress?.course_completed || percent >= 100;
+    return !isCompleted;
+  });
+
+  const enrolledCount = activeEnrollments.length;
+  const completedCount = learningHistory.filter(item => item!.status === "completed").length;
+  const completionRate = enrolledCount > 0 ? Math.round((completedCount / enrolledCount) * 100) : 0;
+  const completionRateChange = completionRateKPI?.change_percentage ?? completionRateKPI?.month_over_month_change;
+  const weeklyProgress = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => ({
+    day,
+    hours: 0,
+  }));
 
   return (
     <MainLayout>
@@ -106,7 +142,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div>
               <h1 className="text-3xl mb-2">
-                {isReturningUser ? 'Welcome back' : 'Welcome'}, {user?.name?.split(" ")[0] || "User"}! 👋
+                {isReturningUser ? 'Welcome back' : 'Welcome'}, {user?.name?.split(" ")[0] || "User"}!
               </h1>
               <p className="text-blue-100 mb-4">
                 You've learned {totalHours} hours this week. Keep up the great
@@ -141,10 +177,10 @@ export const DashboardPage: React.FC = () => {
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Courses Enrolled</p>
                   <p className="text-2xl">{enrolledCount}</p>
-                  <p className="text-xs text-green-600 mt-1 flex items-center">
+                  {/* <p className="text-xs text-green-600 mt-1 flex items-center">
                     <TrendingUp className="w-3 h-3 mr-1" />
                     +2 this month
-                  </p>
+                  </p> */}
                 </div>
                 <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
                   <BookOpen className="w-6 h-6 text-blue-600" />
@@ -188,10 +224,12 @@ export const DashboardPage: React.FC = () => {
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Completion Rate</p>
-                  <p className="text-2xl">68%</p>
+                  <p className="text-2xl">{completionRate}%</p>
                   <p className="text-xs text-green-600 mt-1 flex items-center">
                     <TrendingUp className="w-3 h-3 mr-1" />
-                    +12% vs last month
+                    {completionRateChange !== undefined
+                      ? `${completionRateChange >= 0 ? '+' : ''}${Math.round(completionRateChange)}% vs last month`
+                      : 'Based on completed courses'}
                   </p>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
@@ -207,18 +245,18 @@ export const DashboardPage: React.FC = () => {
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl">Continue Learning</h2>
-              <Link to="/courses">
+              <Link to="/profile?tab=courses">
                 <Button variant="ghost" size="sm">
                   View all
                 </Button>
               </Link>
             </div>
 
-            {myEnrollments.length === 0 ? (
+            {inProgressEnrollments.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg mb-2">No courses yet</h3>
+                  <h3 className="text-lg mb-2">No courses in progress</h3>
                   <p className="text-gray-600 mb-4">
                     Start learning by enrolling in a course
                   </p>
@@ -228,10 +266,11 @@ export const DashboardPage: React.FC = () => {
                 </CardContent>
               </Card>
             ) : (
-              myEnrollments.slice(0, 3).map((enrollment) => {
+              inProgressEnrollments.slice(0, 3).map((enrollment) => {
                 const courseDetail = getCourseDetails(enrollment.course);
                 const progress = getProgress(enrollment.course);
                 const completionPercentage = Math.round(progress?.completion_percentage || 0);
+                const itemProgress = getItemProgress(enrollment.course);
 
                 if (!courseDetail) return null;
 
@@ -244,7 +283,7 @@ export const DashboardPage: React.FC = () => {
                       <div className="flex flex-col sm:flex-row gap-6">
                         <div className="relative group overflow-hidden rounded-xl w-full sm:w-32 h-32 flex-shrink-0">
                           <img
-                            src={getImageUrl(courseDetail.thumbnail)}
+                            src={getMediaUrl(courseDetail.thumbnail)}
                             alt={courseDetail.title}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
@@ -252,8 +291,8 @@ export const DashboardPage: React.FC = () => {
                         <div className="flex-1">
                           <div className="flex items-start justify-between mb-2">
                             <div>
-                              <Badge variant="secondary" className="mb-2 bg-white text-primary border-none">
-                                {courseDetail.category_name || "Course"}
+                              <Badge variant="secondary" className="mb-2">
+                                {courseDetail.category}
                               </Badge>
                               <h3 className="font-bold text-lg mb-1">{courseDetail.title}</h3>
                               <p className="text-sm text-gray-600">
@@ -269,18 +308,18 @@ export const DashboardPage: React.FC = () => {
                             <Progress value={completionPercentage} className="h-2" />
                             <div className="flex items-center justify-between pt-2">
                               <span className="text-sm text-gray-500 font-medium">
-                                {progress?.completed_lessons || 0} of {progress?.total_lessons || 0} lessons completed
+                                {itemProgress.completed} of {itemProgress.total} items completed
                               </span>
-                              <Button 
-                                className="bg-[#4BA847] hover:bg-[#4BA847]/90" 
+                              <Button
+                                className="bg-primary hover:bg-primary/90"
                                 size="sm"
                                 onClick={async () => {
                                   try {
-                                    await dispatch(continueLearning(courseDetail.id)).unwrap();
+                                    await dispatch(continueLearning(Number(courseDetail.id))).unwrap();
                                   } catch (error) {
                                     console.error("Failed to continue session:", error);
                                   }
-                                  window.location.href = `/course/${courseDetail.id}`;
+                                  navigate(`/course/${courseDetail.id}`);
                                 }}
                               >
                                 <PlayCircle className="mr-2 h-4 w-4" />
@@ -299,40 +338,74 @@ export const DashboardPage: React.FC = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Achievements */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Award className="mr-2 h-5 w-5 text-yellow-600" />
-                  Recent Achievements
+                  <Target className="mr-2 h-5 w-5 text-blue-600" />
+                  Learning History
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {user?.achievements?.slice(0, 3).map((achievement: any) => (
-                  <div
-                    key={achievement.id}
-                    className="flex items-start space-x-3"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0">
-                      <Trophy className="w-5 h-5 text-yellow-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{achievement.title}</p>
-                      <p className="text-xs text-gray-600">
-                        {achievement.description}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {achievement.unlockedAt}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {(!user?.achievements || user.achievements.length === 0) && (
+                {learningHistory.length > 0 ? (
+                  <>
+                    {learningHistory
+                      .slice(0, 2)
+                      .map(item => (
+                        <div key={item!.courseId} className="flex items-start space-x-3">
+                          <div className="relative flex-shrink-0">
+                            <img
+                              src={getMediaUrl(item!.thumbnail)}
+                              alt={item!.courseName}
+                              className="w-12 h-12 rounded object-cover"
+                            />
+                            {item!.status === 'completed' && (
+                              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                                <CheckCircle className="w-3 h-3 text-white" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{item!.courseName}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant={item!.status === 'completed' ? 'secondary' : 'default'} className="text-xs">
+                                {item!.status === 'completed' ? 'Completed' : 'In Progress'}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">{item!.progress}%</span>
+                            </div>
+                            <Progress value={item!.progress} className="h-1.5 mt-2" />
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(item!.lastAccessedAt).toLocaleDateString()}
+                              </span>
+                              <Link to={`/course/${item!.courseId}`}>
+                                <Button variant="ghost" size="sm" className="h-6 text-xs">
+                                  {item!.status === 'completed' ? (
+                                    <>
+                                      <RotateCcw className="w-3 h-3 mr-1" />
+                                      Revisit
+                                    </>
+                                  ) : (
+                                    <>
+                                      <PlayCircle className="w-3 h-3 mr-1" />
+                                      Resume
+                                    </>
+                                  )}
+                                </Button>
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    <Link to="/profile?tab=history" className="block">
+                      <Button variant="outline" size="sm" className="w-full mt-2">
+                        View Full History
+                      </Button>
+                    </Link>
+                  </>
+                ) : (
                   <div className="text-center py-4">
-                    <Trophy className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">
-                      Complete courses to unlock achievements
-                    </p>
+                    <Target className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Your learning history will appear here</p>
                   </div>
                 )}
               </CardContent>

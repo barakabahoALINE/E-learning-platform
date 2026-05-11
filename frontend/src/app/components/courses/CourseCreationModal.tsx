@@ -29,8 +29,8 @@ export function CourseCreationModal({
     description: editCourse?.description || "",
     category: editCourse?.category || (null as number | null),
     level: editCourse?.level || (null as number | null),
-    price: editCourse?.price || "0",
-    duration: editCourse?.duration || "",
+    price: editCourse?.price?.toString() || "0",
+    duration: editCourse?.duration ? String(editCourse.duration) : "",
     is_published: editCourse?.is_published || false,
   });
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
@@ -58,18 +58,48 @@ export function CourseCreationModal({
       let numericPart = "";
       let unitPart = "weeks";
       
-      const rawDuration = editCourse.duration || "";
+      const rawDuration = editCourse.duration ? String(editCourse.duration) : "";
       const match = rawDuration.match(/^(\d+)?\s*(.*)$/);
       if (match) {
         numericPart = match[1] || "";
         unitPart = match[2]?.toLowerCase() || "weeks";
       }
 
+      let categoryId: number | null = null;
+      if (editCourse.category) {
+        if (typeof editCourse.category === "number") {
+          categoryId = editCourse.category;
+        } else if (typeof editCourse.category === "string") {
+          const found = categories.find(c => c.name.toLowerCase() === (editCourse.category as string).toLowerCase());
+          if (found) {
+            categoryId = found.id;
+          } else {
+            const parsed = parseInt(editCourse.category);
+            if (!isNaN(parsed)) categoryId = parsed;
+          }
+        }
+      }
+
+      let levelId: number | null = null;
+      if (editCourse.level) {
+        if (typeof editCourse.level === "number") {
+          levelId = editCourse.level;
+        } else if (typeof editCourse.level === "string") {
+          const found = levels.find(l => l.name.toLowerCase() === (editCourse.level as string).toLowerCase());
+          if (found) {
+            levelId = found.id;
+          } else {
+            const parsed = parseInt(editCourse.level);
+            if (!isNaN(parsed)) levelId = parsed;
+          }
+        }
+      }
+
       setFormData({
         title: editCourse.title || "",
         description: editCourse.description || "",
-        category: editCourse.category || null,
-        level: editCourse.level || null,
+        category: categoryId,
+        level: levelId,
         price: editCourse.price?.toString() || "0",
         duration: `${numericPart} ${unitPart}`,
         is_published: editCourse.is_published || false,
@@ -88,7 +118,7 @@ export function CourseCreationModal({
       setThumbnailPreview("");
       setThumbnailFile(null);
     }
-  }, [editCourse, isOpen]);
+  }, [editCourse, isOpen, categories, levels]);
 
   if (!isOpen) return null;
 
@@ -108,7 +138,7 @@ export function CourseCreationModal({
 
     const courseData: any = {
       ...formData,
-      price: parseFloat(formData.price),
+      price: Number(formData.price),
     };
 
     if (thumbnailFile) {

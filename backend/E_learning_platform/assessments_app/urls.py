@@ -5,6 +5,8 @@ urlpatterns = [
     path('<int:assessment_id>/questions/', GetAssessmentQuestionsAPIView.as_view(), name="assessment-questions"),
     path('create/', CreateAssessmentAPIView.as_view(), name="create-assessment"),
     path('questions/create/', CreateQuestionAPIView.as_view(), name="create-question"),
+    path('questions/<int:question_id>/update/', UpdateQuestionAPIView.as_view(), name="update-question"),
+    path('questions/<int:question_id>/delete/', DeleteQuestionAPIView.as_view(), name="delete-question"),
     path('<int:assessment_id>/start/', StartAssessmentAPIView.as_view(), name="start-assessment"),
     path("<int:assessment_id>/start-attempt/",StartAttemptAPIView.as_view(), name="start-attempt"),
     path("lock-attempt/<int:attempt_id>/", LockAttemptAPIView.as_view()),

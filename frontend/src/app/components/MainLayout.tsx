@@ -25,6 +25,7 @@ import {
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { logout } from "../../features/auth/authSlice";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
+import { ThemeToggle } from "./ThemeToggle";
 import Logo from "../assets/R.png";
 
 interface MainLayoutProps {
@@ -60,10 +61,12 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link to="/dashboard" className="flex items-center space-x-2">
-              <div className="flex justify-center mb-2.5">
+              <div className="flex items-center">
                 <img src={Logo} alt="Logo" className="w-auto h-14" />
               </div>
-              <span className="text-xl hidden sm:block">LearnHub</span>
+              <span className="hidden sm:block text-3xl font-bold bg-gradient-to-r from-[#33A7DF] to-[#2D51A1] bg-clip-text text-transparent">
+                LearnHub
+              </span>
             </Link>
 
             {/* Desktop Navigation */}
@@ -97,6 +100,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                 </div>
               </div>
 
+              <ThemeToggle />
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -110,7 +115,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                           ?.split(" ")
                           .map((n) => n[0])
                           .join("")
-                          .toUpperCase().slice(0,2)}
+                          .toUpperCase().slice(0, 2)}
                       </AvatarFallback>
                     </Avatar>
                   </Button>

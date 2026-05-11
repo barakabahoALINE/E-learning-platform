@@ -5,40 +5,39 @@ interface AddLearnerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (learner: {
-    name: string;
+    full_name: string;
     email: string;
-    enrolledCourses: number;
-    status: string;
-  }) => void;
+    institution: string;
+    password: string;
+  }) => void | Promise<void>;
+  isSaving?: boolean;
 }
 
-export function AddLearnerModal({ isOpen, onClose, onAdd }: AddLearnerModalProps) {
+export function AddLearnerModal({ isOpen, onClose, onAdd, isSaving = false }: AddLearnerModalProps) {
   const [formData, setFormData] = useState({
-    name: "",
+    full_name: "",
     email: "",
+    institution: "",
+    password: "",
   });
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.email) {
+    if (!formData.full_name || !formData.email || !formData.institution || !formData.password) {
       alert("Please fill in all fields");
       return;
     }
 
-    // Create new learner
-    const newLearner = {
-      name: formData.name,
-      email: formData.email,
-      enrolledCourses: 0,
-      status: "active",
-    };
-
-    onAdd(newLearner);
-    setFormData({ name: "", email: "" });
-    onClose();
+    try {
+      await onAdd(formData);
+      setFormData({ full_name: "", email: "", institution: "", password: "" });
+      onClose();
+    } catch {
+      // Parent surfaces the API error via toast.
+    }
   };
 
   return (
@@ -61,10 +60,36 @@ export function AddLearnerModal({ isOpen, onClose, onAdd }: AddLearnerModalProps
             </label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              value={formData.full_name}
+              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="e.g., John Smith"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Institution
+            </label>
+            <input
+              type="text"
+              value={formData.institution}
+              onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="University or organization"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Temporary Password
+            </label>
+            <input
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="At least 8 characters"
             />
           </div>
 
@@ -91,9 +116,10 @@ export function AddLearnerModal({ isOpen, onClose, onAdd }: AddLearnerModalProps
             </button>
             <button
               type="submit"
+              disabled={isSaving}
               className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Add Learner
+              {isSaving ? "Adding..." : "Add Learner"}
             </button>
           </div>
         </form>

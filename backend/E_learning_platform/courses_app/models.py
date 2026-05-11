@@ -59,6 +59,13 @@ class Course(models.Model):
     def __str__(self):
         return self.title
 
+    def save(self, *args, **kwargs):
+        if not self.is_published:
+            self.has_unpublished_changes = False
+        super().save(*args, **kwargs)
+
+
+# =========================================================
 # MODULE
 class Module(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="modules")
@@ -66,6 +73,7 @@ class Module(models.Model):
     description = models.TextField(blank=True)
     order = models.PositiveIntegerField()
     is_published = models.BooleanField(default=False)
+    quiz_enabled = models.BooleanField(default=False)
 
     # DRAFT DATA
     draft_title = models.CharField(max_length=255, null=True, blank=True)
@@ -84,6 +92,16 @@ class Module(models.Model):
     def __str__(self):
         return f"{self.course.title} — Module {self.order}: {self.title}"
 
+    def save(self, *args, **kwargs):
+        if not self.course.is_published:
+            self.has_unpublished_changes = False
+        super().save(*args, **kwargs)
+        if self.has_unpublished_changes and self.course.is_published:
+            if not self.course.has_unpublished_changes:
+                self.course.has_unpublished_changes = True
+                self.course.save()
+
+# =========================================================
 # SECTION
 class Section(models.Model):
 
@@ -108,6 +126,19 @@ class Section(models.Model):
     def __str__(self):
         return f"{self.module.title} — Section {self.order}: {self.title}"
 
+    def save(self, *args, **kwargs):
+        if not self.module.course.is_published:
+            self.has_unpublished_changes = False
+        super().save(*args, **kwargs)
+        if self.has_unpublished_changes and self.module.course.is_published:
+            if not self.module.course.has_unpublished_changes:
+                self.module.course.has_unpublished_changes = True
+                self.module.course.save()
+            if not self.module.has_unpublished_changes:
+                self.module.has_unpublished_changes = True
+                self.module.save()
+
+# =========================================================
 # CONTENT
 class Content(models.Model):
 
@@ -151,7 +182,23 @@ class Content(models.Model):
         unique_together = ("section", "order")
 
     def __str__(self):
-        return f"{self.section.title} — {self.title} ({self.content_type})"
+        return f"{self.section.title if self.section else 'No Section'} — {self.title} ({self.content_type})"
+
+    def save(self, *args, **kwargs):
+        if self.section and not self.section.module.course.is_published:
+            self.has_unpublished_changes = False
+        super().save(*args, **kwargs)
+        if self.section and self.has_unpublished_changes and self.section.module.course.is_published:
+            course = self.section.module.course
+            if not course.has_unpublished_changes:
+                course.has_unpublished_changes = True
+                course.save()
+            if not self.section.has_unpublished_changes:
+                self.section.has_unpublished_changes = True
+                self.section.save()
+            if not self.section.module.has_unpublished_changes:
+                self.section.module.has_unpublished_changes = True
+                self.section.module.save()
 
 # MEDIA UPLOAD
 class MediaUpload(models.Model):
