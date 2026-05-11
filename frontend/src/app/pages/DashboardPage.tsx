@@ -23,14 +23,14 @@ import { MainLayout } from "../components/MainLayout";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { fetchMyEnrollments } from "../../features/enrollments/enrollmentSlice";
-import { fetchCourses } from "../../features/courses/courseSlice";
+import { fetchCourses, fetchCategories } from "../../features/courses/courseSlice";
 import { fetchCourseProgress, fetchLearningHoursKPI, fetchCoursesKPI, continueLearning } from "../../features/progress/progressSlice";
 
 export const DashboardPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const reduxUser = useAppSelector(selectCurrentUser);
   const { myEnrollments } = useAppSelector((state) => state.enrollments);
-  const { courses } = useAppSelector((state) => state.courses);
+  const { courses, categories } = useAppSelector((state) => state.courses);
   const { courseProgress, learningHours, coursesKPI } = useAppSelector((state) => state.progress);
 
   const [isReturningUser, setIsReturningUser] = React.useState(false);
@@ -38,6 +38,7 @@ export const DashboardPage: React.FC = () => {
   React.useEffect(() => {
     dispatch(fetchMyEnrollments());
     dispatch(fetchCourses(false));
+    dispatch(fetchCategories());
     dispatch(fetchLearningHoursKPI());
     dispatch(fetchCoursesKPI());
   }, [dispatch]);
@@ -56,11 +57,9 @@ export const DashboardPage: React.FC = () => {
   }, [reduxUser?.id]);
 
   React.useEffect(() => {
-    if (myEnrollments.length > 0) {
       myEnrollments.slice(0, 3).forEach(enrollment => {
-        dispatch(fetchCourseProgress(enrollment.course));
+        dispatch(fetchCourseProgress(Number(enrollment.course)));
       });
-    }
   }, [dispatch, myEnrollments]);
 
   const user = reduxUser ? {
@@ -253,7 +252,7 @@ export const DashboardPage: React.FC = () => {
                           <div className="flex items-start justify-between mb-2">
                             <div>
                               <Badge variant="secondary" className="mb-2 bg-white text-primary border-none">
-                                {courseDetail.category_name || "Course"}
+                                {categories.find(c => c.id === courseDetail.category)?.name || "Course"}
                               </Badge>
                               <h3 className="font-bold text-lg mb-1">{courseDetail.title}</h3>
                               <p className="text-sm text-gray-600">
@@ -269,14 +268,14 @@ export const DashboardPage: React.FC = () => {
                             <Progress value={completionPercentage} className="h-2" />
                             <div className="flex items-center justify-between pt-2">
                               <span className="text-sm text-gray-500 font-medium">
-                                {progress?.completed_lessons || 0} of {progress?.total_lessons || 0} lessons completed
+                                {progress?.completed_lessons || 0} of {progress?.total_lessons || 0} items completed
                               </span>
                               <Button 
                                 className="bg-[#4BA847] hover:bg-[#4BA847]/90" 
                                 size="sm"
                                 onClick={async () => {
                                   try {
-                                    await dispatch(continueLearning(courseDetail.id)).unwrap();
+                                    await dispatch(continueLearning(Number(courseDetail.id))).unwrap();
                                   } catch (error) {
                                     console.error("Failed to continue session:", error);
                                   }

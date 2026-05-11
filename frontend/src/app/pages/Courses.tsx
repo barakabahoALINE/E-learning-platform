@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Plus, Search, Filter, Users, FileText, Edit2, Trash2, Layers, CheckCircle, XCircle } from "lucide-react";
 import { CourseCreationModal } from "../components/courses/CourseCreationModal";
 import StatusModal from "../components/ui/StatusModal";
+import DeleteModal from "../components/ui/DeleteModal";
+import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { fetchCourses, deleteCourse, publishCourse, unpublishCourse, fetchCategories } from "../../features/courses/courseSlice";
 import { Course } from "../../features/courses/types";
@@ -26,12 +28,12 @@ export function CoursesPage() {
   
   const [searchQuery, setSearchQuery] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [hoveredCourse, setHoveredCourse] = useState<number | null>(null);
+  const [hoveredCourse, setHoveredCourse] = useState<number | string | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<number | string | null>(null);
   
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
-  const [activeCategory, setActiveCategory] = useState<number | 'all'>('all');
+  const [activeCategory, setActiveCategory] = useState<number | string | 'all'>('all');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [status, setStatus] = useState<{ type: "success" | "error"; title: string; message: string } | null>(null);
 
@@ -49,7 +51,7 @@ export function CoursesPage() {
     
     const matchesCategory = 
       activeCategory === 'all' || 
-      String(course.category) === String(activeCategory);
+      String((course as any).category_id || course.category) === String(activeCategory);
     
     return matchesSearch && matchesStatus && matchesCategory;
   });
@@ -61,7 +63,7 @@ export function CoursesPage() {
         (statusFilter === 'published' && course.is_published) || 
         (statusFilter === 'draft' && !course.is_published);
       
-      const matchesCategory = categoryId === 'all' || String(course.category) === String(categoryId);
+      const matchesCategory = categoryId === 'all' || String((course as any).category_id || course.category) === String(categoryId);
       return matchesStatus && matchesCategory;
     }).length;
   };
@@ -84,23 +86,16 @@ export function CoursesPage() {
     setHoveredCourse(null);
   };
 
-  const handleDeleteCourse = async (id: number) => {
+  const handleDeleteCourse = async (id: number | string) => {
     try {
       const response = await dispatch(deleteCourse(id)).unwrap();
       setDeleteConfirm(null);
       setHoveredCourse(null);
-      setStatus({
-        type: "success",
-        title: "Course Deleted",
-        message: response.message || "The course has been successfully removed."
-      });
+      toast.success(response.message || "Course deleted successfully");
       dispatch(fetchCourses(true));
     } catch (error: any) {
-      setStatus({
-        type: "error",
-        title: "Delete Failed",
-        message: error || "Something went wrong while deleting the course."
-      });
+      setDeleteConfirm(null);
+      toast.error(error || "Something went wrong while deleting the course.");
     }
   };
 
@@ -289,7 +284,7 @@ export function CoursesPage() {
                 <div className="flex items-center gap-4 mb-4">
                   <div className="flex items-center gap-1.5 text-sm text-gray-600">
                     <FileText className="w-4 h-4" />
-                    <span>{course.lessons_count || 0} lessons</span>
+                    <span>{course.modules_count || 0} Modules</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-sm text-gray-600">
                     <Users className="w-4 h-4" />
@@ -330,33 +325,13 @@ export function CoursesPage() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-gray-900/20 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Delete Course
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Are you sure you want to delete this course? This action cannot be undone and all course content will be permanently removed.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-2.5 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDeleteCourse(deleteConfirm)}
-                className="px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors cursor-pointer"
-              >
-                Delete Course
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteModal
+        isOpen={!!deleteConfirm}
+        title="Delete Course"
+        description="Are you sure you want to delete this course? This action cannot be undone and all course content will be permanently removed."
+        onConfirm={() => deleteConfirm && handleDeleteCourse(deleteConfirm)}
+        onCancel={() => setDeleteConfirm(null)}
+      />
 
       <CourseCreationModal
         isOpen={isModalOpen}

@@ -12,10 +12,23 @@ interface AuthState {
 }
 
 const extractErrorMessage = (errorData: ErrorResponse | string | unknown): string => {
-  if (typeof errorData === 'string') return errorData;
+  if (typeof errorData === 'string') {
+    const trimmed = errorData.trim();
+    if (trimmed.startsWith('<') || trimmed.includes('<!DOCTYPE') || trimmed.includes('<html')) {
+      return 'A server error occurred. Please try again later.';
+    }
+    return errorData;
+  }
   if (!errorData) return 'An unknown error occurred';
   
-  const err = errorData as ErrorResponse;
+  const err = errorData as any;
+  
+  if (err.message && typeof err.message === 'string') {
+    return err.message;
+  }
+  if (err.detail && typeof err.detail === 'string') {
+    return err.detail;
+  }
   
   // DRF returns { non_field_errors: [...] }
   if (err.non_field_errors && Array.isArray(err.non_field_errors)) {

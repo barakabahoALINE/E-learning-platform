@@ -9,116 +9,99 @@ export interface Category {
   level: number;
 }
 
-export interface LessonContent {
-  id?: number;
-  title: string;
-  content_type: 'note' | 'video' | 'image' | 'file' | 'quiz';
-  description?: string;
-  video_url?: string;
-  note_text?: string;
-  file?: string | File | null;
-  quiz?: any;
-  order: number;
-  is_preview?: boolean;
-}
+export type ContentType = "text" | "video" | "image" | "file";
 
 export interface ContentBlock {
   id: string | number;
-  type: 'text' | 'video' | 'image' | 'quiz' | 'note' | 'file';
-  title?: string;
+  type: ContentType;
   content: string;
-  quiz?: any;
-  settings?: {
-    caption?: string;
-  };
+}
+
+export interface ContentItem {
+  id: string | number;
+  title: string;
+  order: number;
+  contents?: ContentBlock[];
+  has_unpublished_changes?: boolean;
+  pending_delete?: boolean;
+}
+
+export interface Section {
+  id: string | number;
+  title: string;
+  order: number;
+  contents: ContentItem[];
+  has_unpublished_changes?: boolean;
+  pending_delete?: boolean;
 }
 
 export interface QuizQuestion {
   id: number | string;
   question: string;
+  question_text?: string;
+  question_type?: string;
+  marks?: number;
   options: string[];
+  choices?: any[];
   correctAnswer: number;
 }
 
-export interface FinalAssessment {
+export interface Quiz {
+  id: string | number;
+  title: string;
   questions: QuizQuestion[];
 }
 
-export interface Course {
-  id: number;
-  title: string;
-  description: string;
-  thumbnail: string;
-  duration: string;
-  price: string;
-  is_published: boolean;
-  is_preview: boolean;
-  level: number | null;
-  category: number | null;
-  admin: string;
-  instructor?: string;
-  level_name?: string;
-  category_name?: string;
-  enrolledStudents?: number;
-  enrolled_students_count?: number;
-  lessons?: Lesson[];
-  lessons_count?: number;
-  rating?: number;
-  final_assessment?: FinalAssessment;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface LessonCreateData {
+export interface Module {
+  id: string | number;
   title: string;
   order: number;
-  contents?: LessonContentCreateUpdateData[];
+  sections: Section[];
+  quiz?: Quiz;
+  quizEnabled?: boolean;
+  has_unpublished_changes?: boolean;
+  pending_delete?: boolean;
 }
 
-export interface Lesson extends LessonCreateData {
-  id: number;
-  course: number;
-  contents?: LessonContent[];
-  blocks?: ContentBlock[];
-  quiz?: {
-    enabled: boolean;
-    questions: QuizQuestion[];
-  };
-}
-
-export interface LessonUpdateData extends Partial<LessonCreateData> {
-  course_id?: number;
-  contents?: LessonContentCreateUpdateData[];
-}
-
-export interface LessonContentCreateUpdateData {
-  title?: string;
-  content_type?: 'note' | 'video' | 'image' | 'file' | 'quiz';
-  description?: string;
-  video_url?: string;
-  note_text?: string;
-  file?: string | File | null;
-  quiz?: any;
-  order?: number;
-  is_preview?: boolean;
+export interface Course {
+  id: string | number;
+  title: string;
+  description: string;
+  category: string | number;
+  level: string | number;
+  price: number;
+  duration: number;
+  thumbnail: string;
+  enrolled_students_count?: number;
+  admin?: string;
+  instructor?: string;
+  is_published?: boolean;
+  modules_count?: number;
+  status: "draft" | "published";
+  modules: Module[];
+  final_assessment?: Quiz;
+  rating?: number;
+  created_at?: string;
+  updated_at?: string;
+  has_unpublished_changes?: boolean;
+  pending_delete?: boolean;
 }
 
 export interface CourseCreateData {
   title: string;
   description: string;
-  duration: string;
+  duration: string | number;
   price: number;
-  level?: number;
-  category?: number;
+  level?: number | string;
+  category?: number | string;
   thumbnail?: File | string | null;
 }
 
 export interface CourseUpdateData extends Partial<CourseCreateData> {
+  status?: "draft" | "published";
   is_published?: boolean;
-  lessons?: Lesson[];
-  lesson_ids?: number[];
-  finalAssessment?: FinalAssessment;
-  final_assessment?: FinalAssessment;
+  modules?: Module[];
+  final_assessment?: Quiz;
 }
 
 export interface Enrollment {
@@ -127,24 +110,6 @@ export interface Enrollment {
   course_title: string;
   status: 'active' | 'completed' | 'cancelled';
   enrolled_at: string;
-}
-
-export interface ContentProgress {
-  id: number;
-  student: number;
-  content: number;
-  enrollment: number;
-  completed: boolean;
-  completed_at: string | null;
-}
-
-export interface LessonProgress {
-  id: number;
-  student: number;
-  lesson: number;
-  enrollment: number;
-  completed: boolean;
-  completed_at: string | null;
 }
 
 export interface CourseProgress {

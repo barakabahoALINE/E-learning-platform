@@ -59,6 +59,20 @@ class CreateAssessmentAPIView(APIView):
             "success": False,
             "error": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request):
+        assessment_id = request.data.get("assessment_id") or request.query_params.get("assessment_id")
+        module_id = request.data.get("module_id") or request.query_params.get("module_id")
+
+        if assessment_id:
+            assessment = get_object_or_404(Assessment, id=assessment_id)
+            assessment.delete()
+            return Response({"success": True, "message": "Assessment deleted successfully"})
+        elif module_id:
+            Assessment.objects.filter(module_id=module_id, assessment_type="QUIZ").delete()
+            return Response({"success": True, "message": "Module quiz deleted successfully"})
+
+        return Response({"success": False, "error": "Assessment ID or Module ID is required"}, status=400)
         
         
 # ✅ Create Question API (Admin only)
@@ -157,6 +171,24 @@ class GetAssessmentQuestionsAPIView(APIView):
             "data": QuestionSerializer(questions, many=True).data
         })
 
+class UpdateQuestionAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def put(self, request, question_id):
+        question = get_object_or_404(Question, id=question_id)
+        serializer = QuestionCreateSerializer(question, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": "success", "data": QuestionSerializer(question).data})
+        return Response({"status": "failed", "errors": serializer.errors}, status=400)
+
+class DeleteQuestionAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def delete(self, request, question_id):
+        question = get_object_or_404(Question, id=question_id)
+        question.delete()
+        return Response({"status": "success", "message": "Question deleted"})
 
 # =========================================================
 # START ATTEMPT

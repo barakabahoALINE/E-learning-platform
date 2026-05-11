@@ -1,15 +1,31 @@
 import api from '../../services/api';
-import { Course, CourseCreateData, CourseUpdateData, Lesson, LessonCreateData, Level, Category, LessonContentCreateUpdateData, LessonContent, LessonUpdateData, Enrollment, CourseProgress, LearningHoursKPI, CoursesKPI, LessonProgress, LessonContentProgress } from './types';
+import { 
+  Course, 
+  CourseCreateData, 
+  CourseUpdateData, 
+  Module, 
+  Section, 
+  ContentItem,
+  Level, 
+  Category, 
+  Enrollment, 
+  CourseProgress, 
+  LearningHoursKPI, 
+  CoursesKPI, 
+  LessonProgress, 
+  LessonContentProgress 
+} from './types';
 
 const courseAPI = {
+  // COURSE API
   fetchCourses: async (isAdmin = false): Promise<Course[]> => {
     const response = await api.get(`courses/?admin=${isAdmin}`);
     return response.data;
   },
 
-  fetchCourseDetails: async (id: number): Promise<Course> => {
+  fetchCourseDetails: async (id: number | string): Promise<Course> => {
     const response = await api.get(`courses/${id}/`);
-    return response.data;
+    return response.data.data || response.data;
   },
 
   createCourse: async (data: CourseCreateData): Promise<{ success: boolean; data: Course }> => {
@@ -31,34 +47,15 @@ const courseAPI = {
     return response.data;
   },
 
-  updateCourse: async (id: number, data: CourseUpdateData): Promise<{ success: boolean; message: string; data: Course }> => {
-    const mappedData = { ...data };
-    if (mappedData.lessons) {
-      mappedData.lessons = mappedData.lessons.map(lesson => ({
-        ...lesson,
-        contents: (lesson.blocks || []).map((block, index) => ({
-          id: typeof block.id === 'number' ? block.id : undefined,
-          title: block.title || (block.type.charAt(0).toUpperCase() + block.type.slice(1)),
-          content_type: block.type === 'text' ? 'note' : (block.type as any),
-          note_text: block.type === 'text' ? block.content : undefined,
-          video_url: block.type === 'video' ? block.content : undefined,
-          description: block.type === 'image' ? block.content : (block.settings?.caption || ''),
-          file: block.type === 'file' ? block.content : (block.type === 'image' ? block.content : null),
-          quiz: block.type === 'quiz' ? block.quiz : null,
-          order: index,
-          is_preview: false
-        }))
-      })) as Lesson[];
-    }
-
-     if (mappedData.thumbnail instanceof File) {
+  updateCourse: async (id: number | string, data: CourseUpdateData): Promise<{ success: boolean; message: string; data: Course }> => {
+    if (data.thumbnail instanceof File) {
       const formData = new FormData();
-      Object.entries(mappedData).forEach(([key, value]) => {
+      Object.entries(data).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
-          if (key === 'lessons' || key === 'finalAssessment') {
-             formData.append(key, JSON.stringify(value));
+          if (typeof value === 'object' && !(value instanceof File)) {
+            formData.append(key, JSON.stringify(value));
           } else {
-             formData.append(key, value as string | Blob);
+            formData.append(key, value as string | Blob);
           }
         }
       });
@@ -69,76 +66,115 @@ const courseAPI = {
       });
       return response.data;
     }
-    const response = await api.patch(`courses/${id}/update/`, mappedData);
+    const response = await api.patch(`courses/${id}/update/`, data);
     return response.data;
   },
 
-  deleteCourse: async (id: number): Promise<{ success: boolean; message: string }> => {
+  deleteCourse: async (id: number | string): Promise<{ success: boolean; message: string }> => {
     const response = await api.delete(`courses/${id}/delete/`);
     return response.data;
   },
 
-  publishCourse: async (id: number): Promise<{ success: boolean; message: string }> => {
+  publishCourse: async (id: number | string): Promise<{ success: boolean; message: string }> => {
     const response = await api.post(`courses/${id}/publish/`);
     return response.data;
   },
 
-  unpublishCourse: async (id: number): Promise<{ success: boolean; message: string }> => {
+  publishCourseChanges: async (id: number | string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(`courses/${id}/publish-changes/`, { confirm: true });
+    return response.data;
+  },
+
+  unpublishCourse: async (id: number | string): Promise<{ success: boolean; message: string }> => {
     const response = await api.post(`courses/${id}/unpublish/`);
     return response.data;
   },
 
-  fetchLessons: async (courseId: number): Promise<Lesson[]> => {
-    const response = await api.get(`courses/${courseId}/lessons/`);
+  // MODULE API
+  fetchModules: async (courseId: number | string): Promise<Module[]> => {
+    const response = await api.get(`courses/${courseId}/modules/`);
     return response.data;
   },
 
-  createLesson: async (courseId: number, data: LessonCreateData): Promise<{ success: boolean; data: Lesson }> => {
-    const response = await api.post(`courses/${courseId}/lessons/create/`, data);
+  createModule: async (courseId: number | string, data: Partial<Module>): Promise<{ success: boolean; data: Module }> => {
+    const response = await api.post(`courses/${courseId}/modules/create/`, data);
     return response.data;
   },
 
-  updateLesson: async (courseId: number, lessonId: number, data: LessonUpdateData): Promise<{ success: boolean; data: Lesson }> => {
-    const response = await api.patch(`courses/${courseId}/lessons/${lessonId}/update/`, data);
+  updateModule: async (courseId: number | string, moduleId: number | string, data: Partial<Module>): Promise<{ success: boolean; data: Module }> => {
+    const response = await api.patch(`courses/${courseId}/modules/${moduleId}/update/`, data);
     return response.data;
   },
 
-  deleteLesson: async (courseId: number, lessonId: number): Promise<{ success: boolean; message: string }> => {
-    const response = await api.delete(`courses/${courseId}/lessons/${lessonId}/delete/`);
+  deleteModule: async (courseId: number | string, moduleId: number | string): Promise<{ success: boolean; message: string; hard_deleted?: boolean }> => {
+    const response = await api.delete(`courses/${courseId}/modules/${moduleId}/delete/`);
     return response.data;
   },
 
-  fetchLessonContents: async (courseId: number, lessonId: number): Promise<LessonContent[]> => {
-    const response = await api.get(`courses/${courseId}/lessons/${lessonId}/contents/`);
+  // SECTION API
+  fetchSections: async (moduleId: number | string): Promise<Section[]> => {
+    const response = await api.get(`courses/modules/${moduleId}/sections/`);
     return response.data;
   },
 
-  createLessonContent: async (courseId: number, lessonId: number, data: LessonContentCreateUpdateData): Promise<{ success: boolean; data: LessonContent }> => {
-    const response = await api.post(`courses/${courseId}/lessons/${lessonId}/contents/create/`, data);
+  createSection: async (moduleId: number | string, data: Partial<Section>): Promise<{ success: boolean; data: Section }> => {
+    const response = await api.post(`courses/modules/${moduleId}/sections/create/`, data);
     return response.data;
   },
 
-  updateLessonContent: async (courseId: number, lessonId: number, contentId: number, data: LessonContentCreateUpdateData): Promise<{ success: boolean; data: LessonContent }> => {
-    const response = await api.patch(`courses/${courseId}/lessons/${lessonId}/contents/${contentId}/update/`, data);
+  updateSection: async (courseId: number | string, moduleId: number | string, sectionId: number | string, data: Partial<Section>): Promise<{ success: boolean; data: Section }> => {
+    const response = await api.patch(`courses/${courseId}/modules/${moduleId}/sections/${sectionId}/update/`, data);
     return response.data;
   },
 
-  deleteLessonContent: async (courseId: number, lessonId: number, contentId: number): Promise<{ success: boolean; message: string }> => {
-    const response = await api.delete(`courses/${courseId}/lessons/${lessonId}/contents/${contentId}/delete/`);
+  deleteSection: async (courseId: number | string, moduleId: number | string, sectionId: number | string): Promise<{ success: boolean; message: string; hard_deleted?: boolean }> => {
+    const response = await api.delete(`courses/${courseId}/modules/${moduleId}/sections/${sectionId}/delete/`);
     return response.data;
   },
 
+  fetchModuleContents: async (moduleId: number | string): Promise<any> => {
+    const response = await api.get(`courses/modules/${moduleId}/all-contents/`);
+    return response.data;
+  },
+
+  // CONTENT API
+  fetchContents: async (courseId: number | string, moduleId: number | string, sectionId: number | string): Promise<ContentItem[]> => {
+    const response = await api.get(`courses/${courseId}/modules/${moduleId}/sections/${sectionId}/contents/`);
+    return response.data;
+  },
+
+  createContent: async (courseId: number | string, moduleId: number | string, sectionId: number | string, data: Partial<ContentItem>): Promise<{ success: boolean; data: ContentItem }> => {
+    const response = await api.post(`courses/${courseId}/modules/${moduleId}/sections/${sectionId}/contents/create/`, data);
+    return response.data;
+  },
+
+  fetchContentDetail: async (courseId: number | string, moduleId: number | string, sectionId: number | string, contentId: number | string): Promise<ContentItem> => {
+    const response = await api.get(`courses/${courseId}/modules/${moduleId}/sections/${sectionId}/contents/${contentId}/`);
+    return response.data;
+  },
+
+  updateContent: async (courseId: number | string, moduleId: number | string, sectionId: number | string, contentId: number | string, data: Partial<ContentItem>): Promise<{ success: boolean; data: ContentItem }> => {
+    const response = await api.patch(`courses/${courseId}/modules/${moduleId}/sections/${sectionId}/contents/${contentId}/update/`, data);
+    return response.data;
+  },
+
+  deleteContent: async (courseId: number | string, moduleId: number | string, sectionId: number | string, contentId: number | string): Promise<{ success: boolean; message: string; hard_deleted?: boolean }> => {
+    const response = await api.delete(`courses/${courseId}/modules/${moduleId}/sections/${sectionId}/contents/${contentId}/delete/`);
+    return response.data;
+  },
+
+  // METADATA API
   fetchLevels: async (): Promise<Level[]> => {
     const response = await api.get('levels/');
-    return response.data;
+    return response.data.data || response.data;
   },
 
   fetchCategories: async (): Promise<Category[]> => {
     const response = await api.get('categories/');
-    return response.data;
+    return response.data.data || response.data;
   },
 
-  uploadMedia: async (file: File): Promise<{ success: boolean; url: string; id: number }> => {
+  uploadMedia: async (file: File): Promise<{ success: boolean; message: string; data: { id: number; file: string; uploaded_at: string } }> => {
     const formData = new FormData();
     formData.append('file', file);
     const response = await api.post('media/upload/', formData, {
@@ -149,18 +185,19 @@ const courseAPI = {
     return response.data;
   },
 
+  // STUDENT PROGRESS API
   fetchMyEnrollments: async (): Promise<{ status: string; data: Enrollment[] }> => {
     const response = await api.get('my-courses/');
     return response.data;
   },
 
-  enrollInCourse: async (courseId: number): Promise<{ status: string; data: Enrollment }> => {
+  enrollInCourse: async (courseId: number | string): Promise<{ status: string; data: Enrollment }> => {
     const response = await api.post('enroll/', { course: courseId });
     return response.data;
   },
 
-  fetchCourseProgress: async (courseId: number): Promise<CourseProgress> => {
-    const response = await api.get(`progress/courses/${courseId}/`);
+  fetchCourseProgress: async (course_id: number | string): Promise<CourseProgress> => {
+    const response = await api.get(`progress/courses/${course_id}/`);
     const data = response.data.data || response.data;
     return {
       ...data,
@@ -168,7 +205,7 @@ const courseAPI = {
     };
   },
 
-  completeContent: async (courseId: number, lessonId: number, contentId: number): Promise<{ success: boolean }> => {
+  completeContent: async (courseId: number | string, lessonId: number | string, contentId: number | string): Promise<{ success: boolean }> => {
     const response = await api.post(`progress/courses/${courseId}/lessons/${lessonId}/contents/${contentId}/complete/`);
     return response.data;
   },
@@ -183,32 +220,32 @@ const courseAPI = {
     return response.data.data;
   },
 
-  startLearning: async (courseId: number): Promise<any> => {
+  startLearning: async (courseId: number | string): Promise<any> => {
     const response = await api.post(`progress/courses/${courseId}/start/`);
     return response.data;
   },
 
-  continueLearning: async (courseId: number): Promise<any> => {
+  continueLearning: async (courseId: number | string): Promise<any> => {
     const response = await api.get(`progress/courses/${courseId}/continue/`);
     return response.data;
   },
 
-  endLearningSession: async (courseId: number): Promise<any> => {
+  endLearningSession: async (courseId: number | string): Promise<any> => {
     const response = await api.post(`progress/courses/${courseId}/end-session/`);
     return response.data;
   },
 
-  fetchLessonContentsProgress: async (courseId: number, lessonId: number): Promise<{ contents: LessonContentProgress[] }> => {
+  fetchLessonContentsProgress: async (courseId: number | string, lessonId: number | string): Promise<{ contents: LessonContentProgress[] }> => {
     const response = await api.get(`progress/courses/${courseId}/lessons/${lessonId}/contents/`);
     return response.data;
   },
 
-  fetchCourseLessonsProgress: async (courseId: number): Promise<{ lessons: LessonProgress[] }> => {
+  fetchCourseLessonsProgress: async (courseId: number | string): Promise<{ lessons: LessonProgress[] }> => {
     const response = await api.get(`progress/courses/${courseId}/lessons/`);
     return response.data;
   },
 
-  completeFinalAssessment: async (courseId: number): Promise<any> => {
+  completeFinalAssessment: async (courseId: number | string): Promise<any> => {
     const response = await api.post(`progress/courses/${courseId}/final/complete/`);
     return response.data;
   },

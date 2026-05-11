@@ -160,7 +160,7 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/lesson/:courseId/:lessonId/:contentId?"
+          path="/learning/:courseId/:moduleId"
           element={
             <ProtectedRoute>
               <LessonPage />
@@ -168,7 +168,7 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/quiz/:courseId/:lessonId"
+          path="/learning/:courseId/quiz/:moduleId"
           element={
             <ProtectedRoute>
               <QuizPage />

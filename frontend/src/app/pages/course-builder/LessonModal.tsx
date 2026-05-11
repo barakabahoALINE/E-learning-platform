@@ -1,33 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, BookOpen, File as FileIcon, Image as ImageIcon, Plus, Trash2, Type, Upload, Video, X } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
-import { useAppDispatch, useAppSelector } from "../../../hooks/reduxHooks";
-import { fetchLessonContents } from "../../../features/courses/lessonSlice";
-import courseAPI from "../../../features/courses/courseAPI";
-import type { Lesson, ContentBlock, QuizQuestion } from "../../../features/courses/types";
+import type { ContentBlock, QuizQuestion } from "../../../features/courses/types";
 import { QuizQuestionModal } from "./AssessmentModal";
-
-const EMPTY_ARRAY: any[] = [];
+import courseAPI from "../../../features/courses/courseAPI";
 
 export function LessonModal({
   lesson,
   onClose,
   onSave,
-  courseId,
-  totalLessons,
   isSaving = false,
 }: {
-  lesson: Lesson | null;
+  lesson: any;
   onClose: () => void;
-  onSave: (lesson: Lesson) => void;
+  onSave: (data: { id?: string | number; title: string; blocks: ContentBlock[] }) => void;
   courseId: number;
   totalLessons: number;
   isSaving?: boolean;
 }) {
-  const dispatch = useAppDispatch();
   const [title, setTitle] = useState(lesson?.title || "");
-  
-  const reduxContents = useAppSelector((state) => (lesson && state.lessons.contents[lesson.id]) ? state.lessons.contents[lesson.id] : EMPTY_ARRAY);
   const [blocks, setBlocks] = useState<ContentBlock[]>([]);
   
   const [quizEnabled, setQuizEnabled] = useState(false);
@@ -37,34 +28,19 @@ export function LessonModal({
 
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  useEffect(() => {
-    if (lesson && courseId) {
-       dispatch(fetchLessonContents({ courseId, lessonId: lesson.id }));
-    }
-  }, [lesson?.id, courseId, dispatch]);
+  const getMediaUrl = (url: string | null) => {
+    if (!url) return "";
+    if (url.startsWith("http") || url.startsWith("data:") || url.startsWith("blob:")) return url;
+    return `http://localhost:8000${url.startsWith('/') ? '' : '/'}${url}`;
+  };
 
   useEffect(() => {
     if (lesson) {
       setTitle(lesson.title);
-
-      const uiBlocks = reduxContents
-        .filter(c => c.content_type !== 'quiz')
-        .map(c => ({
-          id: c.id,
-          type: (c.content_type === 'note' ? 'text' : c.content_type) as any,
-          content: c.note_text || c.video_url || c.file || c.description || '',
-          settings: { caption: c.description },
-          title: c.title
-        }));
-      setBlocks(uiBlocks);
-
-      const quizContent = reduxContents.find(c => c.content_type === 'quiz');
-      if (quizContent) {
-        setQuizEnabled(true);
-        setQuizQuestions(quizContent.quiz?.questions || []);
+      if (lesson.blocks && lesson.blocks.length > 0) {
+        setBlocks(lesson.blocks);
       } else {
-        setQuizEnabled(false);
-        setQuizQuestions([]);
+        setBlocks([]);
       }
     } else {
       setTitle("");
@@ -72,7 +48,7 @@ export function LessonModal({
       setQuizEnabled(false);
       setQuizQuestions([]);
     }
-  }, [lesson, reduxContents.length]);
+  }, [lesson]);
 
   const addBlock = (type: "text" | "video" | "image" | "file") => {
     const newBlock: ContentBlock = {
@@ -85,10 +61,6 @@ export function LessonModal({
 
   const updateBlock = (id: string | number, content: string) => {
     setBlocks(blocks.map((b) => (b.id === id ? { ...b, content } : b)));
-  };
-
-  const updateBlockCaption = (id: string | number, caption: string) => {
-    setBlocks(blocks.map((b) => b.id === id ? { ...b, settings: { ...b.settings, caption } } : b));
   };
 
   const removeBlock = (id: string | number) => {
@@ -109,10 +81,14 @@ export function LessonModal({
 
   const handleFileUploadWrapper = async (id: string | number, file: File, type: 'image' | 'video' | 'file') => {
     setUploadingBlocks((prev) => ({ ...prev, [id]: true }));
+    
     try {
       const response = await courseAPI.uploadMedia(file);
       if (response.success) {
-        updateBlock(id, response.url);
+        const fileUrl = response.data.file;
+        updateBlock(id, fileUrl);
+      } else {
+        throw new Error("Upload failed");
       }
     } catch (error) {
       console.error(`${type} upload failed:`, error);
@@ -124,7 +100,7 @@ export function LessonModal({
 
   const handleSave = () => {
     if (!title || blocks.length === 0) {
-      alert("Please provide a title and at least one section");
+      alert("Please provide a title and at least one content block");
       return;
     }
 
@@ -134,35 +110,17 @@ export function LessonModal({
     }
 
     if (blocks.some((b) => !b.content.trim())) {
-      alert("Please fill in all content sections");
+      alert("Please fill in all content blocks");
       return;
     }
 
-    if (quizEnabled && quizQuestions.length === 0) {
-      alert("Please add at least one question to the quiz or disable it.");
-      return;
-    }
-
-    let finalBlocks = [...blocks];
-    if (quizEnabled) {
-      const existingQuizBlock = reduxContents.find(c => c.content_type === 'quiz');
-      finalBlocks.push({
-        id: existingQuizBlock?.id || `new-quiz-${Date.now()}`,
-        type: 'quiz',
-        content: 'Lesson Quiz ....',
-        quiz: { questions: quizQuestions }
-      });
-    }
-
-    const newLesson: Lesson = {
-      id: lesson?.id || Date.now(),
-      course: courseId,
+    const saveData = {
+      id: lesson?.id,
       title,
-      order: lesson?.order || (totalLessons + 1),
-      blocks: finalBlocks,
+      blocks: blocks,
     };
 
-    onSave(newLesson);
+    onSave(saveData);
   };
 
   return (
@@ -175,7 +133,7 @@ export function LessonModal({
       <div className="relative bg-white rounded-lg w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
           <h2 className="text-xl font-semibold text-gray-900">
-            {lesson ? "Edit Lesson" : "Add New Lesson"}
+            {lesson ? "Edit Content Item" : "Add Content Item"}
           </h2>
           <button
             onClick={onClose}
@@ -188,7 +146,7 @@ export function LessonModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Lesson Title <span className="text-red-500">*</span>
+              Item Title <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -196,24 +154,24 @@ export function LessonModal({
               disabled={isSaving}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
-              placeholder="e.g., Introduction to React Hooks"
+              placeholder="e.g., Introduction to the module"
             />
           </div>
 
-          {/* Sections */}
+          {/* Blocks */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
-                Lesson Sections
+                Content Blocks
               </h3>
-              <span className="text-xs text-gray-400">{blocks.length} section{blocks.length !== 1 ? "s" : ""}</span>
+              <span className="text-xs text-gray-400">{blocks.length} block{blocks.length !== 1 ? "s" : ""}</span>
             </div>
 
             {blocks.length === 0 ? (
               <div className="text-center py-12 border-2 border-dashed border-gray-100 rounded-xl">
                 <BookOpen className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-sm text-gray-400">No sections yet.</p>
-                <p className="text-xs text-gray-300 mt-1">Use the toolbar below to add your first section.</p>
+                <p className="text-sm text-gray-400">No content blocks yet.</p>
+                <p className="text-xs text-gray-300 mt-1">Use the toolbar below to add your first block.</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -246,7 +204,7 @@ export function LessonModal({
                           {block.type === 'video' && <Video className="w-3.5 h-3.5 text-blue-500" />}
                           {block.type === 'image' && <ImageIcon className="w-3.5 h-3.5 text-blue-500" />}
                           {block.type === 'file' && <FileIcon className="w-3.5 h-3.5 text-blue-500" />}
-                          {block.type} Section
+                          {block.type} Block
                         </span>
                       </div>
                       <button
@@ -263,7 +221,7 @@ export function LessonModal({
                         value={block.content || ""}
                         onChange={(val) => updateBlock(block.id, val)}
                         disabled={isSaving}
-                        placeholder="Enter your lesson content here... Use the toolbar above to format your text (Bold, Italic, lists, etc.)"
+                        placeholder="Enter your content here..."
                       />
                     )}
 
@@ -275,9 +233,9 @@ export function LessonModal({
                             <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
                             <span className="text-xs font-semibold text-purple-600 animate-pulse">Uploading Video...</span>
                           </div>
-                        ) : block.content && (block.content.startsWith('blob:') || block.content.startsWith('data:') || block.content.includes('/media/course_media/')) ? (
+                        ) : block.content && (block.content.startsWith('blob:') || block.content.startsWith('data:') || block.content.includes('/media/')) ? (
                           <video
-                            src={block.content}
+                            src={getMediaUrl(block.content)}
                             controls
                             className="w-full rounded-lg max-h-48 bg-black shadow-inner"
                           />
@@ -292,13 +250,8 @@ export function LessonModal({
                           value={block.content.startsWith('blob:') || block.content.startsWith('data:') ? '' : block.content}
                           onChange={(e) => updateBlock(block.id, e.target.value)}
                           className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-                          placeholder="Paste a Video URL (YouTube, Vimeo, etc.)"
+                          placeholder="Paste a Video URL"
                         />
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 border-t border-gray-100" />
-                          <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">or</span>
-                          <div className="flex-1 border-t border-gray-100" />
-                        </div>
                         <input
                           type="file"
                           accept="video/*"
@@ -311,18 +264,11 @@ export function LessonModal({
                         />
                         <button
                           onClick={() => fileInputRefs.current[block.id + '_video']?.click()}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-purple-200 text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 hover:border-purple-400 text-sm font-medium transition-all active:scale-[0.98] cursor-pointer"
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-purple-200 text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 hover:border-purple-400 text-sm font-medium transition-all cursor-pointer"
                         >
                           <Upload className="w-4 h-4" />
                           Upload Video File
                         </button>
-                        <input
-                          type="text"
-                          value={block.settings?.caption || ""}
-                          onChange={(e) => updateBlockCaption(block.id, e.target.value)}
-                          className="w-full px-4 py-1.5 bg-white border border-gray-50 rounded-lg text-xs text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-200"
-                          placeholder="Video caption (optional)"
-                        />
                       </div>
                     )}
 
@@ -337,7 +283,7 @@ export function LessonModal({
                         ) : block.content && (
                           <div className="relative group/img">
                             <img
-                              src={block.content}
+                              src={getMediaUrl(block.content)}
                               alt="Section"
                               className="w-full rounded-lg max-h-64 object-cover shadow-sm transition-opacity group-hover/img:opacity-90"
                             />
@@ -356,11 +302,6 @@ export function LessonModal({
                           className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
                           placeholder="Paste an Image URL"
                         />
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 border-t border-gray-100" />
-                          <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">or</span>
-                          <div className="flex-1 border-t border-gray-100" />
-                        </div>
                         <input
                           type="file"
                           accept="image/*"
@@ -373,18 +314,11 @@ export function LessonModal({
                         />
                         <button
                           onClick={() => fileInputRefs.current[block.id + '_image']?.click()}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-green-200 text-green-600 bg-green-50 rounded-lg hover:bg-green-100 hover:border-green-400 text-sm font-medium transition-all active:scale-[0.98] cursor-pointer"
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-green-200 text-green-600 bg-green-50 rounded-lg hover:bg-green-100 hover:border-green-400 text-sm font-medium transition-all cursor-pointer"
                         >
                           <Upload className="w-4 h-4" />
                           Upload Image File
                         </button>
-                        <input
-                          type="text"
-                          value={block.settings?.caption || ""}
-                          onChange={(e) => updateBlockCaption(block.id, e.target.value)}
-                          className="w-full px-4 py-1.5 bg-white border border-gray-50 rounded-lg text-xs text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-200"
-                          placeholder="Image caption (optional)"
-                        />
                       </div>
                     )}
 
@@ -402,9 +336,14 @@ export function LessonModal({
                               <FileIcon className="w-6 h-6 text-orange-600" />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-gray-900 truncate">
+                              <a
+                                href={getMediaUrl(block.content)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline truncate block"
+                              >
                                 {block.content.split('/').pop()}
-                              </p>
+                              </a>
                               <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mt-0.5">Resource Document</p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -435,10 +374,10 @@ export function LessonModal({
                         />
                         <button
                           onClick={() => fileInputRefs.current[block.id + '_file']?.click()}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:border-orange-500 hover:text-orange-600 text-sm font-medium transition-all active:scale-[0.98] cursor-pointer"
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:border-orange-500 hover:text-orange-600 text-sm font-medium transition-all cursor-pointer"
                         >
                           <FileIcon className="w-4 h-4" />
-                          {block.content ? "Change File" : "Choose File (PDF, DOCX, ZIP)"}
+                          {block.content ? "Change File" : "Choose File"}
                         </button>
                       </div>
                     )}
@@ -447,151 +386,27 @@ export function LessonModal({
               </div>
             )}
           </div>
+        </div>
 
-          {/* Lesson Quiz Toggle */}
-          <div className="border-t border-gray-100 pt-8 pb-4">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-sm font-medium text-gray-900">
-                  Add Lesson Quiz (Optional)
-                </h3>
-                <p className="text-xs text-gray-400 mt-1 italic">
-                  Test learners after this lesson
-                </p>
-              </div>
-              <button
-              onClick={() => setQuizEnabled(!quizEnabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all cursor-pointer ${
-                quizEnabled ? "bg-blue-600" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                  quizEnabled ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-
-          {quizEnabled && (
-            <div className="bg-gray-50 rounded-lg border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-bold text-gray-500 tracking-wider">
-                  {quizQuestions.length} question{quizQuestions.length !== 1 ? "s" : ""}
-                </span>
-                <button
-                  onClick={() => setShowQuizBuilder(true)}
-                  className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-bold transition-all cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Question
-                </button>
-              </div>
-
-              {quizQuestions.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">
-                  No questions added yet
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {quizQuestions.map((q, index) => (
-                    <div
-                      key={q.id}
-                      className="bg-white p-4 rounded-lg border border-gray-100 flex items-start justify-between hover:border-blue-200"
-                    >
-                      <div className="flex-1 min-w-0 pr-4">
-                        <p className="text-sm font-semibold text-gray-800 leading-snug">
-                          {index + 1}. {q.question}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setQuizQuestions(
-                            quizQuestions.filter((question) => question.id !== q.id)
-                          );
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+        <div className="flex-shrink-0 border-t border-gray-100 bg-gray-50 px-6 py-5">
+          <div className="flex items-center justify-between gap-6">
+            <div className="hidden sm:flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-400 mr-1">Add block:</span>
+              <button onClick={() => addBlock("text")} className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-lg hover:bg-gray-50 transition-all cursor-pointer" title="Add Text"><Type className="w-4 h-4" /></button>
+              <button onClick={() => addBlock("video")} className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-lg hover:bg-gray-50 transition-all cursor-pointer" title="Add Video"><Video className="w-4 h-4" /></button>
+              <button onClick={() => addBlock("image")} className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-lg hover:bg-gray-50 transition-all cursor-pointer" title="Add Image"><ImageIcon className="w-4 h-4" /></button>
+              <button onClick={() => addBlock("file")} className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-lg hover:bg-gray-50 transition-all cursor-pointer" title="Add File"><FileIcon className="w-4 h-4" /></button>
             </div>
-          )}
-        </div>
-
-      </div>
-
-      <div className="flex-shrink-0 border-t border-gray-100 bg-gray-50 px-6 py-5">
-        <div className="flex items-center justify-between gap-6">
-
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-400 mr-1">Add section:</span>
-            <button
-              onClick={() => addBlock("text")}
-              className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-lg hover:bg-gray-50 transition-all cursor-pointer"
-              title="Add Text"
-            >
-              <Type className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => addBlock("video")}
-              className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-lg hover:bg-gray-50 transition-all cursor-pointer"
-              title="Add Video"
-            >
-              <Video className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => addBlock("image")}
-              className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-lg hover:bg-gray-50 transition-all cursor-pointer"
-              title="Add Image"
-            >
-              <ImageIcon className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => addBlock("file")}
-              className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-lg hover:bg-gray-50 transition-all cursor-pointer"
-              title="Add File"
-            >
-              <FileIcon className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="flex sm:hidden items-center gap-1">
-             <button onClick={() => addBlock("text")} className="p-2 bg-white rounded-lg border border-gray-200"><Type className="w-4 h-4 text-blue-600"/></button>
-             <button onClick={() => addBlock("video")} className="p-2 bg-white rounded-lg border border-gray-200"><Video className="w-4 h-4 text-blue-600"/></button>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              disabled={isSaving}
-              className="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-white text-sm font-medium transition-all disabled:opacity-50 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-all disabled:bg-blue-300 flex items-center gap-2 cursor-pointer"
-            >
-              {isSaving ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                lesson ? "Update Lesson" : "Save Lesson"
-              )}
-            </button>
+            <div className="flex items-center gap-3">
+              <button onClick={onClose} disabled={isSaving} className="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-white text-sm font-medium transition-all cursor-pointer">Cancel</button>
+              <button onClick={handleSave} disabled={isSaving} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-all flex items-center gap-2 cursor-pointer">
+                {isSaving ? "Saving..." : (lesson ? "Update Item" : "Save Item")}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-      </div>
 
-      {/* Nested Quiz Builder Modal */}
       {showQuizBuilder && (
         <QuizQuestionModal
           onClose={() => setShowQuizBuilder(false)}

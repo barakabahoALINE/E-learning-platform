@@ -81,9 +81,9 @@ export const CoursesPage: React.FC = () => {
     const matchesCategory = !selectedCategory || course.category === selectedCategory;
 
     const matchesLevel =
-      selectedLevels.length === 0 || (course.level !== null && selectedLevels.includes(course.level));
+      selectedLevels.length === 0 || (course.level !== null && selectedLevels.includes(Number(course.level)));
 
-    const isFree = parseFloat(course.price) === 0;
+    const isFree = course.price === 0;
     const matchesPrice =
       priceFilter === "all" ||
       (priceFilter === "free" && isFree) ||
@@ -94,9 +94,9 @@ export const CoursesPage: React.FC = () => {
 
   const sortedCourses = [...filteredCourses].sort((a, b) => {
     if (sortBy === "popular") return (b.enrolled_students_count || 0) - (a.enrolled_students_count || 0);
-    if (sortBy === "newest") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    if (sortBy === "price-low") return parseFloat(a.price) - parseFloat(b.price);
-    if (sortBy === "price-high") return parseFloat(b.price) - parseFloat(a.price);
+    if (sortBy === "newest") return new Date(b.created_at || "").getTime() - new Date(a.created_at || "").getTime();
+    if (sortBy === "price-low") return a.price - b.price;
+    if (sortBy === "price-high") return b.price - a.price;
     return 0;
   });
 
@@ -268,7 +268,7 @@ export const CoursesPage: React.FC = () => {
                           alt={course.title}
                           className="w-full h-48 object-cover rounded-t-lg"
                         />
-                        {parseFloat(course.price) === 0 && (
+                        {course.price === 0 && (
                           <Badge className="absolute top-3 right-3 bg-green-600">
                             Free
                           </Badge>
@@ -316,10 +316,10 @@ export const CoursesPage: React.FC = () => {
                             {levels.find(l => l.id === course.level)?.name || "All Levels"}
                           </Badge>
                           <div className="font-medium">
-                            {parseFloat(course.price) === 0 ? (
+                            {course.price === 0 ? (
                               <span className="text-green-600">Free</span>
                             ) : (
-                              <span>Frw {parseFloat(course.price).toLocaleString('en-US', {
+                              <span>Frw {course.price.toLocaleString('en-US', {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2
                             })}</span>

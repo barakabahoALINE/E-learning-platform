@@ -127,12 +127,14 @@ export const CourseDetailPage: React.FC = () => {
       console.error("Failed to update learning session:", error);
     }
 
-    const firstLesson = course.lessons?.[0];
-    const firstContent = firstLesson?.contents?.[0];
-    if (firstLesson && firstContent) {
-      navigate(`/lesson/${course.id}/${firstLesson.id}/${firstContent.id}`);
-    } else if (firstLesson) {
-      navigate(`/lesson/${course.id}/${firstLesson.id}`);
+    const firstModule = course.modules?.[0];
+    const firstSection = firstModule?.sections?.[0];
+    const firstContent = firstSection?.contents?.[0];
+    
+    if (firstModule && firstContent) {
+      navigate(`/learning/${course.id}/${firstModule.id}`);
+    } else if (firstModule) {
+      navigate(`/learning/${course.id}/${firstModule.id}`);
     }
   };
 
@@ -140,9 +142,9 @@ export const CourseDetailPage: React.FC = () => {
     navigate(`/certificate/${course.id}`);
   };
 
-  const totalLessons = course.lessons?.length || 0;
-  const totalContents = course.lessons?.reduce(
-    (sum, lesson) => sum + (lesson.contents?.length || 0),
+  const totalModules = course.modules?.length || 0;
+  const totalItems = course.modules?.reduce(
+    (sum, module) => sum + module.sections.reduce((sSum, section) => sSum + (section.contents?.length || 0), 0),
     0,
   ) || 0;
 
@@ -210,11 +212,11 @@ export const CourseDetailPage: React.FC = () => {
                   <CardContent className="p-6">
                     <h3 className="text-xl mb-4">What you'll learn</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                      {course.lessons && course.lessons.length > 0 ? (
-                        course.lessons.map((lesson) => (
-                          <div key={lesson.id} className="flex items-start space-x-2">
+                      {course.modules && course.modules.length > 0 ? (
+                        course.modules.map((module) => (
+                          <div key={module.id} className="flex items-start space-x-2">
                             <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                            <span className="text-sm">{lesson.title}</span>
+                            <span className="text-sm font-medium">{module.title}</span>
                           </div>
                         ))
                       ) : (
@@ -236,10 +238,10 @@ export const CourseDetailPage: React.FC = () => {
                         </div>
                         <div>
                           <div className="text-sm text-gray-600">
-                            Total Lessons
+                            Total Modules
                           </div>
                           <div className="font-medium">
-                            {totalLessons} lessons
+                            {totalModules} modules
                           </div>
                         </div>
                       </div>
@@ -283,45 +285,75 @@ export const CourseDetailPage: React.FC = () => {
                     <div className="flex items-center justify-between mb-6">
                       <h3 className="text-xl font-bold">Course Curriculum</h3>
                       <div className="text-sm text-gray-500">
-                        {totalLessons} {totalLessons === 1 ? "lesson" : "lessons"} • {totalContents} {totalContents === 1 ? "item" : "items"}
+                        {totalModules} modules • {totalItems} items
                       </div>
                     </div>
                     <Accordion type="single" collapsible className="w-full space-y-3">
-                      {course.lessons?.map((lesson, index) => (
-                        <AccordionItem key={lesson.id} value={`lesson-${lesson.id}`} className="border rounded-xl px-4 overflow-hidden">
-                          <AccordionTrigger className="hover:no-underline py-4 cursor-pointer">
+                      {course.modules?.map((module, mIdx) => (
+                        <AccordionItem key={module.id} value={`module-${module.id}`} className="border rounded-xl px-4 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                          <AccordionTrigger className="hover:no-underline py-5 cursor-pointer">
                             <div className="flex items-center justify-between w-full pr-4 text-left">
-                              <span className="font-bold text-gray-800">
-                                {index + 1}. {lesson.title}
-                              </span>
-                              <div className="flex items-center space-x-4 text-sm text-gray-600 font-normal">
-                                <span className="bg-gray-100 px-2 py-1 rounded">{lesson.contents?.length || 0} {lesson.contents?.length === 1 ? "item" : "items"}</span>
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                                  {mIdx + 1}
+                                </div>
+                                <span className="font-bold text-gray-800 text-lg">
+                                  {module.title}
+                                </span>
+                              </div>
+                              <div className="flex items-center space-x-4 text-sm text-gray-500 font-normal">
+                                <span>{module.sections.length} sections</span>
                               </div>
                             </div>
                           </AccordionTrigger>
                           <AccordionContent>
-                            <div className="space-y-2 pt-2 pb-4">
-                              {lesson.contents?.map((content) => (
-                                <div
-                                  key={content.id}
-                                  className="flex items-center justify-between p-3 rounded-xl hover:bg-primary/5 transition-colors border border-transparent hover:border-primary/10"
-                                >
-                                  <div className="flex items-center space-x-4">
-                                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 text-primary">
-                                      {content.content_type === "video" && <PlayCircle className="w-4 h-4" />}
-                                      {content.content_type === "note" && <FileText className="w-4 h-4" />}
-                                      {content.content_type === "quiz" && <CheckCircle className="w-4 h-4" />}
-                                      {(content.content_type === "file" || content.content_type === "image") && <FileText className="w-4 h-4" />}
-                                    </div>
-                                    <div>
-                                      <p className="text-sm font-medium text-gray-800">{content.title}</p>
-                                      {content.is_preview && <Badge variant="secondary" className="text-[10px] h-4 mt-1">Preview</Badge>}
-                                    </div>
+                            <div className="space-y-6 pt-2 pb-6 px-2">
+                              {module.sections?.map((section, sIdx) => (
+                                <div key={section.id} className="space-y-3">
+                                  <div className="flex items-center gap-2 text-sm font-bold text-gray-600 uppercase tracking-wider">
+                                    <div className="h-px bg-gray-200 flex-1" />
+                                    <span>Section {sIdx + 1}: {section.title}</span>
+                                    <div className="h-px bg-gray-200 flex-1" />
+                                  </div>
+                                  <div className="space-y-2">
+                                    {section.contents?.map((item) => (
+                                      <div
+                                        key={item.id}
+                                        className="flex items-center justify-between p-4 rounded-xl bg-gray-50/50 hover:bg-white transition-all border border-transparent hover:border-primary/20 hover:shadow-sm"
+                                      >
+                                        {/* <div className="flex items-center space-x-4">
+                                          <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center flex-shrink-0 text-primary shadow-xs">
+                                            {item.content_type === "video" && <PlayCircle className="w-5 h-5" />}
+                                            {item.content_type === "text" && <FileText className="w-5 h-5" />}
+                                            {item.content_type === "file" && <FileText className="w-5 h-5" />}
+                                            {item.content_type === "image" && <PlayCircle className="w-5 h-5" />}
+                                          </div>
+                                          <div>
+                                            <p className="text-sm font-semibold text-gray-800">{item.title}</p>
+                                            <div className="flex items-center gap-2 mt-1">
+                                              <Badge variant="secondary" className="text-[10px] uppercase font-bold py-0 h-4 bg-gray-100 text-gray-500 border-none">
+                                                {item.content_type}
+                                              </Badge>
+                                            </div>
+                                          </div>
+                                        </div> */}
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                               ))}
-                              {(!lesson.contents || lesson.contents.length === 0) && (
-                                <p className="text-sm text-gray-500 italic py-2">No content available in this lesson yet.</p>
+                              {module.quiz && (
+                                <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600">
+                                      <CheckCircle className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-bold text-amber-900">{module.quiz.title || "Module Quiz"}</p>
+                                      <p className="text-xs text-amber-700">{module.quiz.questions.length} questions</p>
+                                    </div>
+                                  </div>
+                                </div>
                               )}
                             </div>
                           </AccordionContent>
@@ -417,7 +449,7 @@ export const CourseDetailPage: React.FC = () => {
                       </div>
                       <Progress value={progress?.completion_percentage || 0} className="h-2" />
                       <p className="text-xs text-gray-500 text-center">
-                        {progress?.completed_lessons || 0} of {progress?.total_lessons ?? totalLessons} {(progress?.total_lessons ?? totalLessons) === 1 ? "lesson" : "lessons"} completed
+                        {progress?.completed_lessons || 0} of {progress?.total_lessons ?? totalItems} {(progress?.total_lessons ?? totalItems) === 1 ? "item" : "items"} completed
                       </p>
                     </div>
                     <Button
@@ -430,7 +462,7 @@ export const CourseDetailPage: React.FC = () => {
                 ) : (
                   <div className="space-y-6">
                     <div className="text-center py-4 rounded-2xl">
-                      {parseFloat(course.price) === 0 ? (
+                      {course.price === 0 ? (
                         <div>
                           <div className="text-3xl text-green-600 mb-2">Free</div>
                           <p className="text-sm text-gray-600">Full access to all content</p>
@@ -438,7 +470,7 @@ export const CourseDetailPage: React.FC = () => {
                       ) : (
                         <div className="space-y-1">
                           <div className="text-3xl mb-2">
-                            Frw {parseFloat(course.price).toLocaleString('en-US', {
+                            Frw {course.price.toLocaleString('en-US', {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2
                             })}
@@ -468,7 +500,11 @@ export const CourseDetailPage: React.FC = () => {
                   <div className="space-y-4 text-sm">
                     <div className="flex items-center text-gray-600">
                       <FileText className="w-4 h-4 mr-3 text-primary" />
-                      <span>{totalLessons} {totalLessons === 1 ? "Lesson" : "Lessons"}</span>
+                      <span>{totalModules} {totalModules === 1 ? "Module" : "Modules"}</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <PlayCircle className="w-4 h-4 mr-3 text-primary" />
+                      <span>{totalItems} Learning items</span>
                     </div>
                     <div className="flex items-center text-gray-600">
                       <Smartphone className="w-4 h-4 mr-3 text-primary" />
