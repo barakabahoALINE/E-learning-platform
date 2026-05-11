@@ -27,6 +27,7 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         # QUIZ
         if not instance.is_final:
             data.pop("instructions", None)
+            data.pop("duration", None)
 
         # FINAL ASSESSMENT
         else:

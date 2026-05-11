@@ -168,14 +168,9 @@ class ModuleSerializer(serializers.ModelSerializer):
 # Course
 
 class CourseCreateUpdateSerializer(serializers.ModelSerializer):
-    title = serializers.CharField(
-        validators=[
-            UniqueValidator(
-                queryset=Course.objects.all(),
-                message="Course with this title already exists.",
-            )
-        ]
-    )
+    title = serializers.CharField(validators=[UniqueValidator(queryset=Course.objects.all(), message="Course with this title already exists.",)])
+    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
+    level = serializers.PrimaryKeyRelatedField(queryset=Level.objects.all())
 
     class Meta:
         model = Course
@@ -183,6 +178,12 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
             "title", "description", "duration", "category", "level",
             "price", "thumbnail", "is_published",
         ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['category'] = instance.category.name if instance.category else None
+        data['level'] = instance.level.name if instance.level else None
+        return data
 
     def validate_price(self, value):
         if value < 0:
@@ -346,15 +347,8 @@ class LevelSerializer(serializers.ModelSerializer):
         model = Level
         fields = "__all__"
 class CategorySerializer(serializers.ModelSerializer):
-    level_name = serializers.CharField(source="level.name", read_only=True)
-
     class Meta:
         model = Category
-        fields = ["id", "name", "level", "level_name"]
-    
-    class Meta:
-        model = Option
-        fields = ["id", "text"]
-    
+        fields = "__all__"
 
 

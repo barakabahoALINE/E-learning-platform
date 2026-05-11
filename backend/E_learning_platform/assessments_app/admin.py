@@ -20,4 +20,3 @@ class ChoiceAdmin(admin.ModelAdmin):
     list_display = ('text', 'question', 'is_correct')
     list_filter = ('is_correct', 'question')
     search_fields = ('text', 'question__question_text')
-
