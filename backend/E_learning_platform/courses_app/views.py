@@ -3,6 +3,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from .models import Content, Section, Module, Course, Level, Category
 from .permissions import IsAdmin
@@ -19,7 +20,11 @@ class CourseListAPIView(generics.ListAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return Course.objects.filter(is_published=True).select_related("category", "level")
+        queryset = Course.objects.select_related("category", "level")
+        user = self.request.user
+        if user.is_authenticated and getattr(user, "role", None) == "admin":
+            return queryset
+        return queryset.filter(is_published=True)
     
     
 class CourseCreateAPIView(generics.CreateAPIView):
@@ -50,7 +55,7 @@ class CourseCreateAPIView(generics.CreateAPIView):
 
 class CourseRetrieveAPIView(generics.RetrieveAPIView):
     serializer_class = CourseDetailSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     queryset = Course.objects.select_related("category", "level", "created_by")
 
     def get_object(self):
@@ -69,17 +74,52 @@ class CourseUpdateAPIView(generics.UpdateAPIView):
     queryset = Course.objects.all()
 
     def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
+
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=True
+        )
+
         serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
+
+        # STORE AS DRAFT CHANGES
+        data = serializer.validated_data
+
+        if "title" in data:
+            instance.draft_title = data["title"]
+
+        if "description" in data:
+            instance.draft_description = data["description"]
+
+        if "duration" in data:
+            instance.draft_duration = data["duration"]
+
+        if "level" in data:
+            instance.draft_level = data["level"]
+
+        if "category" in data:
+            instance.draft_category = data["category"]
+
+        if "thumbnail" in data:
+            instance.draft_thumbnail = data["thumbnail"]
+
+        if "price" in data:
+            instance.draft_price = data["price"]
+
+        # MARK AS HAVING UNPUBLISHED CHANGES
+        instance.has_unpublished_changes = True
+
+        instance.save()
 
         return Response({
             "success": True,
-            "message": "Course updated successfully",
+            "message": "Course changes saved as draft successfully",
             "data": serializer.data
-        })
+        }, status=status.HTTP_200_OK)
+
 
 
 class CourseDeleteAPIView(generics.DestroyAPIView):
@@ -87,15 +127,21 @@ class CourseDeleteAPIView(generics.DestroyAPIView):
     queryset = Course.objects.all()
 
     def destroy(self, request, *args, **kwargs):
+
         instance = self.get_object()
-        title = instance.title
-        self.perform_destroy(instance)
-        return Response(
-            {"success": True, "message": f"Course '{title}' deleted successfully"},
-            status=status.HTTP_200_OK,
-        )
 
+        # DON'T DELETE DIRECTLY
+        # MARK FOR DELETE ONLY
+        instance.pending_delete = True
+        instance.has_unpublished_changes = True
 
+        instance.save()
+
+        return Response({
+            "success": True,
+            "message": f"Course '{instance.title}' marked for deletion. Publish changes to apply deletion."
+        }, status=status.HTTP_200_OK)
+        
 class CoursePublishAPIView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Course.objects.all()
@@ -168,12 +214,40 @@ class ModuleUpdateAPIView(generics.UpdateAPIView):
     queryset = Module.objects.all()
 
     def update(self, request, *args, **kwargs):
+
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
+
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=True
+        )
+
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+
+        data = serializer.validated_data
+
+        # SAVE AS DRAFT
+        if "title" in data:
+            instance.draft_title = data["title"]
+
+        if "description" in data:
+            instance.draft_description = data["description"]
+
+        if "order" in data:
+            instance.draft_order = data["order"]
+
+        # MARK AS UNPUBLISHED CHANGES
+        instance.has_unpublished_changes = True
+
+        instance.save()
+
         return Response(
-            {"success": True, "message": "Module updated successfully", "data": serializer.data},
+            {
+                "success": True,
+                "message": "Module changes saved as draft successfully",
+                "data": serializer.data
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -183,14 +257,22 @@ class ModuleDeleteAPIView(generics.DestroyAPIView):
     queryset = Module.objects.all()
 
     def destroy(self, request, *args, **kwargs):
+
         instance = self.get_object()
-        title = instance.title
-        self.perform_destroy(instance)
+
+        # DON'T DELETE DIRECTLY
+        instance.pending_delete = True
+        instance.has_unpublished_changes = True
+
+        instance.save()
+
         return Response(
-            {"success": True, "message": f"Module '{title}' deleted successfully"},
+            {
+                "success": True,
+                "message": f"Module '{instance.title}' marked for deletion. Publish changes to apply deletion."
+            },
             status=status.HTTP_200_OK,
         )
-
 
 # ═══════════════════════════════════════════════
 # SECTION VIEWS  (replaces Lesson views)
@@ -241,12 +323,37 @@ class SectionUpdateAPIView(generics.UpdateAPIView):
     queryset = Section.objects.all()
 
     def update(self, request, *args, **kwargs):
+
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
+
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=True
+        )
+
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+
+        data = serializer.validated_data
+
+        # SAVE AS DRAFT
+        if "title" in data:
+            instance.draft_title = data["title"]
+
+        if "order" in data:
+            instance.draft_order = data["order"]
+
+        # MARK AS UNPUBLISHED CHANGES
+        instance.has_unpublished_changes = True
+
+        instance.save()
+
         return Response(
-            {"success": True, "message": "Section updated successfully", "data": serializer.data},
+            {
+                "success": True,
+                "message": "Section changes saved as draft successfully",
+                "data": serializer.data
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -256,14 +363,22 @@ class SectionDeleteAPIView(generics.DestroyAPIView):
     queryset = Section.objects.all()
 
     def destroy(self, request, *args, **kwargs):
+
         instance = self.get_object()
-        title = instance.title
-        self.perform_destroy(instance)
+
+        # DON'T DELETE DIRECTLY
+        instance.pending_delete = True
+        instance.has_unpublished_changes = True
+
+        instance.save()
+
         return Response(
-            {"success": True, "message": f"Section '{title}' deleted successfully"},
+            {
+                "success": True,
+                "message": f"Section '{instance.title}' marked for deletion. Publish changes to apply deletion."
+            },
             status=status.HTTP_200_OK,
         )
-
 
 # ═══════════════════════════════════════════════
 # CONTENT VIEWS
@@ -368,21 +483,54 @@ class ContentUpdateAPIView(generics.UpdateAPIView):
     queryset = Content.objects.all()
 
     def update(self, request, *args, **kwargs):
-        try:
-            partial = kwargs.pop("partial", False)
-            instance = self.get_object()
-            serializer = self.get_serializer(instance, data=request.data, partial=partial)
-            serializer.is_valid(raise_exception=True)
-            self.perform_update(serializer)
-            return Response(
-                {"success": True, "message": "Content updated successfully", "data": serializer.data},
-                status=status.HTTP_200_OK,
-            )
-        except ValidationError as e:
-            return Response(
-                {"success": False, "message": "Validation error", "errors": e.detail},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+
+        instance = self.get_object()
+
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=True
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+
+        # SAVE AS DRAFT
+        if "title" in data:
+            instance.draft_title = data["title"]
+
+        if "content_type" in data:
+            instance.draft_content_type = data["content_type"]
+
+        if "description" in data:
+            instance.draft_description = data["description"]
+
+        if "video_url" in data:
+            instance.draft_video_url = data["video_url"]
+
+        if "text_content" in data:
+            instance.draft_text_content = data["text_content"]
+
+        if "file" in data:
+            instance.draft_file = data["file"]
+
+        if "order" in data:
+            instance.draft_order = data["order"]
+
+        # MARK AS UNPUBLISHED CHANGES
+        instance.has_unpublished_changes = True
+
+        instance.save()
+
+        return Response(
+            {
+                "success": True,
+                "message": "Content changes saved as draft successfully",
+                "data": serializer.data
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ContentDeleteAPIView(generics.DestroyAPIView):
@@ -390,19 +538,178 @@ class ContentDeleteAPIView(generics.DestroyAPIView):
     queryset = Content.objects.all()
 
     def destroy(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
-            self.perform_destroy(instance)
-            return Response(
-                {"success": True, "message": "Content deleted successfully"},
-                status=status.HTTP_200_OK,
-            )
-        except Exception as e:
-            return Response(
-                {"success": False, "message": "Failed to delete content", "errors": str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
+        instance = self.get_object()
+
+        # DON'T DELETE DIRECTLY
+        instance.pending_delete = True
+        instance.has_unpublished_changes = True
+
+        instance.save()
+
+        return Response(
+            {
+                "success": True,
+                "message": f"Content '{instance.title}' marked for deletion. Publish changes to apply deletion."
+            },
+            status=status.HTTP_200_OK,
+        )
+
+class PublishCourseChangesAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, course_id):
+
+        serializer = PublishCourseChangesSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        course = get_object_or_404(Course, id=course_id)
+
+        with transaction.atomic():
+
+            # =========================
+            # 1. APPLY COURSE CHANGES
+            # =========================
+            if course.draft_title:
+                course.title = course.draft_title
+
+            if course.draft_description:
+                course.description = course.draft_description
+
+            if course.draft_duration:
+                course.duration = course.draft_duration
+
+            if course.draft_level:
+                course.level = course.draft_level
+
+            if course.draft_category:
+                course.category = course.draft_category
+
+            if course.draft_thumbnail:
+                course.thumbnail = course.draft_thumbnail
+
+            if course.draft_price is not None:
+                course.price = course.draft_price
+
+            # =========================
+            # 2. HANDLE DELETE COURSE
+            # =========================
+            if course.pending_delete:
+                course.delete()
+                return Response({
+                    "success": True,
+                    "message": "Course deleted successfully"
+                }, status=status.HTTP_200_OK)
+
+            course.has_unpublished_changes = False
+
+            # clear drafts
+            course.draft_title = None
+            course.draft_description = None
+            course.draft_duration = None
+            course.draft_level = None
+            course.draft_category = None
+            course.draft_thumbnail = None
+            course.draft_price = None
+
+            course.save()
+
+            # =========================
+            # 3. APPLY MODULES
+            # =========================
+            modules = course.modules.all()
+
+            for module in modules:
+
+                if module.pending_delete:
+                    module.delete()
+                    continue
+
+                if module.draft_title:
+                    module.title = module.draft_title
+
+                if module.draft_description:
+                    module.description = module.draft_description
+
+                if module.draft_order is not None:
+                    module.order = module.draft_order
+
+                module.has_unpublished_changes = False
+
+                module.draft_title = None
+                module.draft_description = None
+                module.draft_order = None
+
+                module.save()
+
+                # =========================
+                # 4. APPLY SECTIONS
+                # =========================
+                for section in module.sections.all():
+
+                    if section.pending_delete:
+                        section.delete()
+                        continue
+
+                    if section.draft_title:
+                        section.title = section.draft_title
+
+                    if section.draft_order is not None:
+                        section.order = section.draft_order
+
+                    section.has_unpublished_changes = False
+
+                    section.draft_title = None
+                    section.draft_order = None
+
+                    section.save()
+
+                    # =========================
+                    # 5. APPLY CONTENTS
+                    # =========================
+                    for content in section.contents.all():
+
+                        if content.pending_delete:
+                            content.delete()
+                            continue
+
+                        if content.draft_title:
+                            content.title = content.draft_title
+
+                        if content.draft_content_type:
+                            content.content_type = content.draft_content_type
+
+                        if content.draft_description:
+                            content.description = content.draft_description
+
+                        if content.draft_video_url:
+                            content.video_url = content.draft_video_url
+
+                        if content.draft_text_content:
+                            content.text_content = content.draft_text_content
+
+                        if content.draft_file:
+                            content.file = content.draft_file
+
+                        if content.draft_order is not None:
+                            content.order = content.draft_order
+
+                        content.has_unpublished_changes = False
+
+                        content.draft_title = None
+                        content.draft_content_type = None
+                        content.draft_description = None
+                        content.draft_video_url = None
+                        content.draft_text_content = None
+                        content.draft_file = None
+                        content.draft_order = None
+
+                        content.save()
+
+        return Response({
+            "success": True,
+            "message": "All course changes published successfully"
+        }, status=status.HTTP_200_OK)
         
 class LevelListAPIView(generics.ListAPIView):
     queryset = Level.objects.all()
@@ -509,6 +816,9 @@ class CategoryCreateAPIView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
+
+
+
     
 
 

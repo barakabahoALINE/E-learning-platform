@@ -13,7 +13,15 @@ class ContentDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Content
-        fields = "__all__"
+        fields = ["id", "section", "title", "content_type", "description", "video_url", "text_content", "file", "is_preview", "order", "has_unpublished_changes", "pending_delete"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            data.pop('has_unpublished_changes', None)
+            data.pop('pending_delete', None)
+        return data
 
 
 class ContentListSerializer(serializers.ModelSerializer):
@@ -35,6 +43,8 @@ class ContentCreateUpdateSerializer(serializers.ModelSerializer):
             "file",
             "order",
             "is_preview",
+            "has_unpublished_changes",
+            "pending_delete",
         ]
 
     def validate(self, attrs):
@@ -67,11 +77,19 @@ class SectionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Section
-        fields = ["id", "module", "title", "order", "contents"]
+        fields = ["id", "module", "title", "order", "contents", "has_unpublished_changes", "pending_delete"]
         read_only_fields = ["module"]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            data.pop('has_unpublished_changes', None)
+            data.pop('pending_delete', None)
+        return data
+
     def get_contents(self, obj):
-        return ContentDetailSerializer(obj.contents.all(), many=True).data
+        return ContentDetailSerializer(obj.contents.all(), many=True, context=self.context).data
 
     def validate(self, attrs):
         view = self.context.get("view")
@@ -144,8 +162,16 @@ class ModuleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Module
-        fields = ["id", "course", "title", "description", "order", "sections"]
+        fields = ["id", "course", "title", "description", "order", "sections","has_unpublished_changes", "pending_delete"]
         read_only_fields = ["course"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            data.pop('has_unpublished_changes', None)
+            data.pop('pending_delete', None)
+        return data
 
     def get_sections(self, obj):
         return SectionSerializer(obj.sections.all(), many=True, context=self.context).data
@@ -176,7 +202,7 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
         model = Course
         fields = [
             "title", "description", "duration", "category", "level",
-            "price", "thumbnail", "is_published",
+            "price", "thumbnail", "is_published", "has_unpublished_changes", "pending_delete",
         ]
 
     def to_representation(self, instance):
@@ -337,6 +363,14 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["created_at", "updated_at"]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+            data.pop('has_unpublished_changes', None)
+            data.pop('pending_delete', None)
+        return data
+
     def get_modules(self, obj):
         return ModuleSerializer(obj.modules.all(), many=True, context=self.context ).data
 
@@ -352,3 +386,10 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class PublishCourseChangesSerializer(serializers.Serializer):
+    confirm = serializers.BooleanField()
+
+    def validate_confirm(self, value):
+        if value is not True:
+            raise serializers.ValidationError("You must confirm publishing changes.")
+        return value
