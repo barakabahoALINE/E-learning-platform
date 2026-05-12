@@ -1,8 +1,7 @@
 from django.db import models
-from .validators import validate_assessment_module_relationship
 from django.conf import settings
+from .validators import validate_assessment_module_relationship
 
-user = settings.AUTH_USER_MODEL
 
 class Assessment(models.Model):
 
@@ -22,17 +21,15 @@ class Assessment(models.Model):
         on_delete=models.CASCADE,
         related_name="assessments",
         null=True,
-        blank=True
+        blank=True,
     )
 
     title = models.CharField(max_length=255)
     assessment_type = models.CharField(max_length=10, choices=ASSESSMENT_TYPE)
     is_final = models.BooleanField(default=False)
-
     pass_mark = models.PositiveIntegerField(default=60)
     max_attempts = models.PositiveIntegerField(default=3)
     duration = models.PositiveIntegerField(default=30)
-
     instructions = models.TextField(blank=True, null=True)
     descriptions = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -84,7 +81,6 @@ class Choice(models.Model):
 
 
 class Attempt(models.Model):
-
     student = models.ForeignKey("users_app.User", on_delete=models.CASCADE)
     assessment = models.ForeignKey(Assessment, on_delete=models.CASCADE)
 

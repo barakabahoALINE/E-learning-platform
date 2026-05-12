@@ -11,6 +11,7 @@ urlpatterns = [
      path("courses/<int:pk>/delete/", CourseDeleteAPIView.as_view(),    name="course-delete"),
      path("courses/<int:pk>/publish/", CoursePublishAPIView.as_view(),   name="course-publish"),
      path("courses/<int:pk>/unpublish/", CourseUnpublishAPIView.as_view(), name="course-unpublish"),
+     path( "courses/<int:course_id>/publish-changes/", PublishCourseChangesAPIView.as_view() ),
      
      # MODULE URLS      
      path("courses/<int:course_id>/modules/", ModuleListAPIView.as_view(),   name="module-list"),
