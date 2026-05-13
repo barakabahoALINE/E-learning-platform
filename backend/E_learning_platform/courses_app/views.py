@@ -816,10 +816,65 @@ class CategoryCreateAPIView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
+class ModuleContentsAPIView(APIView):
 
+    permission_classes = [IsAuthenticated]
 
+    def get(self, request, course_id, module_id):
 
-    
+        module = get_object_or_404(
+            Module,
+            id=module_id,
+            course_id=course_id
+        )
+
+        sections = module.sections.all().order_by("order")
+
+        sections_data = []
+
+        total_contents = 0
+
+        for section in sections:
+
+            contents = section.contents.all().order_by("order")
+
+            contents_data = []
+
+            for content in contents:
+
+                total_contents += 1
+
+                contents_data.append({
+                    "content_id": content.id,
+                    "title": content.title,
+                    "description": content.description,
+                    "content_type": content.content_type,
+                    "video_url": content.video_url,
+                    "file": content.file.url if content.file else None,
+                    "order": content.order,
+                    "is_preview": content.is_preview,
+                })
+
+            sections_data.append({
+                "section_id": section.id,
+                "section_title": section.title,
+                "order": section.order,
+                "total_contents": contents.count(),
+                "contents": contents_data,
+            })
+
+        return Response({
+            "success": True,
+            "message": "Module contents retrieved successfully",
+            "data": {
+                "module_id": module.id,
+                "module_title": module.title,
+                "module_order": module.order,
+                "total_sections": sections.count(),
+                "total_contents": total_contents,
+                "sections": sections_data,
+            }
+        })   
 
 
 
