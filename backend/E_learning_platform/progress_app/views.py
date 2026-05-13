@@ -641,7 +641,7 @@ class AdminCompleteCourseAPIView(APIView):
             course_id=course_id
         )
 
-        total_sections = Section.objects.filter(course_id=course_id).count()
+        total_sections = Section.objects.filter(module__course_id=course_id).count()
 
         completed_sections = SectionProgress.objects.filter(
             student=student,
@@ -689,7 +689,7 @@ class CompleteCourseAPIView(APIView):
         if done < total:
             return Response({"success": False, "message": "You must complete all modules before finishing the course"})
 
-        enrollment.status = "COMPLETED"
+        enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()
         return Response({"success": True, "message": "Course marked as completed successfully"})
     
@@ -747,15 +747,41 @@ class CoursesKPIAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+
         enrollments = Enrollment.objects.filter(student=request.user)
+
+        total_courses = enrollments.count()
+        in_progress = enrollments.filter(
+            status=Enrollment.Status.ACTIVE
+        ).count()
+
+        completed = enrollments.filter(
+            status=Enrollment.Status.COMPLETED
+        ).count()
+
+        completion_rate = 0
+        in_progress_percentage = 0
+
+        if total_courses > 0:
+            completion_rate = round(
+                (completed / total_courses) * 100
+            )
+
+            in_progress_percentage = round(
+                (in_progress / total_courses) * 100
+            )
+
         return Response({
             "success": True,
             "message": "Courses KPI retrieved successfully",
-            "data": {
-                "total_courses_enrolled": enrollments.count(),
-                "courses_in_progress": enrollments.filter(status="active").count(),
-                "courses_completed": enrollments.filter(status="completed").count(),
-            },
+
+            "statistics": {
+                "total_courses_enrolled": total_courses,
+                "courses_in_progress": in_progress,
+                "courses_completed": completed,
+                "courses_completion_rate": completion_rate,
+                "courses_in_progress_percentage": in_progress_percentage
+            }
         })
 
 class CompletionRateAPIView(APIView):
@@ -793,4 +819,84 @@ class CompletionRateAPIView(APIView):
                 "completed_courses": completed_courses,
                 "completion_rate": completion_rate
             }
+        })
+class ModuleContentsAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsEnrolled]
+
+    def get(self, request, course_id, module_id):
+
+        # Validate module belongs to course
+        module = get_object_or_404(
+            Module,
+            id=module_id,
+            course_id=course_id
+        )
+
+        # Validate enrollment
+        enrollment = get_object_or_404(
+            Enrollment,
+            student=request.user,
+            course_id=course_id,
+            status=Enrollment.Status.ACTIVE
+        )
+
+        sections = module.sections.all().order_by("order")
+
+        sections_data = []
+
+        total_contents = 0
+        completed_contents = 0
+
+        for section in sections:
+
+            contents = section.contents.all().order_by("order")
+
+            contents_data = []
+
+            for content in contents:
+
+                is_completed = ContentProgress.objects.filter(
+                    student=request.user,
+                    content=content,
+                    completed=True
+                ).exists()
+
+                if is_completed:
+                    completed_contents += 1
+
+                total_contents += 1
+
+                contents_data.append({
+                    "content_id": content.id,
+                    "title": content.title,
+                    "content_type": content.content_type,
+                    "order": content.order,
+                    "completed": is_completed,
+                    "progress_percentage": 100 if is_completed else 0,
+                })
+
+            sections_data.append({
+                "section_id": section.id,
+                "section_title": section.title,
+                "order": section.order,
+                "total_contents": contents.count(),
+                "contents": contents_data
+            })
+
+        module_progress = round(
+            (completed_contents / total_contents) * 100
+        ) if total_contents > 0 else 0
+
+        return Response({
+            "status": "success",
+            "message": "Module contents progress retrieved successfully",
+            "data": {
+                "module_id": module.id,
+                "module_title": module.title,
+                "order": module.order,
+                "total_contents": total_contents,
+                "completed_contents": completed_contents,
+                "progress_percentage": module_progress,
+                "sections": sections_data   
+            },
         })

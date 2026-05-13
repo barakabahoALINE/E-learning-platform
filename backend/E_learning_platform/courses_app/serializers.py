@@ -330,6 +330,15 @@ class CourseListSerializer(serializers.ModelSerializer):
     level = serializers.CharField(source="level.name", read_only=True)
 
     modules_count = serializers.SerializerMethodField()
+    category_name = serializers.CharField(
+        source="category.name",
+        read_only=True
+    )
+
+    level_name = serializers.CharField(
+        source="level.name",
+        read_only=True
+    )
 
     class Meta:
         model = Course

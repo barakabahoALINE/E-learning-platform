@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Assessment, Question, Choice
+from .models import *
 import random
 
 # ASSESSMENT SERIALIZER
@@ -7,13 +7,13 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Assessment
+
         fields = [
             'id',
             'course',
             'module',
-            'title',
-            'is_final',
             'assessment_type',
+            'title',
             'pass_mark',
             'max_attempts',
             'duration',
@@ -44,16 +44,25 @@ class ChoiceCreateSerializer(serializers.ModelSerializer):
 
 # QUESTION CREATE SERIALIZER
 class QuestionCreateSerializer(serializers.ModelSerializer):
+
     choices = ChoiceCreateSerializer(many=True)
+    order = serializers.IntegerField(required=False)
 
     class Meta:
         model = Question
-        fields = ['assessment', 'question_text', 'question_type', 'marks', 'choices']
+        fields = ['assessment', 'question_text', 'question_type', 'marks', 'choices', 'order']
 
     def validate(self, data):
 
         question_text = data.get('question_text')
+
+        if not question_text or not question_text.strip():
+            raise serializers.ValidationError(
+                "Question text cannot be empty."
+            )
+
         question_type = data.get('question_type')
+
         choices = data.get('choices')
 
         # 1. Validate question text
@@ -62,17 +71,19 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
 
         # 2. Validate choices exist
         if not choices:
-            raise serializers.ValidationError("Choices are required.")
+            raise serializers.ValidationError(
+                "Choices are required."
+            )
 
         # 3. Count correct answers
         correct_count = sum(1 for c in choices if c.get('is_correct'))
 
-        if question_type == "SINGLE" and correct_count != 1:
+        if question_type == "single" and correct_count != 1:
             raise serializers.ValidationError(
                 "Single choice question must have exactly ONE correct answer."
             )
 
-        if question_type == "MULTIPLE" and correct_count < 1:
+        if question_type == "multiple" and correct_count < 1:
             raise serializers.ValidationError(
                 "Multiple choice question must have at least ONE correct answer."
             )
@@ -82,8 +93,14 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
 
         choices_data = validated_data.pop('choices')
+        order = validated_data.pop('order', None)
 
-        question = Question.objects.create(**validated_data)
+        if order is None:
+            assessment = validated_data.get('assessment')
+            last_question = assessment.questions.order_by('-order').first()
+            order = (last_question.order + 1) if last_question else 1
+
+        question = Question.objects.create(order=order, **validated_data)
 
         for choice_data in choices_data:
             Choice.objects.create(
@@ -93,7 +110,7 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
 
         return question
 
-# CHOICE RESPONSE SERIALIZER
+
 class ChoiceSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -102,19 +119,45 @@ class ChoiceSerializer(serializers.ModelSerializer):
 
 # QUESTION RESPONSE SERIALIZER
 class QuestionSerializer(serializers.ModelSerializer):
+
     choices = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
+
         fields = [
             'id',
             'question_text',
             'question_type',
             'marks',
+            'order',
             'choices'
         ]
 
     def get_choices(self, obj):
+
         choices = list(obj.choices.all())
-        random.shuffle(choices)  # shuffle for randomness
-        return ChoiceSerializer(choices, many=True).data
+
+        random.shuffle(choices)
+
+        return ChoiceSerializer(
+            choices,
+            many=True
+        ).data
+
+
+class StartAttemptSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Attempt
+
+        fields = [
+            "id",
+            "assessment",
+            "attempt_number",
+            "started_at",
+            "is_locked",
+            "is_submitted",
+        ]
+
+        read_only_fields = fields
