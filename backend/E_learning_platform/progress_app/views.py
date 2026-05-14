@@ -573,10 +573,53 @@ class StartLearningAPIView(APIView):
             student=request.user, course_id=course_id,
             enrollment=enrollment, started_at=timezone.now()
         )
-        return Response(
-            {"status": "success", "message": "Learning session started.", "data": LearningSessionSerializer(session).data},
-            status=status.HTTP_201_CREATED,
+
+        session, created = LearningSession.objects.get_or_create(
+            student=request.user,
+            course_id=course_id,
+            is_active=True,
+            defaults={
+                "enrollment": enrollment,
+                "started_at": timezone.now()
+            }
         )
+
+        # =====================================================
+        # AUTO CREATE PROGRESS RECORDS
+        # =====================================================
+
+        modules = Module.objects.filter(course_id=course_id)
+
+        for module in modules:
+
+            ModuleProgress.objects.get_or_create(
+                student=request.user,
+                module=module,
+                defaults={"enrollment": enrollment}
+            )
+
+            for section in module.sections.all():
+
+                SectionProgress.objects.get_or_create(
+                    student=request.user,
+                    section=section,
+                    defaults={"enrollment": enrollment}
+                )
+
+                for content in section.contents.all():
+
+                    ContentProgress.objects.get_or_create(
+                        student=request.user,
+                        content=content,
+                        defaults={"enrollment": enrollment}
+                    )
+
+        return Response({
+            "success": True,
+            "message": "Learning session started successfully",
+            "data": LearningSessionSerializer(session).data
+        })
+
 
 
 class EndLearningSessionAPIView(APIView):
@@ -982,7 +1025,7 @@ class ModuleContentsAPIView(APIView):
             Enrollment,
             student=request.user,
             course_id=course_id,
-            status=Enrollment.Status.ACTIVE
+            status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED]
         )
 
         sections = module.sections.all().order_by("order")

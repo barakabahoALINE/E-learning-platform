@@ -546,24 +546,19 @@ class SaveAnswerAPIView(APIView):
         })
 
 
-class SubmitAttemptAPIView(APIView):
 
+# =========================================================
+# SUBMIT ATTEMPT
+# =========================================================
+
+class SubmitAttemptAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, attempt_id):
-
         try:
-            attempt = Attempt.objects.get(
-                id=attempt_id,
-                student=request.user
-            )
-
+            attempt = Attempt.objects.get(id=attempt_id, student=request.user)
         except Attempt.DoesNotExist:
-
-            return Response({
-                "success": False,
-                "message": "Attempt not found"
-            }, status=404)
+            return Response({"success": False, "message": "Attempt not found"}, status=404)
 
         # Refresh attempt state (autosubmit on expiration)
         state = handle_attempt_state(attempt)
@@ -593,6 +588,7 @@ class SubmitAttemptAPIView(APIView):
         )
 
         if total == 0:
+            return Response({"success": False, "message": "No questions found"}, status=400)
 
             return Response({
                 "success": False,
