@@ -24,103 +24,29 @@ class Course(models.Model):
     description = models.TextField()
     duration = models.CharField(max_length=50)
     level = models.ForeignKey(Level,on_delete=models.CASCADE,null=True,blank=True)
-
-    category = models.ForeignKey(
-        Category,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True
-    )
-
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, blank=True)
     is_preview = models.BooleanField(default=False)
+    thumbnail = models.ImageField(upload_to="course_thumbnails/",null=True,blank=True)
+    price = models.DecimalField(max_digits=8,decimal_places=2,default=0.00)
+    final_assessment = models.JSONField(blank=True,null=True)
 
-    thumbnail = models.ImageField(
-        upload_to="course_thumbnails/",
-        null=True,
-        blank=True
-    )
-
-    price = models.DecimalField(
-        max_digits=8,
-        decimal_places=2,
-        default=0.00
-    )
-
-    final_assessment = models.JSONField(
-        blank=True,
-        null=True
-    )
-
-    # -----------------------------
-    # DRAFT / UNPUBLISHED CHANGES
-    # -----------------------------
-    draft_title = models.CharField(
-        max_length=255,
-        null=True,
-        blank=True
-    )
-
-    draft_description = models.TextField(
-        null=True,
-        blank=True
-    )
-
-    draft_duration = models.CharField(
-        max_length=50,
-        null=True,
-        blank=True
-    )
-
-    draft_level = models.ForeignKey(
-        Level,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="draft_courses_level"
-    )
-
-    draft_category = models.ForeignKey(
-        Category,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="draft_courses_category"
-    )
-
-    draft_thumbnail = models.ImageField(
-        upload_to="draft_course_thumbnails/",
-        null=True,
-        blank=True
-    )
-
-    draft_price = models.DecimalField(
-        max_digits=8,
-        decimal_places=2,
-        null=True,
-        blank=True
-    )
-
-    # -----------------------------
-    # STATUS FLAGS
-    # -----------------------------
+    # unpublished changes fields
+    draft_title = models.CharField(max_length=255, null=True, blank=True)
+    draft_description = models.TextField(null=True,blank=True)
+    draft_duration = models.CharField(max_length=50,null=True,blank=True)
+    draft_level = models.ForeignKey(Level,on_delete=models.SET_NULL,null=True,blank=True,related_name="draft_courses_level")
+    draft_category = models.ForeignKey(Category,on_delete=models.SET_NULL,null=True,blank=True,related_name="draft_courses_category")
+    draft_thumbnail = models.ImageField(upload_to="draft_course_thumbnails/",null=True,blank=True)
+    draft_price = models.DecimalField(max_digits=8,decimal_places=2,null=True,blank=True)
+    
+    # Status fields
     has_unpublished_changes = models.BooleanField(default=False)
-
     pending_delete = models.BooleanField(default=False)
-
     is_published = models.BooleanField(default=False)
 
-    # -----------------------------
-    # METADATA
-    # -----------------------------
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="created_courses",
-        null=True,
-    )
-
+    # Metadata
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name="created_courses",null=True,)
     created_at = models.DateTimeField(auto_now_add=True)
-
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -139,10 +65,6 @@ class Course(models.Model):
 # MODULE
 # =========================================================
 class Module(models.Model):
-
-    # -----------------------------
-    # PUBLISHED DATA
-    # -----------------------------
     course = models.ForeignKey(
         Course,
         on_delete=models.CASCADE,
