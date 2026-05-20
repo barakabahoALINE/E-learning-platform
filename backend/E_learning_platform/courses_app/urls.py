@@ -25,6 +25,7 @@ urlpatterns = [
      path("courses/<int:course_id>/modules/<int:module_id>/sections/<int:pk>/update/",SectionUpdateAPIView.as_view(), name="section-update"),
      path("courses/<int:course_id>/modules/<int:module_id>/sections/<int:pk>/delete/",SectionDeleteAPIView.as_view(), name="section-delete"),
      path("courses/modules/<int:module_id>/all-contents/", ModuleContentsAPIView.as_view(), name="module-all-contents"),
+     path("courses/<int:course_id>/modules/sections/",CourseSectionsAPIView.as_view(),name="course-sections"),
 
      # CONTENT URLS
      path("courses/<int:course_id>/modules/<int:module_id>/sections/<int:section_id>/contents/",ContentListAPIView.as_view(), name="content-list"),
@@ -32,12 +33,14 @@ urlpatterns = [
      path("courses/<int:course_id>/modules/<int:module_id>/sections/<int:section_id>/contents/<int:pk>/",ContentRetrieveAPIView.as_view(), name="content-detail"),
      path("courses/<int:course_id>/modules/<int:module_id>/sections/<int:section_id>/contents/<int:pk>/update/",ContentUpdateAPIView.as_view(), name="content-update"),
      path("courses/<int:course_id>/modules/<int:module_id>/sections/<int:section_id>/contents/<int:pk>/delete/",ContentDeleteAPIView.as_view(), name="content-delete"),
+     path("courses/<int:course_id>/modules/<int:module_id>/contents/",ModuleContentsAPIView.as_view(), name="module-contents"),
      
      # OTHER URLS
      path("levels/", LevelListAPIView.as_view(), name="level-list"),
      path("levels/create/", LevelCreateAPIView.as_view(), name="level-create"),
      path("categories/", CategoryListAPIView.as_view(), name="category-list"),
      path("categories/create/", CategoryCreateAPIView.as_view(), name="category-create"),
+     
 
 ]
 

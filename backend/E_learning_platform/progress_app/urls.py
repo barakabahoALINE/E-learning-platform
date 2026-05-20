@@ -38,10 +38,10 @@ urlpatterns = [
     path("courses/<int:course_id>/modules/<int:module_id>/contents/",ModuleContentsAPIView.as_view(),name="module-contents"),
 
 
-    # Learning session 
-    path("courses/<int:course_id>/start/",       StartLearningAPIView.as_view(),      name="start-learning"),
-    path("courses/<int:course_id>/end-session/", EndLearningSessionAPIView.as_view(), name="end-session"),
-    path("courses/<int:course_id>/continue/",    ContinueLearningAPIView.as_view(),   name="continue-learning"),
+    # # Learning session 
+    # path("courses/<int:course_id>/start/",       StartLearningAPIView.as_view(),      name="start-learning"),
+    # path("courses/<int:course_id>/end-session/", EndLearningSessionAPIView.as_view(), name="end-session"),
+    # path("courses/<int:course_id>/continue/",    ContinueLearningAPIView.as_view(),   name="continue-learning"),
     
     
      # KPI APIS
