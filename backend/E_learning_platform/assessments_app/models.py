@@ -27,7 +27,6 @@ class Assessment(models.Model):
 
     title = models.CharField(max_length=255)
     assessment_type = models.CharField(max_length=10, choices=ASSESSMENT_TYPE)
-    is_final = models.BooleanField(default=False)
     pass_mark = models.PositiveIntegerField(default=60)
     max_attempts = models.PositiveIntegerField(default=3)
     duration = models.PositiveIntegerField(default=30)
@@ -149,9 +148,9 @@ class StudentAnswer(models.Model):
 
     text_answer = models.TextField(blank=True, null=True)
 
-    is_correct = models.BooleanField(default=False)
-
     is_final = models.BooleanField(default=False)
+
+    is_correct = models.BooleanField(default=False)
 
 
 class Feedback(models.Model):

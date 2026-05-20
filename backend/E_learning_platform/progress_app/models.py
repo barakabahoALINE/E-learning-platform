@@ -84,6 +84,32 @@ class ModuleProgress(models.Model):
     def __str__(self):
         return f"{self.student} - {self.module}"
 
+    # ── cascade up when a module is marked complete ──────────────────
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.completed:
+            _refresh_course_progress(self.student, self.module.course, self.enrollment)
+
+# COURSE PROGRESS
+class CourseProgress(models.Model):
+    student = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="course_progress"
+    )
+    course = models.ForeignKey(
+        Course, on_delete=models.CASCADE, related_name="progress"
+    )
+    enrollment = models.ForeignKey(
+        Enrollment, on_delete=models.CASCADE, related_name="course_progress"
+    )
+    completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ["student", "course"]
+
+    def __str__(self):
+        return f"{self.student} - {self.course}"
+
 # LEARNING SESSION
 class LearningSession(models.Model):
     student = models.ForeignKey(
@@ -176,15 +202,79 @@ def _refresh_module_progress(student, module, enrollment):
     )
 
     now_complete = done == total
-    if now_complete and not module_prog.completed:
-        module_prog.completed = True
-        module_prog.completed_at = timezone.now()
-        module_prog.save()
+
+    if now_complete:
+        from assessments_app.services.rules import has_passed_module_quiz
+
+        if has_passed_module_quiz(student, module):
+            if not module_prog.completed:
+                module_prog.completed = True
+                module_prog.completed_at = timezone.now()
+                module_prog.save()
+        elif module_prog.completed:
+            module_prog.completed = False
+            module_prog.completed_at = None
+            module_prog.save()
+
     elif not now_complete and module_prog.completed:
         module_prog.completed = False
         module_prog.completed_at = None
         module_prog.save()
-        
-        
-        
-        
+
+
+def _refresh_course_progress(student, course, enrollment):
+    """
+    After a ModuleProgress is saved, recompute whether the parent Course
+    is now fully completed and save CourseProgress accordingly.
+    """
+    total = Module.objects.filter(course=course).count()
+
+    from assessments_app.models import Assessment, Attempt
+
+    final_assessment = Assessment.objects.filter(
+        course=course,
+        assessment_type="FINAL"
+    ).first()
+
+    final_passed = False
+    if final_assessment:
+        final_passed = Attempt.objects.filter(
+            student=student,
+            assessment=final_assessment,
+            is_submitted=True,
+            is_passed=True
+        ).exists()
+
+    if total == 0 and final_assessment and not final_passed:
+        return
+    if total == 0 and not final_assessment:
+        return
+
+    done = ModuleProgress.objects.filter(
+        student=student,
+        module__course=course,
+        completed=True,
+    ).count()
+
+    course_prog, _ = CourseProgress.objects.get_or_create(
+        student=student,
+        course=course,
+        defaults={"enrollment": enrollment},
+    )
+
+    now_complete = done == total
+    if final_assessment:
+        now_complete = now_complete and final_passed
+
+    if now_complete and not course_prog.completed:
+        course_prog.completed = True
+        course_prog.completed_at = timezone.now()
+        enrollment.status = Enrollment.Status.COMPLETED
+        enrollment.save()
+        course_prog.save()
+    elif not now_complete and course_prog.completed:
+        # edge case: a module or final assessment was un-completed
+        course_prog.completed = False
+        course_prog.completed_at = None
+        course_prog.save()
+

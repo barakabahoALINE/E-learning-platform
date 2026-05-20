@@ -38,42 +38,54 @@ def check_attempt_limit(user, assessment):
     if assessment.assessment_type == "QUIZ":
         return True
 
-    attempts = Attempt.objects.filter(
+    # FINAL: if already passed, don't allow any more attempts
+    if assessment.assessment_type == "FINAL":
+        if Attempt.objects.filter(
+            student=user,
+            assessment=assessment,
+            is_submitted=True,
+            is_passed=True
+        ).exists():
+            raise RuleError(
+                "Final assessment already passed. No further attempts allowed."
+            )
+
+    submitted_attempts = Attempt.objects.filter(
         student=user,
-        assessment=assessment
-    ).order_by("-attempt_number")
+        assessment=assessment,
+        is_submitted=True
+    ).order_by("-submitted_at")
 
-    if not attempts.exists():
+    if not submitted_attempts.exists():
         return True
 
-    last_attempt = attempts.first()
+    window_start = timezone.now() - timedelta(hours=COOLDOWN_HOURS)
 
-    if not last_attempt.is_submitted:
-        return True
-
-    if attempts.count() >= assessment.max_attempts:
-        raise RuleError(
-            "Maximum attempts reached for this assessment."
-        )
-
-    cooldown_end = (
-        last_attempt.submitted_at +
-        timedelta(hours=COOLDOWN_HOURS)
+    recent_attempts = submitted_attempts.filter(
+        submitted_at__gte=window_start
     )
 
-    if timezone.now() < cooldown_end:
+    if recent_attempts.count() >= assessment.max_attempts:
+        last_attempt = recent_attempts.first()
 
-        remaining = cooldown_end - timezone.now()
-
-        hours = int(remaining.total_seconds() // 3600)
-
-        minutes = int(
-            (remaining.total_seconds() % 3600) // 60
+        cooldown_end = (
+            last_attempt.submitted_at +
+            timedelta(hours=COOLDOWN_HOURS)
         )
 
-        raise RuleError(
-            f"Next attempt allowed in {hours}h {minutes}m."
-        )
+        if timezone.now() < cooldown_end:
+
+            remaining = cooldown_end - timezone.now()
+
+            hours = int(remaining.total_seconds() // 3600)
+
+            minutes = int(
+                (remaining.total_seconds() % 3600) // 60
+            )
+
+            raise RuleError(
+                f"Next attempt allowed in {hours}h {minutes}m."
+            )
 
     return True
 
@@ -86,6 +98,10 @@ def handle_attempt_state(attempt):
 
     if attempt.is_submitted:
         return "submitted"
+
+    # QUIZ attempts are not auto-locked or auto-submitted by timeout.
+    if attempt.assessment.assessment_type == "QUIZ":
+        return "active"
 
     duration_minutes = attempt.assessment.duration
 
@@ -150,6 +166,38 @@ def can_access_module(user, module):
         student=user,
         assessment=quiz,
         passed=True
+    ).exists()
+
+    return passed
+
+
+# MODULE COMPLETION RULE
+def has_passed_module_quiz(user, module):
+    """
+    Check if module should be considered complete for the user.
+    
+    Returns True if:
+    - Module has NO quiz, OR
+    - Module has a quiz AND user has passed it
+    
+    Returns False if:
+    - Module has a quiz AND user has NOT passed it yet
+    """
+    quiz = Assessment.objects.filter(
+        module=module,
+        assessment_type="QUIZ"
+    ).first()
+
+    # No quiz requirement - module can be completed
+    if not quiz:
+        return True
+
+    # Has quiz - check if user passed it
+    passed = Attempt.objects.filter(
+        student=user,
+        assessment=quiz,
+        is_submitted=True,
+        is_passed=True
     ).exists()
 
     return passed

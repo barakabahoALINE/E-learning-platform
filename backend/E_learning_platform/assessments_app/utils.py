@@ -1,21 +1,31 @@
 from enrollments_app.models import Enrollment
-from progress_app.models import ModuleProgress
+from progress_app.models import ModuleProgress, SectionProgress
 
 
 def is_student_enrolled(user, course):
     return Enrollment.objects.filter(
         student=user,
         course=course,
-        status=Enrollment.Status.ACTIVE
+        status__in=[
+            Enrollment.Status.ACTIVE,
+            Enrollment.Status.COMPLETED
+        ]
     ).exists()
 
 
 def has_completed_module(user, module):
-    return ModuleProgress.objects.filter(
+    total_sections = module.sections.count()
+
+    if total_sections == 0:
+        return False
+
+    completed_sections = SectionProgress.objects.filter(
         student=user,
-        module=module,
+        section__module=module,
         completed=True
-    ).exists()
+    ).count()
+
+    return completed_sections == total_sections
 
 
 def has_completed_all_modules(user, course):

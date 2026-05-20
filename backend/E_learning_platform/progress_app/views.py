@@ -8,9 +8,10 @@ from django.utils import timezone
 from rest_framework import status
 
 from .permissions import IsAdmin, IsEnrolled
-from .models import ContentProgress, SectionProgress, ModuleProgress, LearningSession
+from .models import ContentProgress, SectionProgress, ModuleProgress, CourseProgress, LearningSession
 from courses_app.models import Content, Section, Module, Course
 from enrollments_app.models import Enrollment
+from assessments_app.models import Assessment, Attempt
 from .serializers import (
     SectionContentProgressSerializer,
     SectionProgressSerializer,
@@ -19,6 +20,19 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+
+def _calculate_course_progress_percentage(total_modules, completed_modules, final_assessment, final_passed):
+    """Return a course progress percentage with final assessment weighted as 10%."""
+    if final_assessment:
+        if total_modules == 0:
+            return 100 if final_passed else 0
+
+        module_share = round((completed_modules / total_modules) * 90) if total_modules else 0
+        pct = module_share + (10 if final_passed else 0)
+        return min(pct, 100)
+
+    return round((completed_modules / total_modules) * 100) if total_modules else 0
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -87,16 +101,41 @@ class CompleteContentAPIView(APIView):
             completed=True,
         ).count()
 
-        course_completed = False
-        has_final = course.final_assessment and isinstance(course.final_assessment, dict) and course.final_assessment.get('questions')
+        total_modules = Module.objects.filter(course_id=course_id).count()
+        completed_modules = ModuleProgress.objects.filter(
+            student=request.user,
+            module__course_id=course_id,
+            completed=True,
+        ).count()
 
-        if total_sections > 0 and completed_sections == total_sections and not has_final:
-            enrollment.status = Enrollment.Status.COMPLETED
-            enrollment.completed_at = timezone.now()
-            enrollment.save()
-            course_completed = True
-        elif enrollment.status == Enrollment.Status.COMPLETED:
-            course_completed = True
+        final_assessment = Assessment.objects.filter(
+            course=course,
+            assessment_type="FINAL"
+        ).first()
+        final_passed = False
+        if final_assessment:
+            final_passed = Attempt.objects.filter(
+                student=request.user,
+                assessment=final_assessment,
+                is_submitted=True,
+                is_passed=True,
+            ).exists()
+
+        course_completed = False
+        if final_assessment:
+            if completed_modules == total_modules and final_passed:
+                enrollment.status = Enrollment.Status.COMPLETED
+                enrollment.save()
+                course_completed = True
+            elif enrollment.status == Enrollment.Status.COMPLETED:
+                course_completed = True
+        else:
+            if total_sections > 0 and completed_sections == total_sections:
+                enrollment.status = Enrollment.Status.COMPLETED
+                enrollment.save()
+                course_completed = True
+            elif enrollment.status == Enrollment.Status.COMPLETED:
+                course_completed = True
 
         # -----------------------------------------
         # 4️⃣ Calculate percentages
@@ -105,9 +144,17 @@ class CompleteContentAPIView(APIView):
             (completed_contents / total_contents) * 100
         ) if total_contents > 0 else 0
 
-        course_percentage = round(
-            (completed_sections / total_sections) * 100
-        ) if total_sections > 0 else 0
+        course_percentage = _calculate_course_progress_percentage(
+            total_modules,
+            completed_modules,
+            final_assessment,
+            final_passed,
+        )
+
+        course_prog = CourseProgress.objects.filter(
+            student=request.user,
+            course=course
+        ).first()
 
         # -----------------------------------------
         # Response
@@ -141,6 +188,17 @@ class CompleteContentAPIView(APIView):
                 "progress_percentage": module_pct,
                 "module_completed": module_prog.completed if module_prog else False,
                 "completed_at": module_prog.completed_at if module_prog else None,
+            },
+            "course_progress": {
+                "course_id": course.id,
+                "course_title": course.title,
+                "total_modules": total_modules,
+                "completed_modules": completed_modules,
+                "has_final_assessment": bool(final_assessment),
+                "final_passed": final_passed,
+                "progress_percentage": course_percentage,
+                "course_completed": course_prog.completed if course_prog else course_completed,
+                "completed_at": course_prog.completed_at if course_prog else None,
             },
         })
 
@@ -330,13 +388,36 @@ class CourseSectionsProgressAPIView(APIView):
                 "completed_at": prog.completed_at,
             })
 
-        course_pct = round((completed_sections / total_sections) * 100) if total_sections else 0
+        total_modules = Module.objects.filter(course_id=course_id).count()
+        completed_modules = ModuleProgress.objects.filter(
+            student=request.user, module__course_id=course_id, completed=True
+        ).count()
+        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_passed = False
+        if final_assessment:
+            final_passed = Attempt.objects.filter(
+                student=request.user,
+                assessment=final_assessment,
+                is_submitted=True,
+                is_passed=True,
+            ).exists()
+
+        course_pct = _calculate_course_progress_percentage(
+            total_modules,
+            completed_modules,
+            final_assessment,
+            final_passed,
+        )
         return Response({
             "status": "success",
             "course_id": course_id,
             "summary": {
                 "total_sections": total_sections,
                 "completed_sections": completed_sections,
+                "total_modules": total_modules,
+                "completed_modules": completed_modules,
+                "has_final_assessment": bool(final_assessment),
+                "final_passed": final_passed,
                 "course_progress_percentage": course_pct,
             },
             "sections": sections_data,
@@ -384,13 +465,30 @@ class CourseModulesProgressAPIView(APIView):
                 "completed_at": mod_prog.completed_at,
             })
 
-        course_pct = round((completed_modules / total_modules) * 100) if total_modules else 0
+        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_passed = False
+        if final_assessment:
+            final_passed = Attempt.objects.filter(
+                student=request.user,
+                assessment=final_assessment,
+                is_submitted=True,
+                is_passed=True,
+            ).exists()
+
+        course_pct = _calculate_course_progress_percentage(
+            total_modules,
+            completed_modules,
+            final_assessment,
+            final_passed,
+        )
         return Response({
             "status": "success",
             "course_id": course_id,
             "summary": {
                 "total_modules": total_modules,
                 "completed_modules": completed_modules,
+                "has_final_assessment": bool(final_assessment),
+                "final_passed": final_passed,
                 "course_progress_percentage": course_pct,
             },
             "modules": modules_data,
@@ -568,7 +666,22 @@ class StudentCourseProgressAPIView(APIView):
             student=request.user, section__module__course_id=course_id, completed=True
         ).count()
 
-        pct = round((done_sections / total_sections) * 100) if total_sections else 0
+        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_passed = False
+        if final_assessment:
+            final_passed = Attempt.objects.filter(
+                student=request.user,
+                assessment=final_assessment,
+                is_submitted=True,
+                is_passed=True,
+            ).exists()
+
+        pct = _calculate_course_progress_percentage(
+            total_modules,
+            done_modules,
+            final_assessment,
+            final_passed,
+        )
 
         return Response({
             "success": True,
@@ -579,6 +692,8 @@ class StudentCourseProgressAPIView(APIView):
                 "completed_modules": done_modules,
                 "total_sections": total_sections,
                 "completed_sections": done_sections,
+                "has_final_assessment": bool(final_assessment),
+                "final_passed": final_passed,
                 "progress_percentage": pct,
             },
         })
@@ -606,7 +721,23 @@ class AdminStudentCourseProgressAPIView(APIView):
         done_modules = ModuleProgress.objects.filter(
             student=student, module__course_id=course_id, completed=True
         ).count()
-        pct = round((done_modules / total_modules) * 100) if total_modules else 0
+
+        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        final_passed = False
+        if final_assessment:
+            final_passed = Attempt.objects.filter(
+                student=student,
+                assessment=final_assessment,
+                is_submitted=True,
+                is_passed=True,
+            ).exists()
+
+        pct = _calculate_course_progress_percentage(
+            total_modules,
+            done_modules,
+            final_assessment,
+            final_passed,
+        )
 
         return Response({
             "success": True,
@@ -617,6 +748,8 @@ class AdminStudentCourseProgressAPIView(APIView):
                 "course_id": course_id,
                 "total_modules": total_modules,
                 "completed_modules": done_modules,
+                "has_final_assessment": bool(final_assessment),
+                "final_passed": final_passed,
                 "progress_percentage": pct,
             },
         })
@@ -657,8 +790,21 @@ class AdminCompleteCourseAPIView(APIView):
                 "completed_sections": completed_sections
             }, status=400)
 
-        enrollment.completed = True
-        enrollment.completed_at = timezone.now()
+        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        if final_assessment:
+            final_passed = Attempt.objects.filter(
+                student=student,
+                assessment=final_assessment,
+                is_submitted=True,
+                is_passed=True,
+            ).exists()
+            if not final_passed:
+                return Response({
+                    "success": False,
+                    "message": "Cannot complete course. Final assessment must be passed first.",
+                }, status=400)
+
+        enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()
 
         return Response({
@@ -688,6 +834,17 @@ class CompleteCourseAPIView(APIView):
 
         if done < total:
             return Response({"success": False, "message": "You must complete all modules before finishing the course"})
+
+        final_assessment = Assessment.objects.filter(course_id=course_id, assessment_type="FINAL").first()
+        if final_assessment:
+            final_passed = Attempt.objects.filter(
+                student=request.user,
+                assessment=final_assessment,
+                is_submitted=True,
+                is_passed=True,
+            ).exists()
+            if not final_passed:
+                return Response({"success": False, "message": "You must pass the final assessment before finishing the course"}, status=400)
 
         enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()

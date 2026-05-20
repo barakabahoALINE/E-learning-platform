@@ -16,7 +16,10 @@ class IsEnrolled(BasePermission):
             return Enrollment.objects.filter(
                 student=user,
                 course_id=course_id,
-                status="active"
+                status__in=[
+                    Enrollment.Status.ACTIVE,
+                    Enrollment.Status.COMPLETED
+                ]
             ).exists()
 
         # If section_id provided
@@ -27,7 +30,10 @@ class IsEnrolled(BasePermission):
                 return Enrollment.objects.filter(
                     student=user,
                     course=section.module.course,  # important chain fix
-                    status="active"
+                    status__in=[
+                        Enrollment.Status.ACTIVE,
+                        Enrollment.Status.COMPLETED
+                    ]
                 ).exists()
 
         # If no course or section in URL allow authenticated users
