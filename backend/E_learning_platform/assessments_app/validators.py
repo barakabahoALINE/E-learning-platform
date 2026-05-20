@@ -14,7 +14,7 @@ def validate_assessment_module_relationship(instance):
     # =========================================
     # FINAL ASSESSMENT RULES
     # =========================================
-    if instance.is_final:
+    if instance.assessment_type == "FINAL":
 
         # Final should not have module
         if instance.module:
@@ -25,7 +25,7 @@ def validate_assessment_module_relationship(instance):
         # Only one final assessment per course
         existing_final = instance.__class__.objects.filter(
             course=instance.course,
-            is_final=True
+            assessment_type="FINAL"
         ).exclude(id=instance.id)
 
         if existing_final.exists():
@@ -47,7 +47,7 @@ def validate_assessment_module_relationship(instance):
         # Only one quiz per module
         existing_quiz = instance.__class__.objects.filter(
             module=instance.module,
-            is_final=False
+            assessment_type="QUIZ"
         ).exclude(id=instance.id)
 
         if existing_quiz.exists():

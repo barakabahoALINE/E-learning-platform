@@ -116,16 +116,20 @@ class StartAssessmentAPIView(APIView):
                     "message": "Complete all modules first"
                 }, status=403)
 
+        response_data = {
+            "id": assessment.id,
+            "title": assessment.title,
+            "type": assessment.assessment_type,
+            "instructions": assessment.instructions,
+            "total_questions": assessment.questions.count()
+        }
+
+        if assessment.assessment_type == "FINAL":
+            response_data["duration"] = assessment.duration
+
         return Response({
             "status": "success",
-            "data": {
-                "id": assessment.id,
-                "title": assessment.title,
-                "type": assessment.assessment_type,
-                "duration": assessment.duration,
-                "instructions": assessment.instructions,
-                "total_questions": assessment.questions.count()
-            }
+            "data": response_data
         })
 
 
@@ -413,6 +417,23 @@ class SaveAnswerAPIView(APIView):
             student=request.user
         )
 
+        # ensure attempt state is up-to-date (autosubmit on expiration)
+        state = handle_attempt_state(attempt)
+
+        if state == "locked":
+            return Response({
+                "success": False,
+                "message": "Attempt locked",
+                "data": None
+            }, status=403)
+
+        if state == "submitted":
+            return Response({
+                "success": False,
+                "message": "Time expired",
+                "data": None
+            }, status=403)
+
         question = get_object_or_404(
             Question,
             id=question_id
@@ -543,6 +564,23 @@ class SubmitAttemptAPIView(APIView):
                 "message": "Attempt not found"
             }, status=404)
 
+        # Refresh attempt state (autosubmit on expiration)
+        state = handle_attempt_state(attempt)
+
+        if state == "locked":
+            return Response({
+                "success": False,
+                "message": "Attempt locked",
+                "data": None
+            }, status=403)
+
+        if state == "submitted":
+            return Response({
+                "success": False,
+                "message": "Time expired",
+                "data": None
+            }, status=403)
+
         if attempt.is_submitted:
 
             return Response({
@@ -567,19 +605,209 @@ class SubmitAttemptAPIView(APIView):
 
         attempt.save()
 
+        result = _calculate_attempt_score(
+            attempt,
+            request.user
+        )
+
         return Response({
             "success": True,
-            "message": (
-                "Assessment submitted successfully."
-            ),
-            "data": {
-                "attempt_id": attempt.id,
-                "next_step": (
-                    f"/api/assessments/attempts/"
-                    f"{attempt.id}/calculate/"
+            "message": result["message"],
+            "data": result["data"]
+        }, status=200)
+
+
+# =========================================================
+# CALCULATION HELPERS
+
+def _calculate_attempt_score(attempt, user):
+
+    questions = attempt.assessment.questions.all()
+
+    total_marks = 0
+
+    earned_marks = 0
+
+    for question in questions:
+
+        question_marks = (
+            question.marks or 1
+        )
+
+        total_marks += question_marks
+
+        answers = StudentAnswer.objects.filter(
+            attempt=attempt,
+            question=question
+        )
+
+        is_correct = False
+
+        # SINGLE
+        if question.question_type == "single":
+
+            answer = answers.first()
+
+            if (
+                answer
+                and
+                answer.selected_choice
+            ):
+
+                is_correct = (
+                    answer.selected_choice.is_correct
                 )
-            }
-        })
+
+        # MULTIPLE
+        elif question.question_type == "multiple":
+
+            answer = answers.first()
+
+            if answer:
+
+                selected_ids = set(
+                    answer.selected_choices
+                    .values_list(
+                        "id",
+                        flat=True
+                    )
+                )
+
+                correct_ids = set(
+                    question.choices.filter(
+                        is_correct=True
+                    ).values_list(
+                        "id",
+                        flat=True
+                    )
+                )
+
+                is_correct = (
+                    selected_ids == correct_ids
+                )
+
+        # TEXT
+        else:
+
+            answer = answers.first()
+
+            if (
+                answer
+                and
+                answer.text_answer
+                and
+                question.correct_text_answer
+            ):
+
+                is_correct = (
+                    answer.text_answer
+                    .strip()
+                    .lower()
+                    ==
+                    question.correct_text_answer
+                    .strip()
+                    .lower()
+                )
+
+        answers.update(
+            is_correct=is_correct
+        )
+
+        if is_correct:
+            earned_marks += question_marks
+
+    percentage = 0
+
+    if total_marks > 0:
+
+        percentage = (
+            earned_marks / total_marks
+        ) * 100
+
+    is_passed = (
+        percentage >=
+        attempt.assessment.pass_mark
+    )
+
+    attempt.score = earned_marks
+
+    attempt.percentage = round(
+        percentage,
+        2
+    )
+
+    attempt.is_passed = is_passed
+
+    attempt.is_submitted = True
+
+    attempt.submitted_at = timezone.now()
+
+    attempt.save()
+
+    if (
+        attempt.assessment.assessment_type == "QUIZ"
+        and attempt.is_passed
+    ):
+        from enrollments_app.models import Enrollment
+        from progress_app.models import _refresh_module_progress
+
+        enrollment = Enrollment.objects.filter(
+            student=user,
+            course=attempt.assessment.course,
+            status__in=[
+                Enrollment.Status.ACTIVE,
+                Enrollment.Status.COMPLETED
+            ]
+        ).first()
+
+        if enrollment:
+            _refresh_module_progress(
+                user,
+                attempt.assessment.module,
+                enrollment
+            )
+
+    if (
+        attempt.assessment.assessment_type == "FINAL"
+        and attempt.is_passed
+    ):
+        from enrollments_app.models import Enrollment
+        from progress_app.models import _refresh_course_progress
+
+        enrollment = Enrollment.objects.filter(
+            student=user,
+            course=attempt.assessment.course,
+            status__in=[
+                Enrollment.Status.ACTIVE,
+                Enrollment.Status.COMPLETED
+            ]
+        ).first()
+
+        if enrollment:
+            _refresh_course_progress(
+                user,
+                attempt.assessment.course,
+                enrollment
+            )
+
+    return {
+        "message": (
+            "Congratulations! You passed."
+            if is_passed
+            else
+            "You failed. Try again."
+        ),
+        "data": {
+            "attempt_id": attempt.id,
+            "score": earned_marks,
+            "total_marks": total_marks,
+            "percentage": round(
+                percentage,
+                2
+            ),
+            "is_passed": is_passed
+        }
+    }
 
 
 # =========================================================
@@ -604,147 +832,15 @@ class CalculateResultAPIView(APIView):
                 "message": "Attempt not found"
             }, status=404)
 
-        questions = (
-            attempt.assessment.questions.all()
+        result = _calculate_attempt_score(
+            attempt,
+            request.user
         )
-
-        total_marks = 0
-
-        earned_marks = 0
-
-        for question in questions:
-
-            question_marks = (
-                question.marks or 1
-            )
-
-            total_marks += question_marks
-
-            answers = StudentAnswer.objects.filter(
-                attempt=attempt,
-                question=question
-            )
-
-            is_correct = False
-
-            # SINGLE
-            if question.question_type == "single":
-
-                answer = answers.first()
-
-                if (
-                    answer
-                    and
-                    answer.selected_choice
-                ):
-
-                    is_correct = (
-                        answer.selected_choice.is_correct
-                    )
-
-            # MULTIPLE
-            elif question.question_type == "multiple":
-
-                answer = answers.first()
-
-                if answer:
-
-                    selected_ids = set(
-                        answer.selected_choices
-                        .values_list(
-                            "id",
-                            flat=True
-                        )
-                    )
-
-                    correct_ids = set(
-                        question.choices.filter(
-                            is_correct=True
-                        ).values_list(
-                            "id",
-                            flat=True
-                        )
-                    )
-
-                    is_correct = (
-                        selected_ids == correct_ids
-                    )
-
-            # TEXT
-            else:
-
-                answer = answers.first()
-
-                if (
-                    answer
-                    and
-                    answer.text_answer
-                    and
-                    question.correct_text_answer
-                ):
-
-                    is_correct = (
-                        answer.text_answer
-                        .strip()
-                        .lower()
-                        ==
-                        question.correct_text_answer
-                        .strip()
-                        .lower()
-                    )
-
-            answers.update(
-                is_correct=is_correct
-            )
-
-            if is_correct:
-                earned_marks += question_marks
-
-        percentage = 0
-
-        if total_marks > 0:
-
-            percentage = (
-                earned_marks / total_marks
-            ) * 100
-
-        is_passed = (
-            percentage >=
-            attempt.assessment.pass_mark
-        )
-
-        attempt.score = earned_marks
-
-        attempt.percentage = round(
-            percentage,
-            2
-        )
-
-        attempt.is_passed = is_passed
-
-        attempt.is_submitted = True
-
-        attempt.submitted_at = timezone.now()
-
-        attempt.save()
 
         return Response({
             "success": True,
-            "message": (
-                "Congratulations! You passed."
-                if is_passed
-                else
-                "You failed. Try again."
-            ),
-            "data": {
-                "score": earned_marks,
-                "total_marks": total_marks,
-                "percentage": round(
-                    percentage,
-                    2
-                ),
-                "is_passed": is_passed
-            }
+            "message": result["message"],
+            "data": result["data"]
         }, status=200)
 
 

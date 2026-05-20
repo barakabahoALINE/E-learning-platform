@@ -25,7 +25,7 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
 
         # QUIZ
-        if not instance.is_final:
+        if instance.assessment_type == "QUIZ":
             data.pop("instructions", None)
             data.pop("duration", None)
 
