@@ -12,7 +12,8 @@ urlpatterns = [
     path("courses/<int:course_id>/", StudentCourseProgressAPIView.as_view(), name="student-course-progress"),
     #path("courses/<int:course_id>/final/complete/", CompleteFinalAssessmentAPIView.as_view(), name="complete-final-assessment"),    
     path("courses/<int:course_id>/complete/", CompleteCourseAPIView.as_view(),        name="complete-course"),
-    
+    path("course-progress/",MyCourseProgressAPIView.as_view(),name="course-progress"
+    ),
     
     # Admin Progress APIs
     path("admin/students/<int:student_id>/courses/<int:course_id>/", AdminStudentCourseProgressAPIView.as_view(), name="admin-student-course-progress"),
@@ -29,7 +30,6 @@ urlpatterns = [
     path("courses/<int:course_id>/sections/",CourseSectionsProgressAPIView.as_view(), name="course-sections-progress"),
     path("courses/sections/completed/", CompletedSectionsAPIView.as_view(), name="completed-sections"),
     path("courses/<int:course_id>/sections/completed/", CompletedCourseSectionsAPIView.as_view(), name="completed-course-sections"),
-
 
     # MODULE APIS
     path("courses/<int:course_id>/modules/<int:module_id>/",ModuleProgressAPIView.as_view(), name="module-progress"),

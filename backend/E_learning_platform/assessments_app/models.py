@@ -1,7 +1,7 @@
 from django.db import models
 from courses_app.models import Course, Module
 from django.conf import settings
-from .validators import validate_assessment_module_relationship
+
 
 
 class Assessment(models.Model):
@@ -28,18 +28,20 @@ class Assessment(models.Model):
     title = models.CharField(max_length=255)
     assessment_type = models.CharField(max_length=10, choices=ASSESSMENT_TYPE)
     pass_mark = models.PositiveIntegerField(default=60)
-    max_attempts = models.PositiveIntegerField(default=3)
-    duration = models.PositiveIntegerField(default=30)
+    max_attempts = models.PositiveIntegerField(null=True,blank=True)
+    duration = models.PositiveIntegerField(null=True,blank=True)
     instructions = models.TextField(blank=True, null=True)
     descriptions = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-
-    def clean(self):
-        validate_assessment_module_relationship(self)
-
+    is_published = models.BooleanField(default=False)
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
+
+    def clean(self):
+        from .services.rules import validate_unique_assessment
+
+        validate_unique_assessment(self)
 
     def __str__(self):
         return self.title
@@ -63,8 +65,6 @@ class Question(models.Model):
         choices=QuestionType.choices,
         default=QuestionType.SINGLE
     )
-
-    correct_text_answer = models.TextField(blank=True, null=True)
 
     marks = models.PositiveIntegerField(default=1)
 

@@ -6,19 +6,12 @@ from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-
+from assessments_app.models import Assessment, Attempt
 from .permissions import IsAdmin, IsEnrolled
 from .models import ContentProgress, SectionProgress, ModuleProgress, CourseProgress, LearningSession
 from courses_app.models import Content, Section, Module, Course
 from enrollments_app.models import Enrollment
-from assessments_app.models import Assessment, Attempt
-from .serializers import (
-    SectionContentProgressSerializer,
-    SectionProgressSerializer,
-    ModuleProgressSerializer,
-    LearningSessionSerializer,
-)
-
+from .serializers import *
 User = get_user_model()
 
 
@@ -37,9 +30,6 @@ def _calculate_course_progress_percentage(total_modules, completed_modules, fina
 
 # ═══════════════════════════════════════════════════════════════
 # 1. Mark content completed
-#    POST /progress/courses/{course_id}/sections/{section_id}/contents/{content_id}/complete/
-#    Cascade: Content → Section → Module (auto via model.save())
-# ═══════════════════════════════════════════════════════════════
 class CompleteContentAPIView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolled]
 
@@ -201,8 +191,6 @@ class CompleteContentAPIView(APIView):
                 "completed_at": course_prog.completed_at if course_prog else None,
             },
         })
-
-
 # ═══════════════════════════════════════════════════════════════
 # 2. List contents with progress for a section
 #    GET /progress/courses/{course_id}/sections/{section_id}/contents/
@@ -1056,4 +1044,28 @@ class ModuleContentsAPIView(APIView):
                 "progress_percentage": module_progress,
                 "sections": sections_data   
             },
+        })
+
+class MyCourseProgressAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        progress = (
+            CourseProgress.objects.filter(
+                student=request.user
+            )
+        )
+
+        serializer = (
+            CourseProgressSerializer(
+                progress,
+                many=True
+            )
+        )
+
+        return Response({
+            "success": True,
+            "data": serializer.data
         })

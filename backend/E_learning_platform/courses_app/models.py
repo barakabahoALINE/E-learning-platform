@@ -10,7 +10,6 @@ class Level(models.Model):
     def __str__(self):
         return self.name
 
-
 class Category(models.Model):
     name = models.CharField(max_length=255)
 
@@ -60,49 +59,23 @@ class Course(models.Model):
     def __str__(self):
         return self.title
 
-
-# =========================================================
 # MODULE
-# =========================================================
 class Module(models.Model):
-    course = models.ForeignKey(
-        Course,
-        on_delete=models.CASCADE,
-        related_name="modules",
-    )
-
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="modules")
     title = models.CharField(max_length=255)
-
     description = models.TextField(blank=True)
-
     order = models.PositiveIntegerField()
+    is_published = models.BooleanField(default=False)
 
-    # -----------------------------
     # DRAFT DATA
-    # -----------------------------
-    draft_title = models.CharField(
-        max_length=255,
-        null=True,
-        blank=True
-    )
-
-    draft_description = models.TextField(
-        null=True,
-        blank=True
-    )
-
-    draft_order = models.PositiveIntegerField(
-        null=True,
-        blank=True
-    )
-
-    # -----------------------------
+    draft_title = models.CharField(max_length=255, null=True, blank=True)
+    draft_description = models.TextField(null=True, blank=True)
+    draft_order = models.PositiveIntegerField(null=True,blank=True) 
+    
     # STATUS
-    # -----------------------------
     has_unpublished_changes = models.BooleanField(default=False)
-
     pending_delete = models.BooleanField(default=False)
-
+    
     class Meta:
         unique_together = ("course", "order")
 
@@ -111,58 +84,31 @@ class Module(models.Model):
     def __str__(self):
         return f"{self.course.title} — Module {self.order}: {self.title}"
 
-
-# =========================================================
 # SECTION
-# =========================================================
 class Section(models.Model):
 
-    # -----------------------------
     # PUBLISHED DATA
-    # -----------------------------
-    module = models.ForeignKey(
-        Module,
-        on_delete=models.CASCADE,
-        related_name="sections",
-    )
-
+    module = models.ForeignKey(Module, on_delete=models.CASCADE, related_name="sections")
     title = models.CharField(max_length=255)
-
-    order = models.PositiveIntegerField()
-
-    # -----------------------------
+    order = models.PositiveIntegerField() 
+    is_published = models.BooleanField(default=False)
+    
     # DRAFT DATA
-    # -----------------------------
-    draft_title = models.CharField(
-        max_length=255,
-        null=True,
-        blank=True
-    )
-
-    draft_order = models.PositiveIntegerField(
-        null=True,
-        blank=True
-    )
-
-    # -----------------------------
+    draft_title = models.CharField(max_length=255, null=True, blank=True)
+    draft_order = models.PositiveIntegerField(null=True, blank=True)
+    
     # STATUS
-    # -----------------------------
     has_unpublished_changes = models.BooleanField(default=False)
-
     pending_delete = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ("module", "order")
-
         ordering = ["order"]
 
     def __str__(self):
         return f"{self.module.title} — Section {self.order}: {self.title}"
 
-
-# =========================================================
 # CONTENT
-# =========================================================
 class Content(models.Model):
 
     CONTENT_TYPES = (
@@ -172,121 +118,46 @@ class Content(models.Model):
         ("shell", "Shell"),
     )
 
-    # -----------------------------
     # PUBLISHED DATA
-    # -----------------------------
-    section = models.ForeignKey(
-        Section,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="contents",
-    )
-
+    section = models.ForeignKey(Section, on_delete=models.CASCADE, null=True, blank=True, related_name="contents")
     title = models.CharField(max_length=255)
-
-    content_type = models.CharField(
-        max_length=20,
-        choices=CONTENT_TYPES
-    )
-
+    content_type = models.CharField(max_length=20, choices=CONTENT_TYPES)
     description = models.TextField(blank=True)
-
-    video_url = models.URLField(
-        blank=True,
-        null=True
-    )
-
-    text_content = models.TextField(
-        blank=True,
-        null=True
-    )
-
-    file = models.FileField(
-        upload_to="content_files/",
-        blank=True,
-        null=True
-    )
-
+    video_url = models.URLField(blank=True, null=True)
+    text_content = models.TextField(blank=True, null=True)
+    file = models.FileField(upload_to="content_files/", blank=True, null=True)
     is_preview = models.BooleanField(default=False)
-
     order = models.PositiveIntegerField()
+    is_published = models.BooleanField(default=False)
 
-    # -----------------------------
     # DRAFT DATA
-    # -----------------------------
-    draft_title = models.CharField(
-        max_length=255,
-        null=True,
-        blank=True
-    )
-
-    draft_content_type = models.CharField(
-        max_length=20,
-        choices=CONTENT_TYPES,
-        null=True,
-        blank=True
-    )
-
-    draft_description = models.TextField(
-        null=True,
-        blank=True
-    )
-
-    draft_video_url = models.URLField(
-        null=True,
-        blank=True
-    )
-
-    draft_text_content = models.TextField(
-        null=True,
-        blank=True
-    )
-
-    draft_file = models.FileField(
-        upload_to="draft_content_files/",
-        null=True,
-        blank=True
-    )
-
-    draft_order = models.PositiveIntegerField(
-        null=True,
-        blank=True
-    )
-
-    # -----------------------------
+    draft_title = models.CharField(max_length=255, null=True, blank=True)
+    draft_content_type = models.CharField(max_length=20, choices=CONTENT_TYPES, null=True, blank=True)
+    draft_description = models.TextField(null=True, blank=True)
+    draft_video_url = models.URLField(null=True,blank=True)
+    draft_text_content = models.TextField(null=True, blank=True)
+    draft_file = models.FileField(upload_to="draft_content_files/",null=True,blank=True)
+    draft_order = models.PositiveIntegerField(null=True, blank=True)
+    
     # STATUS
-    # -----------------------------
     has_unpublished_changes = models.BooleanField(default=False)
-
     pending_delete = models.BooleanField(default=False)
-
-    # -----------------------------
+    
     # METADATA
-    # -----------------------------
     created_at = models.DateTimeField(auto_now_add=True)
-
+    
     class Meta:
         ordering = ["order"]
-
         unique_together = ("section", "order")
 
     def __str__(self):
         return f"{self.section.title} — {self.title} ({self.content_type})"
 
-
-# =========================================================
 # MEDIA UPLOAD
-# =========================================================
 class MediaUpload(models.Model):
 
-    file = models.FileField(
-        upload_to="course_media/"
-    )
-
-    uploaded_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    file = models.FileField(upload_to="course_media/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Upload {self.id} - {self.file.name}"

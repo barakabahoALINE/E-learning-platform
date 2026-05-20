@@ -143,32 +143,116 @@ class CourseDeleteAPIView(generics.DestroyAPIView):
         }, status=status.HTTP_200_OK)
         
 class CoursePublishAPIView(generics.GenericAPIView):
+
     permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Course.objects.all()
 
     def post(self, request, pk):
+
         course = self.get_object()
+
         if course.price < 0:
             return Response(
-                {"error": "Course must have a price before publishing."},
+                {
+                    "error": "Course must have a price before publishing."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # =========================
+        # PUBLISH COURSE
+        # =========================
+        course.has_unpublished_changes = False
         course.is_published = True
         course.save()
-        return Response({"success": True, "message": "Course published successfully."})
 
+        # =========================
+        # PUBLISH MODULES
+        # =========================
+        modules = course.modules.all()
 
+        for module in modules:
+
+            module.has_unpublished_changes = False
+            module.is_published = True
+            module.save()
+
+            # =========================
+            # PUBLISH SECTIONS
+            # =========================
+            sections = module.sections.all()
+
+            for section in sections:
+
+                section.has_unpublished_changes = False
+                section.is_published = True
+                section.save()
+
+                # =========================
+                # PUBLISH CONTENTS
+                # =========================
+                contents = section.contents.all()
+
+                for content in contents:
+
+                    content.has_unpublished_changes = False
+                    content.is_published = True
+                    content.save()
+
+        return Response({
+            "success": True,
+            "message": "Course and all related items published successfully."
+        })
+        
 class CourseUnpublishAPIView(generics.GenericAPIView):
+
     permission_classes = [IsAuthenticated, IsAdmin]
     queryset = Course.objects.all()
 
     def post(self, request, pk):
+
         course = self.get_object()
+
+        # =========================
+        # UNPUBLISH COURSE
+        # =========================
         course.is_published = False
         course.save()
-        return Response({"success": True, "message": "Course unpublished successfully."})
 
+        # =========================
+        # UNPUBLISH MODULES
+        # =========================
+        modules = course.modules.all()
 
+        for module in modules:
+
+            module.is_published = False
+            module.save()
+
+            # =========================
+            # UNPUBLISH SECTIONS
+            # =========================
+            sections = module.sections.all()
+
+            for section in sections:
+
+                section.is_published = False
+                section.save()
+
+                # =========================
+                # UNPUBLISH CONTENTS
+                # =========================
+                contents = section.contents.all()
+
+                for content in contents:
+
+                    content.is_published = False
+                    content.save()
+
+        return Response({
+            "success": True,
+            "message": "Course and all related items unpublished successfully."
+        })
 # ═══════════════════════════════════════════════
 # MODULE VIEWS
 # ═══════════════════════════════════════════════
@@ -185,7 +269,9 @@ class ModuleCreateAPIView(generics.CreateAPIView):
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             course = self.get_course()
-            serializer.save(course=course)
+            serializer.save(course=course, is_published=False)
+            course.has_unpublished_changes = True
+            course.save()
             return Response(
                 {"success": True, "message": "Module created successfully", "data": serializer.data},
                 status=status.HTTP_201_CREATED,
@@ -205,7 +291,13 @@ class ModuleListAPIView(generics.ListAPIView):
     serializer_class = ModuleSerializer
 
     def get_queryset(self):
-        return Module.objects.filter(course_id=self.kwargs["course_id"])
+        queryset = Module.objects.filter(course_id=self.kwargs["course_id"])
+        user = self.request.user
+        
+        if user.is_authenticated and getattr(user, "role", None) == "admin":
+            return queryset
+
+        return queryset.filter(is_published=True)
  
 
 class ModuleUpdateAPIView(generics.UpdateAPIView):
@@ -294,7 +386,14 @@ class SectionCreateAPIView(generics.CreateAPIView):
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             module = self.get_module()
-            serializer.save(module=module)
+            section = serializer.save(module=module, is_published=False)
+            # mark module
+            module.has_unpublished_changes = True
+            module.save()
+
+            # mark course
+            module.course.has_unpublished_changes = True
+            module.course.save()
             return Response(
                 {"success": True, "message": "Section created successfully", "data": serializer.data},
                 status=status.HTTP_201_CREATED,
@@ -314,7 +413,12 @@ class SectionListAPIView(generics.ListAPIView):
     serializer_class = SectionSerializer
 
     def get_queryset(self):
-        return Section.objects.filter(module_id=self.kwargs["module_id"])
+        queryset = Section.objects.filter(module_id=self.kwargs["module_id"])
+        user = self.request.user
+        if user.is_authenticated and getattr(user, "role", None) == "admin":
+            return queryset
+
+        return queryset.filter(is_published=True)
 
 
 class SectionUpdateAPIView(generics.UpdateAPIView):
@@ -389,7 +493,12 @@ class ContentListAPIView(generics.ListAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return Content.objects.filter(section_id=self.kwargs["section_id"])
+        queryset = Content.objects.filter(section_id=self.kwargs["section_id"])
+        user = self.request.user
+        
+        if user.is_authenticated and getattr(user, "role", None) == "admin":
+            return queryset
+        return queryset.filter(is_published=True)
 
 
 class ContentCreateAPIView(generics.CreateAPIView):
@@ -402,7 +511,16 @@ class ContentCreateAPIView(generics.CreateAPIView):
             id=self.kwargs["section_id"],
             module__course_id=self.kwargs["course_id"],
         )
-        serializer.save(section=section)
+        content = serializer.save(section=section, is_published=False)
+        section.has_unpublished_changes=True
+        section.save()
+        # mark module
+        section.module.has_unpublished_changes = True
+        section.module.save()
+        
+        # mark course
+        section.module.course.has_unpublished_changes = True
+        section.module.course.save()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -639,7 +757,7 @@ class PublishCourseChangesAPIView(APIView):
                 module.draft_title = None
                 module.draft_description = None
                 module.draft_order = None
-
+                module.is_published = True
                 module.save()
 
                 # =========================
@@ -661,7 +779,7 @@ class PublishCourseChangesAPIView(APIView):
 
                     section.draft_title = None
                     section.draft_order = None
-
+                    section.is_published = True
                     section.save()
 
                     # =========================
@@ -703,7 +821,7 @@ class PublishCourseChangesAPIView(APIView):
                         content.draft_text_content = None
                         content.draft_file = None
                         content.draft_order = None
-
+                        content.is_published = True
                         content.save()
 
         return Response({
