@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from users_app.models import User
-from .models import ContentProgress, SectionProgress, ModuleProgress, LearningSession
+from .models import ContentProgress, SectionProgress, ModuleProgress, LearningSession, CourseProgress
 from courses_app.models import Content, Section, Module
 
 
@@ -132,3 +132,34 @@ class StudentCourseProgressSerializer(serializers.Serializer):
     completed_lessons = serializers.IntegerField()
     total_lessons = serializers.IntegerField()
     progress_percentage = serializers.IntegerField()
+    
+class CourseProgressSerializer(
+    serializers.ModelSerializer
+):
+
+    course_title = serializers.CharField(
+        source="course.title",
+        read_only=True
+    )
+
+    student_name = serializers.CharField(
+        source="student.username",
+        read_only=True
+    )
+
+    class Meta:
+
+        model = CourseProgress
+
+        fields = [
+            "id",
+            "student",
+            "student_name",
+            "course",
+            "course_title",
+            "progress_percentage",
+            "completed",
+            "completed_at",
+            "created_at",
+            "updated_at"
+        ]

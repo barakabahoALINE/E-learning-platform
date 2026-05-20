@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import *
+from .services.rules import RuleError, validate_unique_assessment
 import random
 
 # ASSESSMENT SERIALIZER
@@ -21,18 +22,41 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             'instructions'
         ]
     
+    def validate(self, data):
+
+        assessment = Assessment(
+            course=data.get('course'),
+            module=data.get('module'),
+            assessment_type=data.get('assessment_type'),
+            title=data.get('title'),
+            pass_mark=data.get('pass_mark', 60),
+            max_attempts=data.get('max_attempts', 3),
+            duration=data.get('duration', 30),
+            descriptions=data.get('descriptions'),
+            instructions=data.get('instructions')
+        )
+
+        try:
+            validate_unique_assessment(assessment)
+
+        except RuleError as exc:
+            raise serializers.ValidationError(str(exc.message))
+
+        return data
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
-
         # QUIZ
         if instance.assessment_type == "QUIZ":
             data.pop("instructions", None)
             data.pop("duration", None)
+            data.pop("max_attempts", None)
+            
+            # FINAL
+        elif instance.assessment_type == "FINAL":
+            data.pop("descriptions", None)
 
-        # FINAL ASSESSMENT
-        else:
-            data.pop("module", None)
-
+        data.pop("module", None)
         return data
 
 # CHOICE CREATE SERIALIZER

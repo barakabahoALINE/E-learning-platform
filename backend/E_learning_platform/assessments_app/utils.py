@@ -1,5 +1,6 @@
 from enrollments_app.models import Enrollment
 from progress_app.models import ModuleProgress, SectionProgress
+from courses_app.models import Section
 
 
 def is_student_enrolled(user, course):
@@ -13,11 +14,12 @@ def is_student_enrolled(user, course):
     ).exists()
 
 
-def has_completed_module(user, module):
-    total_sections = module.sections.count()
 
-    if total_sections == 0:
-        return False
+def has_completed_module_sections(user, module):
+
+    total_sections = Section.objects.filter(
+        module=module
+    ).count()
 
     completed_sections = SectionProgress.objects.filter(
         student=user,
@@ -25,7 +27,10 @@ def has_completed_module(user, module):
         completed=True
     ).count()
 
-    return completed_sections == total_sections
+    return (
+        total_sections > 0 and
+        total_sections == completed_sections
+    )
 
 
 def has_completed_all_modules(user, course):

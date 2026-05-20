@@ -6,7 +6,7 @@ from assessments_app.models import Assessment, Attempt
 from courses_app.models import Module
 
 
-COOLDOWN_HOURS = 24
+COOLDOWN_HOURS = 0.08  # 5 minutes for testing, adjust as needed (e.g., 24 for 24 hours)
 
 
 class RuleError(Exception):
@@ -165,7 +165,7 @@ def can_access_module(user, module):
     passed = Attempt.objects.filter(
         student=user,
         assessment=quiz,
-        passed=True
+        is_passed=True
     ).exists()
 
     return passed
@@ -201,3 +201,61 @@ def has_passed_module_quiz(user, module):
     ).exists()
 
     return passed
+# ASSESSMENT CREATION RULES
+
+def validate_unique_assessment(assessment):
+
+    if assessment.assessment_type == "FINAL":
+
+        existing_final = Assessment.objects.filter(
+            course=assessment.course,
+            assessment_type="FINAL"
+        )
+
+        if assessment.pk:
+            existing_final = existing_final.exclude(pk=assessment.pk)
+
+        if existing_final.exists():
+            raise RuleError(
+                "Only one final assessment is allowed per course."
+            )
+
+    if assessment.assessment_type == "QUIZ":
+
+        if not assessment.module:
+            raise RuleError(
+                "Quiz must be linked to a module."
+            )
+
+        existing_quiz = Assessment.objects.filter(
+            module=assessment.module,
+            assessment_type="QUIZ"
+        )
+
+        if assessment.pk:
+            existing_quiz = existing_quiz.exclude(pk=assessment.pk)
+
+        if existing_quiz.exists():
+            raise RuleError(
+                "Only one quiz is allowed per module."
+            )
+
+    return True
+def apply_assessment_rules(data):
+
+    assessment_type = data.get("assessment_type")
+
+    # QUIZ RULES
+    if assessment_type == "QUIZ":
+
+        data["max_attempts"] = None
+        data["duration"] = None
+        data["instructions"] = None
+
+    # FINAL RULES
+    elif assessment_type == "FINAL":
+
+        data["module"] = None
+
+    return data
+

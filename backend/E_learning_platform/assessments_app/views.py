@@ -1,27 +1,29 @@
+from urllib import request
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .models import Assessment,StudentAnswer, Question, Choice, Attempt
 from .serializers import *
+from progress_app.models import (ModuleProgress, SectionProgress)
+from enrollments_app.models import Enrollment
 from .permissions import IsAdmin
-
-from .utils import (
-    is_student_enrolled,
-    has_completed_module,
-    has_completed_all_modules
-)
+from .utils import *
 from .services.rules import (
     check_attempt_limit,
     check_course_completion,
     handle_attempt_state,
     unlock_attempt,
     can_access_module,
+    apply_assessment_rules,
     RuleError
 )
+from progress_app.models import (
+                CourseProgress
+            )
+
 
 # ADMIN: CREATE ASSESSMENT
 class CreateAssessmentAPIView(APIView):
@@ -29,8 +31,11 @@ class CreateAssessmentAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request):
+        data = apply_assessment_rules(
+            request.data.copy()
+            )
 
-        serializer = CreateAssessmentSerializer(data=request.data)
+        serializer = CreateAssessmentSerializer(data=data)
 
         if serializer.is_valid():
 
@@ -100,8 +105,7 @@ class StartAssessmentAPIView(APIView):
 
         # Quiz rule
         if assessment.assessment_type == "QUIZ":
-
-            if not has_completed_module(request.user, assessment.module):
+            if not has_completed_module_sections(request.user, assessment.module):
                 return Response({
                     "status": "failed",
                     "message": "Complete module before quiz"
@@ -542,9 +546,6 @@ class SaveAnswerAPIView(APIView):
         })
 
 
-# =========================================================
-# SUBMIT ATTEMPT
-# =========================================================
 class SubmitAttemptAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -582,7 +583,6 @@ class SubmitAttemptAPIView(APIView):
             }, status=403)
 
         if attempt.is_submitted:
-
             return Response({
                 "success": False,
                 "message": "Already submitted"
