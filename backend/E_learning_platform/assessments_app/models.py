@@ -34,6 +34,8 @@ class Assessment(models.Model):
     descriptions = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     is_published = models.BooleanField(default=False)
+    has_unpublished_changes = models.BooleanField(default=False)
+
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)

@@ -45,6 +45,7 @@ class ContentCreateUpdateSerializer(serializers.ModelSerializer):
             "is_preview",
             "has_unpublished_changes",
             "pending_delete",
+            "is_published"
         ]
 
     def validate(self, attrs):
@@ -77,7 +78,7 @@ class SectionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Section
-        fields = ["id", "module", "title", "order", "contents", "has_unpublished_changes", "pending_delete"]
+        fields = ["id", "module", "title", "order", "contents", "has_unpublished_changes", "pending_delete", "is_published"]
         read_only_fields = ["module"]
 
     def to_representation(self, instance):
@@ -162,7 +163,7 @@ class ModuleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Module
-        fields = ["id", "course", "title", "description", "order", "sections","has_unpublished_changes", "pending_delete"]
+        fields = ["id", "course", "title", "description", "order", "sections","has_unpublished_changes", "pending_delete", "is_published"]
         read_only_fields = ["course"]
 
     def to_representation(self, instance):
