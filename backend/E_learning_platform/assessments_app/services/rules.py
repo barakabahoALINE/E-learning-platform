@@ -6,8 +6,7 @@ from assessments_app.models import Assessment, Attempt
 from courses_app.models import Module
 
 
-COOLDOWN_HOURS = 0.08  # 5 minutes for testing, adjust as needed (e.g., 24 for 24 hours)
-
+COOLDOWN_HOURS = 24  
 
 class RuleError(Exception):
 
@@ -248,9 +247,11 @@ def apply_assessment_rules(data):
     # QUIZ RULES
     if assessment_type == "QUIZ":
 
-        data["max_attempts"] = None
-        data["duration"] = None
-        data["instructions"] = None
+        # Store quiz-specific fields as safe defaults for DB writes.
+        # Quiz rules bypass max_attempts and duration logic at runtime.
+        data["max_attempts"] = 0
+        data["duration"] = 0
+        data["instructions"] = ""
 
     # FINAL RULES
     elif assessment_type == "FINAL":

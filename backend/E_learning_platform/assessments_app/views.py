@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .models import Assessment,StudentAnswer, Question, Choice, Attempt
 from .serializers import *
+from courses_app.models import Course
 from progress_app.models import (ModuleProgress, SectionProgress)
 from enrollments_app.models import Enrollment
 from .permissions import IsAdmin
@@ -16,7 +17,6 @@ from .services.rules import (
     check_course_completion,
     handle_attempt_state,
     unlock_attempt,
-    can_access_module,
     apply_assessment_rules,
     RuleError
 )
@@ -40,7 +40,20 @@ class CreateAssessmentAPIView(APIView):
         if serializer.is_valid():
 
             try:
-                assessment = serializer.save()
+                course = Course.objects.get(id=data.get('course'))
+                # If course is published, mark assessment as having unpublished changes
+                # If course is not published yet, has_unpublished_changes should be false
+                has_unpublished = course.is_published
+                
+                assessment = serializer.save(
+                    is_published=False,
+                    has_unpublished_changes=has_unpublished
+                )
+
+                # Mark course as having unpublished changes only if it's already published
+                if course.is_published:
+                    course.has_unpublished_changes = True
+                    course.save(update_fields=['has_unpublished_changes'])
 
                 return Response({
                     "success": True,
@@ -75,6 +88,13 @@ class CreateQuestionAPIView(APIView):
         if serializer.is_valid():
 
             question = serializer.save()
+            assessment = question.assessment
+            # Mark as having unpublished changes only if course is published
+            if assessment.course.is_published:
+                assessment.has_unpublished_changes = True
+                assessment.save(update_fields=['has_unpublished_changes'])
+                assessment.course.has_unpublished_changes = True
+                assessment.course.save(update_fields=['has_unpublished_changes'])
 
             return Response({
                 "status": "success",
@@ -191,18 +211,6 @@ class StartAttemptAPIView(APIView):
                     user,
                     assessment.course
                 )
-
-            # QUIZ RULE
-            if assessment.assessment_type == "QUIZ":
-
-                if not can_access_module(
-                    user,
-                    assessment.module
-                ):
-
-                    raise RuleError(
-                        "Pass previous module quiz first."
-                    )
 
             # RESUME ACTIVE ATTEMPT
             existing = Attempt.objects.filter(
@@ -560,6 +568,13 @@ class SubmitAttemptAPIView(APIView):
         except Attempt.DoesNotExist:
             return Response({"success": False, "message": "Attempt not found"}, status=404)
 
+        # Check if already submitted first
+        if attempt.is_submitted:
+            return Response({
+                "success": False,
+                "message": "Attempt already submitted"
+            }, status=400)
+
         # Refresh attempt state (autosubmit on expiration)
         state = handle_attempt_state(attempt)
 
@@ -576,12 +591,6 @@ class SubmitAttemptAPIView(APIView):
                 "message": "Time expired",
                 "data": None
             }, status=403)
-
-        if attempt.is_submitted:
-            return Response({
-                "success": False,
-                "message": "Already submitted"
-            }, status=400)
 
         total = (
             attempt.assessment.questions.count()

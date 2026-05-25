@@ -6,9 +6,11 @@ import random
 # ASSESSMENT SERIALIZER
 class CreateAssessmentSerializer(serializers.ModelSerializer):
 
+    max_attempts = serializers.IntegerField(required=False, default=3, min_value=0)
+    duration = serializers.IntegerField(required=False, default=30, min_value=0)
+
     class Meta:
         model = Assessment
-
         fields = [
             'id',
             'course',
@@ -19,26 +21,36 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             'max_attempts',
             'duration',
             'descriptions',
-            'instructions'
+            'instructions',
+            'is_published',
+            'has_unpublished_changes',
         ]
-    
+        read_only_fields = ['is_published', 'has_unpublished_changes']
+
     def validate(self, data):
+
+        # ── Shyira defaults mbere yo kugenzura ──────────
+        if data.get('pass_mark') is None:
+            data['pass_mark'] = 60
+        if data.get('max_attempts') is None:
+            data['max_attempts'] = 3
+        if data.get('duration') is None:
+            data['duration'] = 30
 
         assessment = Assessment(
             course=data.get('course'),
             module=data.get('module'),
             assessment_type=data.get('assessment_type'),
             title=data.get('title'),
-            pass_mark=data.get('pass_mark', 60),
-            max_attempts=data.get('max_attempts', 3),
-            duration=data.get('duration', 30),
+            pass_mark=data.get('pass_mark'),
+            max_attempts=data.get('max_attempts'),
+            duration=data.get('duration'),
             descriptions=data.get('descriptions'),
             instructions=data.get('instructions')
         )
 
         try:
             validate_unique_assessment(assessment)
-
         except RuleError as exc:
             raise serializers.ValidationError(str(exc.message))
 
@@ -46,18 +58,20 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        # QUIZ
+
+        # QUIZ — kura ibidakenewe
         if instance.assessment_type == "QUIZ":
             data.pop("instructions", None)
             data.pop("duration", None)
             data.pop("max_attempts", None)
-            
-            # FINAL
+
+        # FINAL — kura ibidakenewe
         elif instance.assessment_type == "FINAL":
             data.pop("descriptions", None)
 
         data.pop("module", None)
         return data
+
 
 # CHOICE CREATE SERIALIZER
 class ChoiceCreateSerializer(serializers.ModelSerializer):

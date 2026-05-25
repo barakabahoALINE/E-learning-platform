@@ -20,7 +20,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db import transaction, IntegrityError
+from django.db import transaction, IntegrityError, models
 from django.shortcuts import get_object_or_404
 from .models import Content, Section, Module, Course, Level, Category
 from .permissions import IsAdmin
@@ -184,6 +184,16 @@ class CoursePublishAPIView(generics.GenericAPIView):
         course.save()
 
         # =========================
+        # PUBLISH ASSESSMENTS
+        # =========================
+        assessments = course.assessments.all()
+
+        for assessment in assessments:
+            assessment.has_unpublished_changes = False
+            assessment.is_published = True
+            assessment.save()
+
+        # =========================
         # PUBLISH MODULES
         # =========================
         modules = course.modules.all()
@@ -237,6 +247,15 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
         course.save()
 
         # =========================
+        # UNPUBLISH ASSESSMENTS
+        # =========================
+        assessments = course.assessments.all()
+
+        for assessment in assessments:
+            assessment.is_published = False
+            assessment.save()
+
+        # =========================
         # UNPUBLISH MODULES
         # =========================
         modules = course.modules.all()
@@ -283,9 +302,20 @@ class ModuleCreateAPIView(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         try:
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
             course = self.get_course()
+            
+            # Get the next order number automatically
+            max_order = Module.objects.filter(course=course).aggregate(
+                max_order=models.Max('order')
+            )['max_order']
+            next_order = (max_order or 0) + 1
+            
+            # Prepare data with auto-calculated order
+            data = request.data.copy()
+            data['order'] = next_order
+            
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
             serializer.save(course=course, is_published=False)
             course.has_unpublished_changes = True
             course.save()
@@ -400,9 +430,20 @@ class SectionCreateAPIView(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         try:
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
             module = self.get_module()
+            
+            # Get the next order number automatically
+            max_order = Section.objects.filter(module=module).aggregate(
+                max_order=models.Max('order')
+            )['max_order']
+            next_order = (max_order or 0) + 1
+            
+            # Prepare data with auto-calculated order
+            data = request.data.copy()
+            data['order'] = next_order
+            
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
             section = serializer.save(module=module, is_published=False)
             # mark module
             module.has_unpublished_changes = True
@@ -540,8 +581,24 @@ class ContentCreateAPIView(generics.CreateAPIView):
         section.module.course.save()
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
         try:
+            section = get_object_or_404(
+                Section,
+                id=self.kwargs["section_id"],
+                module__course_id=self.kwargs["course_id"],
+            )
+            
+            # Get the next order number automatically
+            max_order = Content.objects.filter(section=section).aggregate(
+                max_order=models.Max('order')
+            )['max_order']
+            next_order = (max_order or 0) + 1
+            
+            # Prepare data with auto-calculated order
+            data = request.data.copy()
+            data['order'] = next_order
+            
+            serializer = self.get_serializer(data=data)
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
             return Response(
@@ -823,6 +880,15 @@ class PublishCourseChangesAPIView(APIView):
             course.draft_price = None
 
             course.save()
+
+            # =========================
+            # 2.5 APPLY ASSESSMENTS
+            # =========================
+            assessments = list(course.assessments.all())
+            for assessment in assessments:
+                assessment.has_unpublished_changes = False
+                assessment.is_published = True
+                assessment.save()
 
             # =========================
             # 3. APPLY MODULES
