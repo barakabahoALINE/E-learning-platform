@@ -1,4 +1,8 @@
 from django.shortcuts import render
+from google.oauth2 import id_token
+from google.auth.transport import requests
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.conf import settings
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -85,30 +89,96 @@ class LoginView(APIView):
 
 # google login view
 
-class GoogleLoginView(APIView):
+class GoogleLoginAPIView(APIView):
+
+    permission_classes = []
 
     def post(self, request):
-        serializer = GoogleLoginSerializer(data=request.data)
 
-        if serializer.is_valid():
+        token = request.data.get("token")
+
+        if not token:
             return Response({
-                "success": "True",
+                "success": False,
+                "message": "Google token is required"
+            }, status=400)
+
+        try:
+            # VERIFY TOKEN
+            idinfo = id_token.verify_oauth2_token(
+                token,
+                requests.Request(),
+                settings.GOOGLE_CLIENT_ID
+            )
+
+            email = idinfo.get("email")
+            full_name = idinfo.get("name", "Google User")
+
+            if not email:
+                return Response({
+                    "success": False,
+                    "message": "Email not found in Google account"
+                }, status=400)
+
+            # CREATE OR GET USER
+            user, created = User.objects.get_or_create(
+                email=email,
+                defaults={
+                    "full_name": full_name,
+                    "institution": "Google User",
+                    "role": "student",
+                    "is_verified": True,
+                }
+            )
+
+            # GENERATE JWT
+            refresh = RefreshToken.for_user(user)
+
+            return Response({
+                "success": True,
                 "message": "Google login successful",
-                "data": serializer.validated_data
-            }, status=status.HTTP_200_OK)
+                "data": {
+                    "access": str(refresh.access_token),
+                    "refresh": str(refresh),
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "full_name": user.full_name,
+                        "role": user.role
+                    }
+                }
+            })
 
-        return Response({
-            "success": "False",
-            "message": serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-
+        except ValueError:
+            return Response({
+                "success": False,
+                "message": "Invalid Google token"
+            }, status=400)
+        
 # logout view
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        user = request.user
+        
+        # Auto-submit any active attempts
+        from assessments_app.models import Attempt
+        from assessments_app.views import _calculate_attempt_score
+        
+        active_attempts = Attempt.objects.filter(
+            student=user,
+            is_submitted=False
+        )
+        
+        for attempt in active_attempts:
+            try:
+                _calculate_attempt_score(attempt, user)
+            except Exception as e:
+                # Log the error but continue with logout
+                pass
+        
         serializer = LogoutSerializer(data=request.data)
 
         if serializer.is_valid():

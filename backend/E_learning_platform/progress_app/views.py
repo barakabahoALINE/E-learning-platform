@@ -39,6 +39,7 @@ class CompleteContentAPIView(APIView):
             Enrollment,
             student=request.user,
             course_id=course_id,
+            
             status__in=["active", "completed"],
         )
 

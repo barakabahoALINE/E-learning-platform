@@ -12,6 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from django.utils import timezone
+from django.db import transaction
 
 
 User = get_user_model()
@@ -51,7 +52,6 @@ class SignupSerializer(serializers.ModelSerializer):
             )
         
         return user
-
 # Login Serializer
 
 class LoginSerializer(serializers.Serializer):
