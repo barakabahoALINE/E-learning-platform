@@ -7,7 +7,7 @@ urlpatterns = [
     path("verify-email/<uidb64>/<token>/", VerifyEmailView.as_view(), name="verify-email"),
     path('login/', LoginView.as_view(), name='login'),
     path('logout/', LogoutView.as_view(), name='logout'),
-    path('google-login/', GoogleLoginView.as_view(), name='google-login'),
+    path('google-login/', GoogleLoginAPIView.as_view()),
     path('forgot-password/', forgot_password, name='forgot-password'),
     path('reset-password/<uidb64>/<token>/', reset_password, name='reset-password'),
     path("users/", UserListView.as_view(), name="users-list"),

@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist', 
     'rest_framework.authtoken',
     'corsheaders',
@@ -174,3 +175,4 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 SECRET_KEY= config('SECRET_KEY')
 # SECRET_KEY = config('SECRET_KEY', default='unsafe-secret-key')
+GOOGLE_CLIENT_ID = "979040117820-9qgcmv76nbqpa250ioal8qf3mj54un9t.apps.googleusercontent.com"
