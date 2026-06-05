@@ -19,12 +19,14 @@ from rest_framework.decorators import api_view
 from django.contrib.auth.tokens import default_token_generator
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .permissions import IsAdmin
+from .permissions import CanAssignRoles, CanModifyPermissions, CanViewUsers, CanChangeUsers, CanDeleteUsers, CanViewRoles, CanViewPermissions
 import json
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
 from .serializers import UserListSerializer, UserUpdateSerializer
+from django.contrib.auth.models import Group, Permission
+from django.contrib.contenttypes.models import ContentType
 
 User = get_user_model()
 
@@ -283,17 +285,17 @@ def reset_password(request, uidb64, token):
 class UserListView(generics.ListAPIView):
     queryset = User.objects.all()
     serializer_class = UserListSerializer
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanViewUsers]
     
 class UserUpdateView(generics.UpdateAPIView):
     queryset = User.objects.all()
     serializer_class = UserUpdateSerializer
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanChangeUsers]
     lookup_field = "id"
     
 class UserDeleteView(generics.DestroyAPIView):
     queryset = User.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanDeleteUsers]
     lookup_field = "id"
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -306,6 +308,268 @@ class UserDeleteView(generics.DestroyAPIView):
             },
             status=status.HTTP_200_OK
         )
+
+
+class UserRoleAssignView(generics.UpdateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserRoleAssignSerializer
+    permission_classes = [IsAuthenticated, CanAssignRoles]
+    lookup_field = "id"
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=False)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        response_serializer = UserListSerializer(instance)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+class UserRoleUpdateView(generics.UpdateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserRoleAssignSerializer
+    permission_classes = [IsAuthenticated, CanAssignRoles]
+    lookup_field = "id"
+    lookup_url_kwarg = "user_id"
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=False)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        response_serializer = UserListSerializer(instance)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+class UserPermissionsUpdateView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def patch(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = UserPermissionUpdateSerializer(
+            data=request.data,
+            context={"user": user},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(UserListSerializer(user).data, status=status.HTTP_200_OK)
+
+
+class UserGroupsUpdateView(APIView):
+    permission_classes = [IsAuthenticated, CanAssignRoles]
+
+    def patch(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = UserGroupAssignSerializer(
+            data=request.data,
+            context={"user": user},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(UserListSerializer(user).data, status=status.HTTP_200_OK)
+
+
+class RolePermissionUpdateView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def patch(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response(
+                {"detail": "Role not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = GroupPermissionsUpdateSerializer(
+            data=request.data,
+            context={"group": group},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(GroupSerializer(group).data, status=status.HTTP_200_OK)
+
+
+class ProfileAPIView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "patch", "put", "head", "options"]
+
+    def get_object(self):
+        return self.request.user
+
+
+class RoleListView(generics.ListAPIView):
+    queryset = Group.objects.all().order_by("name")
+    serializer_class = GroupSerializer
+    permission_classes = [IsAuthenticated, CanViewRoles]
+
+
+class PermissionListView(generics.ListAPIView):
+    queryset = Permission.objects.select_related("content_type").all().order_by(
+        "content_type__app_label",
+        "codename",
+    )
+    serializer_class = PermissionSerializer
+    permission_classes = [IsAuthenticated, CanViewPermissions]
+
+
+class RoleCreateView(APIView):
+    """Create a new role (Group). Admins with modify permission can create roles.
+
+    Payload: { "name": "RoleName", "permissions": ["app_label.codename", ...] }
+    """
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def post(self, request):
+        name = request.data.get("name")
+        perms = request.data.get("permissions", [])
+
+        if not name:
+            return Response({"detail": "Role name is required."}, status=400)
+
+        # Prevent creation of core roles by non-superusers
+        from .services.rbac import DEFAULT_ROLES
+        if name in DEFAULT_ROLES and not request.user.is_superuser:
+            return Response({"detail": "Cannot create reserved role."}, status=403)
+
+        group, created = Group.objects.get_or_create(name=name)
+
+        # validate and attach permissions
+        if perms:
+            serializer = GroupPermissionsUpdateSerializer(data={"permissions": perms}, context={"group": group})
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+
+        return Response(GroupSerializer(group).data, status=201 if created else 200)
+
+
+class RoleDetailView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def get(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        return Response(GroupSerializer(group).data)
+
+    def patch(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        # Only superuser can rename or modify default roles
+        from .services.rbac import DEFAULT_ROLES
+        if group.name in DEFAULT_ROLES and not request.user.is_superuser:
+            # allow updating permissions but not renaming
+            perms = request.data.get("permissions")
+            if perms is None:
+                return Response({"detail": "Modifying reserved role requires superuser."}, status=403)
+
+        serializer = GroupPermissionsUpdateSerializer(data=request.data, context={"group": group})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(GroupSerializer(group).data)
+
+    def delete(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        from .services.rbac import DEFAULT_ROLES
+        if group.name in DEFAULT_ROLES and not request.user.is_superuser:
+            return Response({"detail": "Cannot delete reserved role."}, status=403)
+
+        group.delete()
+        return Response({"detail": "Role deleted."}, status=200)
+
+
+class RoleDeleteView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def delete(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        from .services.rbac import DEFAULT_ROLES
+        if group.name in DEFAULT_ROLES and not request.user.is_superuser:
+            return Response({"detail": "Cannot delete reserved role."}, status=403)
+
+        group.delete()
+        return Response({"detail": "Role deleted."}, status=200)
+
+
+class RolePermissionAssignView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def patch(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        serializer = GroupPermissionsUpdateSerializer(data=request.data, context={"group": group})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(GroupSerializer(group).data, status=200)
+
+
+class PermissionCreateView(APIView):
+    """Create a new Permission entry. Admins can create non-core permissions; superusers can create any.
+
+    Payload: { "app_label": "app_label", "codename": "codename", "name": "Human Readable" }
+    """
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    CORE_APPS = {"auth", "contenttypes", "sessions", "admin"}
+
+    def post(self, request):
+        app_label = request.data.get("app_label")
+        codename = request.data.get("codename")
+        name = request.data.get("name")
+
+        if not all([app_label, codename, name]):
+            return Response({"detail": "app_label, codename and name are required."}, status=400)
+
+        if app_label in self.CORE_APPS and not request.user.is_superuser:
+            return Response({"detail": "Only superusers can create core system permissions."}, status=403)
+
+        try:
+            content_type = ContentType.objects.get(app_label=app_label)
+        except ContentType.DoesNotExist:
+            return Response({"detail": f"App label '{app_label}' is not recognized."}, status=400)
+
+        permission, created = Permission.objects.get_or_create(
+            content_type=content_type,
+            codename=codename,
+            defaults={"name": name},
+        )
+
+        if not created:
+            return Response({"detail": "Permission already exists."}, status=200)
+
+        return Response(PermissionSerializer(permission).data, status=201)
         
 class UpdateProfilePictureAPIView(APIView):
     permission_classes = [IsAuthenticated]

@@ -109,6 +109,10 @@ class CourseProgress(models.Model):
 
     class Meta:
         unique_together = ["student", "course"]
+        permissions = [
+            ("view_progress", "Can view progress"),
+            ("change_progress", "Can change progress"),
+        ]
 
     def __str__(self):
         return f"{self.student} - {self.course}"

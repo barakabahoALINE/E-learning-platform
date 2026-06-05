@@ -10,7 +10,8 @@ from .serializers import *
 from courses_app.models import Course
 from progress_app.models import (ModuleProgress, SectionProgress)
 from enrollments_app.models import Enrollment
-from .permissions import IsAdmin
+from progress_app.models import _refresh_course_progress
+from .permissions import *
 from .utils import *
 from .services.rules import (
     check_attempt_limit,
@@ -24,10 +25,11 @@ from progress_app.models import (
             )
 
 
+
 # ADMIN: CREATE ASSESSMENT
 class CreateAssessmentAPIView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanAddAssessment]
 
     def post(self, request):
         data = apply_assessment_rules(
@@ -104,7 +106,7 @@ class CreateAssessmentAPIView(APIView):
 # ✅ Create Question API (Admin only)
 class CreateQuestionAPIView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanAddAssessment]
 
     def post(self, request):
 
@@ -137,7 +139,7 @@ class CreateQuestionAPIView(APIView):
 # STUDENT: START ASSESSMENT
 class StartAssessmentAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanStartAssessment]
 
     def get(self, request, assessment_id):
 
@@ -188,7 +190,7 @@ class StartAssessmentAPIView(APIView):
 # STUDENT: GET QUESTIONS
 class GetAssessmentQuestionsAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewAssessment]
 
     def get(self, request, assessment_id):
 
@@ -210,7 +212,7 @@ class GetAssessmentQuestionsAPIView(APIView):
         })
 
 class UpdateQuestionAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanChangeAssessment]
 
     def put(self, request, question_id):
         question = get_object_or_404(Question, id=question_id)
@@ -221,7 +223,7 @@ class UpdateQuestionAPIView(APIView):
         return Response({"status": "failed", "errors": serializer.errors}, status=400)
 
 class DeleteQuestionAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanDeleteAssessment]
 
     def delete(self, request, question_id):
         question = get_object_or_404(Question, id=question_id)
@@ -233,7 +235,7 @@ class DeleteQuestionAPIView(APIView):
 # =========================================================
 class StartAttemptAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanStartAssessment]
 
     def post(self, request, assessment_id):
 
@@ -322,7 +324,7 @@ class StartAttemptAPIView(APIView):
 # =========================================================
 class LockAttemptAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanLockAttempt]
 
     def post(self, request, attempt_id):
 
@@ -354,7 +356,7 @@ class LockAttemptAPIView(APIView):
 # =========================================================
 class AdminUnlockAttemptAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanUnlockAttempt]
 
     def post(self, request, attempt_id):
 
@@ -400,7 +402,7 @@ class AdminUnlockAttemptAPIView(APIView):
 # =========================================================
 class AttemptDetailAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewAttempt]
 
     def get(self, request, attempt_id):
 
@@ -449,7 +451,7 @@ class AttemptDetailAPIView(APIView):
 # =========================================================
 class SaveAnswerAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanStartAssessment]
 
     def post(self, request):
 
@@ -603,7 +605,7 @@ class SaveAnswerAPIView(APIView):
 # =========================================================
 
 class SubmitAttemptAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanStartAssessment]
 
     def post(self, request, attempt_id):
         try:
@@ -819,8 +821,7 @@ def _calculate_attempt_score(attempt, user):
         attempt.assessment.assessment_type == "FINAL"
         and attempt.is_passed
     ):
-        from enrollments_app.models import Enrollment
-        from progress_app.models import _refresh_course_progress
+
 
         enrollment = Enrollment.objects.filter(
             student=user,
@@ -859,45 +860,11 @@ def _calculate_attempt_score(attempt, user):
 
 
 # =========================================================
-# CALCULATE RESULT
-# =========================================================
-class CalculateResultAPIView(APIView):
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, attempt_id):
-
-        try:
-            attempt = Attempt.objects.get(
-                id=attempt_id,
-                student=request.user
-            )
-
-        except Attempt.DoesNotExist:
-
-            return Response({
-                "success": False,
-                "message": "Attempt not found"
-            }, status=404)
-
-        result = _calculate_attempt_score(
-            attempt,
-            request.user
-        )
-
-        return Response({
-            "success": True,
-            "message": result["message"],
-            "data": result["data"]
-        }, status=200)
-
-
-# =========================================================
 # RESULT
 # =========================================================
 class ResultAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewAttempt]
 
     def get(self, request, attempt_id):
 
@@ -963,7 +930,7 @@ class ResultAPIView(APIView):
 # =========================================================
 class AttemptAnswersReviewAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewAttempt]
 
     def get(self, request, attempt_id):
 

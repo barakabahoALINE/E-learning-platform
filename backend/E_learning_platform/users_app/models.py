@@ -32,6 +32,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     ROLE_CHOICES = (
         ("student", "Student"),
         ("instructor", "Instructor"),
+        ("viewer", "Viewer"),
         ("admin", "Admin"),
     )
     LEVEL_CHOICES = (
@@ -56,6 +57,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["full_name", "institution"]
+
+    class Meta:
+        permissions = [
+            ("assign_role", "Can assign roles"),
+            ("modify_role", "Can modify roles"),
+            ("modify_permission", "Can modify permissions"),
+            ("view_analytics", "Can view analytics"),
+            ("change_platform_settings", "Can change platform settings"),
+        ]
     
     def save(self, *args, **kwargs):
         # ensure staff status matches role
@@ -65,6 +75,11 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.is_staff = False
 
         super().save(*args, **kwargs)
+
+        if self.pk:
+            from .services.rbac import sync_user_role_group
+
+            sync_user_role_group(self)
 
     
     def __str__(self):

@@ -13,8 +13,21 @@ urlpatterns = [
     path("users/", UserListView.as_view(), name="users-list"),
     path("users/<int:id>/update/", UserUpdateView.as_view(), name="user-update"),
     path("users/<int:id>/delete/", UserDeleteView.as_view(), name="user-delete"),
+    path('profile/', ProfileAPIView.as_view(), name='profile'),
     path('profile/update-picture/', UpdateProfilePictureAPIView.as_view()),
     path('profile/update-name/', UpdateNameAPIView.as_view()),
+    path('users/<int:id>/assign-role/', UserRoleAssignView.as_view(), name='user-assign-role'),
+    path('users/<int:user_id>/role/', UserRoleUpdateView.as_view(), name='user-role-update'),
+    path('users/<int:user_id>/permissions-update/', UserPermissionsUpdateView.as_view(), name='user-permissions-update'),
+    path('users/<int:user_id>/groups-update/', UserGroupsUpdateView.as_view(), name='user-groups-update'),
+    path('roles/', RoleListView.as_view(), name='roles-list'),
+    path('roles/create/', RoleCreateView.as_view(), name='roles-create'),
+    path('roles/<int:role_id>/', RoleDetailView.as_view(), name='roles-detail'),
+    path('roles/<int:role_id>/delete/', RoleDeleteView.as_view(), name='roles-delete'),
+    path('roles/<int:role_id>/permissions/', RolePermissionUpdateView.as_view(), name='role-permissions-update'),
+    path('roles/<int:role_id>/assign-permissions/', RolePermissionAssignView.as_view(), name='role-assign-permissions'),
+    path('permissions/', PermissionListView.as_view(), name='permissions-list'),
+    path('permissions/create/', PermissionCreateView.as_view(), name='permissions-create'),
 
 ]
 
