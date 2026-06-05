@@ -41,5 +41,6 @@ urlpatterns = [
      path("categories/", CategoryListAPIView.as_view(), name="category-list"),
      path("categories/create/", CategoryCreateAPIView.as_view(), name="category-create"),
      path("media/upload/", MediaUploadAPIView.as_view(), name="media-upload"),
+     path("public-stats/", PublicStatsAPIView.as_view(), name="public-stats"),
 
 ]

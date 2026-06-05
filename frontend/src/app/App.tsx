@@ -39,6 +39,7 @@ import { CourseBuilderPage } from './pages/CourseBuilder';
 import { AnalyticsPage } from './pages/Analytics';
 import { SecurityPage } from './pages/Security';
 import { SettingsPage as AdminSettingsPage } from './pages/Settings';
+import { HomePage } from './pages/HomePage';
 
 function AppRoutes() {
   const user = useAppSelector(selectCurrentUser);
@@ -46,11 +47,11 @@ function AppRoutes() {
   // Protected Route Component
   const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
-    
+
     if (!isAuthenticated) {
       return <Navigate to="/login" replace />;
     }
-    
+
     return <>{children}</>;
   };
 
@@ -58,7 +59,7 @@ function AppRoutes() {
   const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
     const currentUser = useAppSelector(selectCurrentUser);
-    
+
     if (!isAuthenticated) {
       return <Navigate to="/login" replace />;
     }
@@ -66,7 +67,7 @@ function AppRoutes() {
     if (currentUser?.role !== 'admin') {
       return <Navigate to="/dashboard" replace />;
     }
-    
+
     return <>{children}</>;
   };
 
@@ -74,17 +75,18 @@ function AppRoutes() {
   const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
     const userRole = useAppSelector(selectCurrentUser)?.role;
-    
+
     if (isAuthenticated) {
       return <Navigate to={userRole === 'admin' ? '/admin' : '/dashboard'} replace />;
     }
-    
+
     return <>{children}</>;
   };
 
   return (
     <Router>
       <Routes>
+        <Route path="/" element={<HomePage />} />
         <Route
           path="/login"
           element={
@@ -237,8 +239,8 @@ function AppRoutes() {
           <Route path="settings" element={<AdminSettingsPage />} />
         </Route>
 
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toaster />
     </Router>

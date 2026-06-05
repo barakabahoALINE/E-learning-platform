@@ -25,6 +25,7 @@ from django.shortcuts import get_object_or_404
 from .models import Content, Section, Module, Course, Level, Category
 from .permissions import IsAdmin
 from rest_framework.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 from .models import Content, Section, Module, Course
 from .serializers import *
 
@@ -1404,7 +1405,22 @@ class MediaUploadAPIView(generics.CreateAPIView):
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+class PublicStatsAPIView(APIView):
+    permission_classes = [AllowAny]
 
+    def get(self, request):
+        User = get_user_model()
+        total_students = User.objects.filter(role="student").count()
+        total_instructors = User.objects.filter(role="instructor").count()
+        total_courses = Course.objects.filter(is_published=True).count()
+        return Response({
+            "success": True,
+            "data": {
+                "total_students": total_students,
+                "total_instructors": total_instructors,
+                "total_courses": total_courses,
+            }
+        })
 
 
 # class CourseRetrieveAPIView(generics.RetrieveAPIView):
