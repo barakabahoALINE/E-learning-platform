@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Enrollment
 from .serializers import EnrollmentCreateSerializer, StudentEnrollmentListSerializer, EnrollmentSerializer
-from .permissions import IsAdmin,IsStudent
+from .permissions import CanViewEnrollment, CanAddEnrollment, CanChangeEnrollment, CanDeleteEnrollment
 from enrollments_app.models import Enrollment
 from courses_app.models import Course
 from rest_framework import generics
@@ -16,7 +16,7 @@ from django.conf import settings
     
 class EnrollCourseAPIView(generics.CreateAPIView):
     serializer_class = EnrollmentCreateSerializer
-    permission_classes = [IsAuthenticated, IsStudent]
+    permission_classes = [IsAuthenticated, CanAddEnrollment]
     
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -55,7 +55,7 @@ E-Learning Team
         )
 class MyEnrollmentsAPIView(generics.ListAPIView):
     serializer_class = StudentEnrollmentListSerializer
-    permission_classes = [IsAuthenticated, IsStudent]
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
 
     def get_queryset(self):
         return Enrollment.objects.filter(
@@ -74,7 +74,7 @@ class MyEnrollmentsAPIView(generics.ListAPIView):
         )
 class EnrollmentDetailAPIView(generics.RetrieveAPIView):
     serializer_class = StudentEnrollmentListSerializer
-    permission_classes = [IsAuthenticated, IsStudent]
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
 
     def get_queryset(self):
         # Student can only retrieve their own enrollment
@@ -94,7 +94,7 @@ class EnrollmentDetailAPIView(generics.RetrieveAPIView):
         )
 
 class CancelEnrollmentAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsStudent]
+    permission_classes = [IsAuthenticated, CanChangeEnrollment]
 
     def patch(self, request, pk):
         try:
@@ -128,7 +128,7 @@ class CancelEnrollmentAPIView(APIView):
 
 
 class AdminListEnrollmentsView(APIView):
-        permission_classes = [IsAuthenticated, IsAdmin]
+        permission_classes = [IsAuthenticated, CanViewEnrollment]
 
         def get(self, request):
             enrollments = Enrollment.objects.all()
@@ -142,7 +142,7 @@ class AdminListEnrollmentsView(APIView):
 
 class AdminEnrollmentDetailView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
 
     def get(self, request, pk):
 
@@ -165,7 +165,7 @@ class AdminEnrollmentDetailView(APIView):
         
 class AdminUpdateEnrollmentView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanChangeEnrollment]
 
     def patch(self, request, pk):
 
@@ -197,7 +197,7 @@ class AdminUpdateEnrollmentView(APIView):
         
 class AdminDeleteEnrollmentView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanDeleteEnrollment]
 
     def delete(self, request, pk):
 
@@ -219,7 +219,7 @@ class AdminDeleteEnrollmentView(APIView):
         
 class AdminCreateEnrollmentView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanAddEnrollment]
 
     def post(self, request):
 

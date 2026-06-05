@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from assessments_app.models import Assessment, Attempt
-from .permissions import IsAdmin, IsEnrolled
+from .permissions import CanViewProgress, CanCompleteProgress, IsEnrolled
 from .models import ContentProgress, SectionProgress, ModuleProgress, CourseProgress, LearningSession
 from courses_app.models import Content, Section, Module, Course
 from enrollments_app.models import Enrollment
@@ -569,7 +569,7 @@ class CourseModulesProgressAPIView(APIView):
 # 7. Completed sections across all courses
 # ═══════════════════════════════════════════════════════════════
 class CompletedSectionsAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
         sps = SectionProgress.objects.filter(
@@ -632,7 +632,7 @@ class CompletedCourseModulesAPIView(APIView):
 # 10-12. Learning session views
 # ═══════════════════════════════════════════════════════════════
 class StartLearningAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def post(self, request, course_id):
         try:
@@ -705,7 +705,7 @@ class StartLearningAPIView(APIView):
 
 
 class EndLearningSessionAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def post(self, request, course_id):
         try:
@@ -724,7 +724,7 @@ class EndLearningSessionAPIView(APIView):
 
 
 class ContinueLearningAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request, course_id):
         active_session = LearningSession.objects.filter(
@@ -762,7 +762,7 @@ class ContinueLearningAPIView(APIView):
 #     GET /progress/courses/{course_id}/
 # ═══════════════════════════════════════════════════════════════
 class StudentCourseProgressAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request, course_id):
         enrollment = Enrollment.objects.filter(student=request.user, course_id=course_id).first()
@@ -827,7 +827,7 @@ class AdminStudentCourseProgressAPIView(APIView):
     Admin can view progress of any student in a course
     """
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request, student_id, course_id):
         try:
@@ -885,7 +885,7 @@ class AdminCompleteCourseAPIView(APIView):
     only if all lessons are completed
     """
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanCompleteProgress]
 
     def post(self, request, student_id, course_id):
 
@@ -944,7 +944,7 @@ class AdminCompleteCourseAPIView(APIView):
 # 15. Complete course
 # ═══════════════════════════════════════════════════════════════
 class CompleteCourseAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCompleteProgress]
 
     def post(self, request, course_id):
         try:
@@ -989,7 +989,7 @@ class LearningHoursKPIAPIView(APIView):
     Return total hours learned by the student
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
 
@@ -1030,7 +1030,7 @@ class LearningHoursKPIAPIView(APIView):
 
 
 class CoursesKPIAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
 
@@ -1075,7 +1075,7 @@ class CompletionRateAPIView(APIView):
     Completion rate based on courses
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
 
@@ -1190,7 +1190,7 @@ class ModuleContentsAPIView(APIView):
 
 class MyCourseProgressAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
 

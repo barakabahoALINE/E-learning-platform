@@ -22,30 +22,12 @@ class ContentDetailSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        is_admin = True
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
-            is_admin = False
+        if request and not (
+            request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
+        ):
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
             
-        if is_admin:
-            if instance.draft_title:
-                data['title'] = instance.draft_title
-            if instance.draft_content_type:
-                data['content_type'] = instance.draft_content_type
-            if instance.draft_description:
-                data['description'] = instance.draft_description
-            if instance.draft_video_url:
-                data['video_url'] = instance.draft_video_url
-            if instance.draft_text_content:
-                data['text_content'] = instance.draft_text_content
-            if instance.draft_file:
-                if request and hasattr(instance.draft_file, 'url') and instance.draft_file:
-                    data['file'] = request.build_absolute_uri(instance.draft_file.url)
-                elif hasattr(instance.draft_file, 'url') and instance.draft_file:
-                    data['file'] = instance.draft_file.url
-            if instance.draft_order is not None:
-                data['order'] = instance.draft_order
         return data
 
 
@@ -109,17 +91,11 @@ class SectionSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        is_admin = True
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
-            is_admin = False
+        if request and not (
+            request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
+        ):
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
-
-        if is_admin:
-            if instance.draft_title:
-                data['title'] = instance.draft_title
-            if instance.draft_order is not None:
-                data['order'] = instance.draft_order
         return data
 
     def get_contents(self, obj):
@@ -210,19 +186,12 @@ class ModuleSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        is_admin = True
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
-            is_admin = False
+        if request and not (
+            request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
+        ):
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
 
-        if is_admin:
-            if instance.draft_title:
-                data['title'] = instance.draft_title
-            if instance.draft_description:
-                data['description'] = instance.draft_description
-            if instance.draft_order is not None:
-                data['order'] = instance.draft_order
         return data
 
     def get_sections(self, obj):
@@ -398,9 +367,6 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
 class CourseListSerializer(serializers.ModelSerializer):
     admin = serializers.CharField(source="created_by.username", read_only=True)
 
-    category = serializers.CharField(source="category.name", read_only=True)
-    level = serializers.CharField(source="level.name", read_only=True)
-
     modules_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -490,30 +456,11 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        is_admin = True
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
-            is_admin = False
+        if request and not (
+            request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
+        ):
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
-
-        if is_admin:
-            if instance.draft_title:
-                data['title'] = instance.draft_title
-            if instance.draft_description:
-                data['description'] = instance.draft_description
-            if instance.draft_duration:
-                data['duration'] = instance.draft_duration
-            if instance.draft_level:
-                data['level'] = instance.draft_level.name
-            if instance.draft_category:
-                data['category'] = instance.draft_category.name
-            if instance.draft_thumbnail:
-                if request and hasattr(instance.draft_thumbnail, 'url') and instance.draft_thumbnail:
-                    data['thumbnail'] = request.build_absolute_uri(instance.draft_thumbnail.url)
-                elif hasattr(instance.draft_thumbnail, 'url') and instance.draft_thumbnail:
-                    data['thumbnail'] = instance.draft_thumbnail.url
-            if instance.draft_price is not None:
-                data['price'] = str(instance.draft_price)
         return data
 
     def get_modules(self, obj):
