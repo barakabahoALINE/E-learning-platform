@@ -67,6 +67,17 @@ class CanModifyRoles(HasPermission):
 class CanModifyPermissions(HasPermission):
     required_permission = "users_app.modify_permission"
 
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        if user.role == "instructor" or user.groups.filter(name="Instructor").exists():
+            return True
+        return user.has_perm(self.required_permission)
+
+
 
 class CanViewAnalytics(HasPermission):
     required_permission = "users_app.view_analytics"

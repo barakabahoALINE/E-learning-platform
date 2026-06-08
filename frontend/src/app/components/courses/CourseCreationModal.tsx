@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { X, Upload } from "lucide-react";
-import { createCourse, updateCourse, fetchLevels, fetchCategories } from "../../../features/courses/courseSlice";
+import { X, Upload, Plus } from "lucide-react";
+import { createCourse, updateCourse, fetchLevels, fetchCategories, createCategory } from "../../../features/courses/courseSlice";
 import { Course } from "../../../features/courses/types";
 import StatusModal from "../ui/StatusModal";
 import { useAppDispatch, useAppSelector } from "../../../hooks/reduxHooks";
@@ -22,7 +22,7 @@ export function CourseCreationModal({
   const dispatch = useAppDispatch();
   const levels = useAppSelector(selectCourseLevels);
   const categories = useAppSelector(selectCourseCategories);
-  
+
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     title: editCourse?.title || "",
@@ -32,11 +32,16 @@ export function CourseCreationModal({
     price: editCourse?.price?.toString() || "0",
     duration: editCourse?.duration ? String(editCourse.duration) : "",
     is_published: editCourse?.is_published || false,
+    is_paid: editCourse ? (Number(editCourse.price) > 0) : false,
   });
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string>(editCourse?.thumbnail || "");
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [isCreatingCat, setIsCreatingCat] = useState(false);
+  const [catError, setCatError] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -57,7 +62,7 @@ export function CourseCreationModal({
     if (editCourse) {
       let numericPart = "";
       let unitPart = "weeks";
-      
+
       const rawDuration = editCourse.duration ? String(editCourse.duration) : "";
       const match = rawDuration.match(/^(\d+)?\s*(.*)$/);
       if (match) {
@@ -103,6 +108,7 @@ export function CourseCreationModal({
         price: editCourse.price?.toString() || "0",
         duration: `${numericPart} ${unitPart}`,
         is_published: editCourse.is_published || false,
+        is_paid: Number(editCourse.price) > 0,
       });
       setThumbnailPreview(getImageUrl(editCourse.thumbnail));
     } else {
@@ -114,6 +120,7 @@ export function CourseCreationModal({
         price: "0",
         duration: "1 weeks",
         is_published: false,
+        is_paid: false,
       });
       setThumbnailPreview("");
       setThumbnailFile(null);
@@ -130,6 +137,23 @@ export function CourseCreationModal({
     if (step > 1) setStep(step - 1);
   };
 
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    setIsCreatingCat(true);
+    setCatError("");
+    try {
+      const res = await dispatch(createCategory(newCategoryName.trim())).unwrap();
+      const createdCat = res.data || res;
+      setFormData(prev => ({ ...prev, category: createdCat.id }));
+      setNewCategoryName("");
+      setIsCategoryModalOpen(false);
+    } catch (err: any) {
+      setCatError(err || "Failed to create category");
+    } finally {
+      setIsCreatingCat(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.title || !formData.category || !formData.level) {
       setStatus({ type: "error", message: "Please fill in all required fields" });
@@ -138,8 +162,9 @@ export function CourseCreationModal({
 
     const courseData: any = {
       ...formData,
-      price: Number(formData.price),
+      price: formData.is_paid ? Number(formData.price) : 0,
     };
+    delete courseData.is_paid;
 
     if (thumbnailFile) {
       courseData.thumbnail = thumbnailFile;
@@ -155,7 +180,7 @@ export function CourseCreationModal({
       } else {
         response = await dispatch(createCourse(courseData)).unwrap();
       }
-      
+
       setIsSubmitting(false);
       setStatus({ type: "success", message: response.message || "Operation successful!" });
 
@@ -202,21 +227,19 @@ export function CourseCreationModal({
             {[1, 2].map((s) => (
               <div key={s} className="flex items-center">
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                    s === step
-                      ? "bg-blue-600 text-white"
-                      : s < step
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${s === step
+                    ? "bg-blue-600 text-white"
+                    : s < step
                       ? "bg-green-500 text-white"
                       : "bg-gray-200 text-gray-500"
-                  }`}
+                    }`}
                 >
                   {s}
                 </div>
                 {s < 2 && (
                   <div
-                    className={`w-16 h-1 mx-2 ${
-                      s < step ? "bg-green-500" : "bg-gray-200"
-                    }`}
+                    className={`w-16 h-1 mx-2 ${s < step ? "bg-green-500" : "bg-gray-200"
+                      }`}
                   />
                 )}
               </div>
@@ -267,21 +290,31 @@ export function CourseCreationModal({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Category <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={formData.category || ""}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFormData({ ...formData, category: val ? parseInt(val) : null })
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select Category</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={formData.category || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData({ ...formData, category: val ? parseInt(val) : null })
+                      }}
+                      className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Select Category</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setIsCategoryModalOpen(true)}
+                      className="px-3 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 hover:text-blue-600 transition-colors flex items-center justify-center cursor-pointer"
+                      title="Add New Category"
+                    >
+                      <Plus className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -305,22 +338,52 @@ export function CourseCreationModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Paid course toggle */}
+              <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg bg-gray-50">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Price (Rwf)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={(e) =>
-                      setFormData({ ...formData, price: e.target.value })
-                    }
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder=" 0"
-                  />
+                  <div className="text-sm font-medium text-gray-800">Paid Course</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Enable to set a price for this course</div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      is_paid: !formData.is_paid,
+                      price: formData.is_paid ? "0" : formData.price,
+                    })
+                  }
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${formData.is_paid ? "bg-blue-600" : "bg-gray-300"
+                    }`}
+                  aria-checked={formData.is_paid}
+                  role="switch"
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${formData.is_paid ? "translate-x-6" : "translate-x-1"
+                      }`}
+                  />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {formData.is_paid && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Price (Rwf) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      value={formData.price === "0" ? "" : formData.price}
+                      onChange={(e) =>
+                        setFormData({ ...formData, price: e.target.value })
+                      }
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="e.g., 5000"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Duration
@@ -425,7 +488,7 @@ export function CourseCreationModal({
                         Course will not be visible to learners
                       </div>
                     </div>
-                  </label>                 
+                  </label>
                   <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-xs text-amber-700">
                     Note: You can only publish the course after adding lessons and assessment in the builder.
                   </div>
@@ -450,7 +513,8 @@ export function CourseCreationModal({
                     {levels.find(l => l.id === formData.level)?.name || "Not set"}
                   </p>
                   <p>
-                    <span className="font-medium">Price:</span> Rwf {formData.price}
+                    <span className="font-medium">Price:</span>{" "}
+                    {formData.is_paid ? `Rwf ${formData.price}` : "Free"}
                   </p>
                   <p>
                     <span className="font-medium">Status:</span>{" "}
@@ -495,7 +559,7 @@ export function CourseCreationModal({
                 className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
               >
                 {isSubmitting && (
-                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 )}
                 {editCourse ? "Update Course" : "Create Course"}
               </button>
@@ -512,6 +576,71 @@ export function CourseCreationModal({
           description={status.message}
           onClose={() => setStatus(null)}
         />
+      )}
+
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 bg-gray-900/30 backdrop-blur-xs flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Add New Category</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCategoryModalOpen(false);
+                  setNewCategoryName("");
+                  setCatError("");
+                }}
+                className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Category Name
+                </label>
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., Mobile Development"
+                  autoFocus
+                />
+              </div>
+
+              {catError && (
+                <p className="text-sm text-red-600 font-medium">
+                  {catError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCategoryModalOpen(false);
+                    setNewCategoryName("");
+                    setCatError("");
+                  }}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateCategory}
+                  disabled={isCreatingCat || !newCategoryName.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  {isCreatingCat ? "Saving..." : "Add Category"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link, useLocation } from "react-router-dom";
-import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
 import {
@@ -17,13 +16,13 @@ import {
   List,
   X,
   Loader2,
-  Award,
-  ArrowRight,
   Target,
   PlayCircle,
   Lock,
   ClipboardCheck
 } from "lucide-react";
+import Logo from "../assets/R.png";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { fetchCourseDetails } from "../../features/courses/courseSlice";
 import {
   endLearningSession,
@@ -292,7 +291,7 @@ export const LessonPage: React.FC = () => {
 
       if (itemElements.length === 0) return;
 
-      observer = new IntersectionObserver((entries) => {
+      const obs = new IntersectionObserver((entries) => {
         const intersecting = entries.filter(e => e.isIntersecting);
         if (intersecting.length > 0) {
           intersecting.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
@@ -308,8 +307,9 @@ export const LessonPage: React.FC = () => {
         rootMargin: '-10% 0px -20% 0px',
         threshold: 0
       });
+      observer = obs;
 
-      itemElements.forEach(el => observer.observe(el));
+      itemElements.forEach(el => obs.observe(el));
     }, 100);
 
     return () => {
@@ -471,11 +471,26 @@ export const LessonPage: React.FC = () => {
   return (
     <div className="h-screen bg-background dark:bg-gray-900 flex flex-col font-sans overflow-hidden">
       {/* Header */}
-      <header className="bg-card/95 border-b border-border px-4 py-3 backdrop-blur-xl transition-colors">
-
-        {/* <header className="flex-shrink-0 bg-card dark:bg-gray-800 border-b border-border dark:border-gray-700 px-4 py-3 z-50"> */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+      <header className=" bg-white/30 dark:bg-gray-900/30 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50 px-6 bg-red-500 py-4 backdrop-blur-2xl rounded-b-lg shadow-xs">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-4 flex-1">
+            <Link to="/dashboard" className="flex items-center space-x-2 border-r border-gray-300 pr-4">
+              <img src={Logo} alt="Logo" className="h-10 w-auto" />
+            </Link>
+            <div className="flex-1 px-6">
+              <h1 className="text-md dark:text-white font-medium">{course.title}</h1>
+              <p className="text-sm text-muted-foreground dark:text-gray-400">{currentModule.title}</p>
+              <div className="mt-3 flex-1">
+                <div className="flex items-center justify-between text-sm text-muted-foreground dark:text-gray-400 mb-1">
+                  <span>Course Progress</span>
+                  <span>{Math.round(currentProgressPercentage)}%</span>
+                </div>
+                <Progress value={currentProgressPercentage} className="h-1.5" />
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <ThemeToggle />
             <Button
               variant="ghost"
               size="sm"
@@ -484,26 +499,15 @@ export const LessonPage: React.FC = () => {
             >
               <X className="h-5 w-5" />
             </Button>
-            <div>
-              <h1 className="text-foreground dark:text-white font-medium">{course.title}</h1>
-              <p className="text-sm text-muted-foreground dark:text-gray-400">{currentModule.title}</p>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSidebar(!showSidebar)}
+              className="text-foreground dark:text-white hover:text-foreground dark:hover:text-white hover:bg-accent dark:hover:bg-gray-700 lg:hidden"
+            >
+              <List className="h-5 w-5" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowSidebar(!showSidebar)}
-            className="text-foreground dark:text-white hover:text-foreground dark:hover:text-white hover:bg-accent dark:hover:bg-gray-700 lg:hidden"
-          >
-            <List className="h-5 w-5" />
-          </Button>
-        </div>
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-sm text-muted-foreground dark:text-gray-400 mb-1">
-            <span>Course Progress</span>
-            <span>{Math.round(currentProgressPercentage)}%</span>
-          </div>
-          <Progress value={currentProgressPercentage} className="h-1.5" />
         </div>
       </header>
 
@@ -645,11 +649,11 @@ export const LessonPage: React.FC = () => {
                     <Button
                       size="lg"
                       disabled={!canOpenFinalAssessment && !finalAssessmentCompleted}
-                      onClick={() => navigate(`/learning/${courseId}/final-assessment`)}
+                      onClick={() => navigate(finalAssessmentCompleted ? `/certificate/${courseId}` : `/learning/${courseId}/final-assessment`)}
                       className="h-14 px-8 rounded-2xl font-semibold transition-colors"
                     >
                       <ClipboardCheck className="mr-2 h-5 w-5" />
-                      {finalAssessmentCompleted ? "View Result" : "Start Assessment"}
+                      {finalAssessmentCompleted ? "View Certificate" : "Start Assessment"}
                     </Button>
                   </div>
                 </div>
@@ -782,12 +786,6 @@ export const LessonPage: React.FC = () => {
                                       navigate(`/learning/${courseId}/${module.id}`, { state: { targetItemId: item.id } });
                                     }
                                   }}
-                                  // className={cn(
-                                  //   "w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all group",
-                                  //   isActiveItem
-                                  //     ? "border border-primary/30 bg-primary/10 dark:border-white/30 dark:bg-white/[0.08] shadow-sm"
-                                  //     : "border border-transparent hover:bg-accent dark:hover:bg-white/[0.04]"
-                                  // )}
                                   className={cn(
                                     'w-full flex items-start gap-2 p-2 rounded text-left transition-colors mb-1 last:mb-0 border border-transparent',
                                     isActiveItem
@@ -824,29 +822,29 @@ export const LessonPage: React.FC = () => {
                           const moduleProgress = moduleProgressById.get(Number(module.id));
                           const isQuizCompleted = Boolean(moduleProgress?.quiz_passed);
                           return (
-                        <button
-                          onClick={() => navigate(`/learning/${courseId}/quiz/${module.id}`)}
-                          className="w-full flex items-start gap-3 py-2 pl-2 pr-2 rounded-lg text-left transition-all group border border-transparent hover:bg-accent dark:hover:bg-white/[0.04]"
-                        >
-                          <div className="flex-shrink-0 mt-0.5">
-                            {isQuizCompleted ? (
-                              <CheckCircle2 className="h-[18px] w-[18px] text-green-600 dark:text-green-400 transition-colors" />
-                            ) : (
-                              <Circle className="h-[18px] w-[18px] text-amber-500 group-hover:text-amber-400 transition-colors" />
-                            )}
-                          </div>
-                          <div className="flex-1 pr-2">
-                            <h5 className={cn(
-                              "text-[14px] font-bold transition-colors leading-snug",
-                              isQuizCompleted ? "text-green-600 dark:text-green-400" : "text-amber-500 group-hover:text-amber-400"
-                            )}>
-                              Module Quiz
-                            </h5>
-                            <p className="text-[13px] text-muted-foreground dark:text-slate-400 mt-0.5">
-                              {isQuizCompleted ? "Completed" : "Required before next module"}
-                            </p>
-                          </div>
-                        </button>
+                            <button
+                              onClick={() => navigate(`/learning/${courseId}/quiz/${module.id}`)}
+                              className="w-full flex items-start gap-3 py-2 pl-2 pr-2 rounded-lg text-left transition-all group border border-transparent hover:bg-accent dark:hover:bg-white/[0.04]"
+                            >
+                              <div className="flex-shrink-0 mt-0.5">
+                                {isQuizCompleted ? (
+                                  <CheckCircle2 className="h-[18px] w-[18px] text-green-600 dark:text-green-400 transition-colors" />
+                                ) : (
+                                  <Circle className="h-[18px] w-[18px] text-amber-500 group-hover:text-amber-400 transition-colors" />
+                                )}
+                              </div>
+                              <div className="flex-1 pr-2">
+                                <h5 className={cn(
+                                  "text-[14px] font-bold transition-colors leading-snug",
+                                  isQuizCompleted ? "text-green-600 dark:text-green-400" : "text-amber-500 group-hover:text-amber-400"
+                                )}>
+                                  Module Quiz
+                                </h5>
+                                <p className="text-[13px] text-muted-foreground dark:text-slate-400 mt-0.5">
+                                  {isQuizCompleted ? "Completed" : "Required before next module"}
+                                </p>
+                              </div>
+                            </button>
                           );
                         })()}
                       </div>

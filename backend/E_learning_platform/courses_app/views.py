@@ -1,4 +1,7 @@
-# from rest_framework import generics, status
+# This module provides helper functions to filter querysets so that
+# users only see objects belonging to their own institution, while
+# allowing global objects (with no creator or institution) to be visible.
+# Super‑admin users bypass all filters and see every record.
 # from rest_framework.permissions import AllowAny, IsAuthenticated
 # from rest_framework.exceptions import PermissionDenied, ValidationError
 # from rest_framework.response import Response
@@ -25,12 +28,42 @@ from django.shortcuts import get_object_or_404
 from .models import Content, Section, Module, Course, Level, Category
 from .permissions import (
     CanViewCourses, CanAddCourse, CanChangeCourse, CanDeleteCourse, 
-    CanPublishCourse
+    CanPublishCourse, CanViewPublishedCourse
 )
 from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from .models import Content, Section, Module, Course
 from .serializers import *
+
+
+def _is_admin_user(user):
+    return user.is_authenticated and (
+        user.is_superuser or 
+        user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+        user.role in ["admin", "instructor"]
+    )
+
+def _is_unrestricted_user(user):
+    return user.is_authenticated and (
+        user.is_superuser or
+        getattr(user, "role", "") in ["admin", "viewer"] or
+        user.groups.filter(name__in=["Admin", "Viewer"]).exists()
+    )
+
+def _same_institution_queryset(queryset, user, relation="created_by__institution"):
+    if _is_unrestricted_user(user):
+        return queryset
+    if user.is_authenticated and getattr(user, "institution", None):
+        parts = relation.split("__")
+        creator_isnull_relation = "__".join(parts[:-1]) + "__isnull"
+        institution_isnull_relation = relation + "__isnull"
+        return queryset.filter(
+            models.Q(**{relation: user.institution}) |
+            models.Q(**{creator_isnull_relation: True}) |
+            models.Q(**{institution_isnull_relation: True})
+        )
+    return queryset
+
 
 # ═══════════════════════════════════════════════
 # COURSE VIEWS  (unchanged logic, updated names)
@@ -38,23 +71,40 @@ from .serializers import *
 
 class CourseListAPIView(generics.ListAPIView):
     serializer_class = CourseListSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, CanViewPublishedCourse]
 
     def get_queryset(self):
-        queryset = Course.objects.select_related("category", "level").annotate(
-            enrolled_students_count=models.Count("enrollments", distinct=True)
+        queryset = Course.objects.select_related("category", "level", "created_by").annotate(
+            enrolled_students_count=models.Count("enrollments", distinct=True),
+            rating=models.Avg("certificate_feedback__overall_rating"),
         )
         user = self.request.user
-        if user.is_authenticated and (
-            user.is_superuser or user.groups.filter(name="Admin").exists()
-        ):
-            return queryset
-        return queryset.filter(is_published=True)
+
+        if user.is_authenticated:
+            if _is_unrestricted_user(user):
+                return queryset.distinct()
+
+            if _is_admin_user(user):
+                return queryset.filter(
+                    models.Q(created_by__institution=user.institution) |
+                    models.Q(created_by__isnull=True) |
+                    models.Q(created_by__institution__isnull=True)
+                ).distinct()
+
+            # Use institution‑scoped queryset for instructors/viewers
+            # Super‑admin bypass handled earlier
+            return _same_institution_queryset(queryset.filter(is_published=True), user)
+
+
+        return queryset.filter(is_published=True).distinct()
     
     
 class CourseCreateAPIView(generics.CreateAPIView):
     serializer_class = CourseCreateUpdateSerializer
     permission_classes = [IsAuthenticated, CanAddCourse]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -81,16 +131,22 @@ class CourseCreateAPIView(generics.CreateAPIView):
 class CourseRetrieveAPIView(generics.RetrieveAPIView):
     serializer_class = CourseDetailSerializer
     permission_classes = [IsAuthenticated, CanViewCourses]
-    queryset = Course.objects.select_related("category", "level", "created_by")
+    queryset = Course.objects.select_related("category", "level", "created_by").annotate(
+        enrolled_students_count=models.Count("enrollments", distinct=True),
+        rating=models.Avg("certificate_feedback__overall_rating"),
+    )
 
     def get_object(self):
         course = super().get_object()
         if course.is_published:
+            request_user = self.request.user
+            if request_user.is_authenticated and not request_user.is_superuser:
+                if course.created_by and course.created_by.institution != request_user.institution:
+                    raise PermissionDenied("Course is not available for your institution.")
             return course
+
         user = self.request.user
-        if user.is_authenticated and (
-            user.is_superuser or user.groups.filter(name="Admin").exists()
-        ):
+        if user.is_authenticated and _is_admin_user(user) and course.created_by and course.created_by.institution == user.institution:
             return course
         raise PermissionDenied("Course is not published.")
 
@@ -99,6 +155,10 @@ class CourseUpdateAPIView(generics.UpdateAPIView):
     serializer_class = CourseCreateUpdateSerializer
     permission_classes = [IsAuthenticated, CanChangeCourse]
     queryset = Course.objects.all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return _same_institution_queryset(queryset, self.request.user)
 
     def update(self, request, *args, **kwargs):
 
@@ -152,6 +212,10 @@ class CourseUpdateAPIView(generics.UpdateAPIView):
 class CourseDeleteAPIView(generics.DestroyAPIView):
     permission_classes = [IsAuthenticated, CanDeleteCourse]
     queryset = Course.objects.all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return _same_institution_queryset(queryset, self.request.user)
 
     def destroy(self, request, *args, **kwargs):
 
@@ -323,6 +387,9 @@ class CoursePublishAPIView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated, CanPublishCourse]
     queryset = Course.objects.all()
 
+    def get_queryset(self):
+        return _same_institution_queryset(super().get_queryset(), self.request.user)
+
     def post(self, request, pk):
 
         course = self.get_object()
@@ -409,6 +476,9 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated, CanPublishCourse]
     queryset = Course.objects.all()
 
+    def get_queryset(self):
+        return _same_institution_queryset(super().get_queryset(), self.request.user)
+
     def post(self, request, pk):
 
         course = self.get_object()
@@ -471,7 +541,10 @@ class ModuleCreateAPIView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated, CanAddCourse]
 
     def get_course(self):
-        return get_object_or_404(Course, id=self.kwargs["course_id"])
+        queryset = Course.objects.filter(id=self.kwargs["course_id"])
+        if not self.request.user.is_superuser:
+            queryset = _same_institution_queryset(queryset, self.request.user)
+        return get_object_or_404(queryset)
 
     def create(self, request, *args, **kwargs):
         try:
@@ -513,8 +586,9 @@ class ModuleListAPIView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Module.objects.filter(course_id=self.kwargs["course_id"])
         user = self.request.user
-        
-        if user.is_authenticated and getattr(user, "role", None) == "admin":
+        queryset = _same_institution_queryset(queryset, user, relation="course__created_by__institution")
+
+        if user.is_authenticated and _is_admin_user(user):
             return queryset
 
         return queryset.filter(is_published=True)
@@ -524,6 +598,9 @@ class ModuleUpdateAPIView(generics.UpdateAPIView):
     serializer_class = ModuleSerializer
     permission_classes = [IsAuthenticated, CanChangeCourse]
     queryset = Module.objects.all()
+
+    def get_queryset(self):
+        return _same_institution_queryset(super().get_queryset(), self.request.user, relation="course__created_by__institution")
 
     def update(self, request, *args, **kwargs):
 
@@ -568,6 +645,9 @@ class ModuleDeleteAPIView(generics.DestroyAPIView):
     permission_classes = [IsAuthenticated, CanDeleteCourse]
     queryset = Module.objects.all()
 
+    def get_queryset(self):
+        return _same_institution_queryset(super().get_queryset(), self.request.user, relation="course__created_by__institution")
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
@@ -608,11 +688,12 @@ class SectionCreateAPIView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated, CanAddCourse]
 
     def get_module(self):
-        return get_object_or_404(
-            Module,
+        queryset = Module.objects.filter(
             id=self.kwargs["module_id"],
-            # course_id=self.kwargs["course_id"],
         )
+        if not self.request.user.is_superuser:
+            queryset = _same_institution_queryset(queryset, self.request.user, relation="course__created_by__institution")
+        return get_object_or_404(queryset)
 
     def create(self, request, *args, **kwargs):
         try:
@@ -659,7 +740,8 @@ class SectionListAPIView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Section.objects.filter(module_id=self.kwargs["module_id"])
         user = self.request.user
-        if user.is_authenticated and getattr(user, "role", None) == "admin":
+        queryset = _same_institution_queryset(queryset, user, relation="module__course__created_by__institution")
+        if user.is_authenticated and _is_admin_user(user):
             return queryset
 
         return queryset.filter(is_published=True)
@@ -669,6 +751,9 @@ class SectionUpdateAPIView(generics.UpdateAPIView):
     serializer_class = SectionSerializer
     permission_classes = [IsAuthenticated, CanChangeCourse]
     queryset = Section.objects.all()
+
+    def get_queryset(self):
+        return _same_institution_queryset(super().get_queryset(), self.request.user, relation="module__course__created_by__institution")
 
     def update(self, request, *args, **kwargs):
 
@@ -709,6 +794,9 @@ class SectionUpdateAPIView(generics.UpdateAPIView):
 class SectionDeleteAPIView(generics.DestroyAPIView):
     permission_classes = [IsAuthenticated, CanDeleteCourse]
     queryset = Section.objects.all()
+
+    def get_queryset(self):
+        return _same_institution_queryset(super().get_queryset(), self.request.user, relation="module__course__created_by__institution")
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -754,8 +842,9 @@ class ContentListAPIView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Content.objects.filter(section_id=self.kwargs["section_id"])
         user = self.request.user
-        
-        if user.is_authenticated and getattr(user, "role", None) == "admin":
+        queryset = _same_institution_queryset(queryset, user, relation="section__module__course__created_by__institution")
+
+        if user.is_authenticated and _is_admin_user(user):
             return queryset
         return queryset.filter(is_published=True)
 
@@ -765,11 +854,13 @@ class ContentCreateAPIView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated, CanAddCourse]
 
     def perform_create(self, serializer):
-        section = get_object_or_404(
-            Section,
+        section_qs = Section.objects.filter(
             id=self.kwargs["section_id"],
             module__course_id=self.kwargs["course_id"],
         )
+        if not self.request.user.is_superuser:
+            section_qs = _same_institution_queryset(section_qs, self.request.user, relation="module__course__created_by__institution")
+        section = get_object_or_404(section_qs)
         content = serializer.save(section=section, is_published=False)
         section.has_unpublished_changes=True
         section.save()
@@ -818,6 +909,12 @@ class ContentRetrieveAPIView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated, CanViewCourses]
     queryset = Content.objects.all()
 
+    def get_queryset(self):
+        queryset = _same_institution_queryset(super().get_queryset(), self.request.user, relation="section__module__course__created_by__institution")
+        if self.request.user.is_authenticated and _is_admin_user(self.request.user):
+            return queryset
+        return queryset.filter(is_published=True)
+
     def retrieve(self, request, *args, **kwargs):
         try:
             instance = self.get_object()
@@ -835,8 +932,10 @@ class ModuleContentsAPIView(APIView):
     permission_classes = [IsAuthenticated, CanViewCourses]
 
     def get(self, request, module_id):
-
-        module = get_object_or_404(Module, id=module_id)
+        module_qs = Module.objects.filter(id=module_id)
+        if not request.user.is_superuser:
+            module_qs = _same_institution_queryset(module_qs, request.user, relation="course__created_by__institution")
+        module = get_object_or_404(module_qs)
 
         contents = Content.objects.filter(
             section__module=module
@@ -874,8 +973,13 @@ class CourseSectionsAPIView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, course_id):
+        course_qs = Course.objects.filter(id=course_id)
+        if not request.user.is_superuser:
+            course_qs = _same_institution_queryset(course_qs, request.user)
+        course = get_object_or_404(course_qs)
+
         sections = Section.objects.filter(
-            module__course_id=course_id
+            module__course=course
         ).select_related("module").order_by(
             "module__order",
             "order"
@@ -905,6 +1009,9 @@ class ContentUpdateAPIView(generics.UpdateAPIView):
     serializer_class = ContentCreateUpdateSerializer
     permission_classes = [IsAuthenticated, CanChangeCourse]
     queryset = Content.objects.all()
+
+    def get_queryset(self):
+        return _same_institution_queryset(super().get_queryset(), self.request.user, relation="section__module__course__created_by__institution")
 
     def update(self, request, *args, **kwargs):
 
@@ -960,6 +1067,9 @@ class ContentUpdateAPIView(generics.UpdateAPIView):
 class ContentDeleteAPIView(generics.DestroyAPIView):
     permission_classes = [IsAuthenticated, CanDeleteCourse]
     queryset = Content.objects.all()
+
+    def get_queryset(self):
+        return _same_institution_queryset(super().get_queryset(), self.request.user, relation="section__module__course__created_by__institution")
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -1389,7 +1499,7 @@ class PublicStatsAPIView(APIView):
         return Response({
             "success": True,
             "data": {
-                "total_students": total_students,
+                "total_students": total_students, 
                 "total_instructors": total_instructors,
                 "total_courses": total_courses,
             }

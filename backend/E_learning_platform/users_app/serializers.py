@@ -19,6 +19,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.contrib.auth.models import Group, Permission
 from .services.rbac import sync_user_role_group
+from .models import RoleMetadata
 
 
 User = get_user_model()
@@ -50,17 +51,45 @@ def validate_strong_password(password, user=None):
         raise serializers.ValidationError({"password": errors})
     return password
 
+def _is_custom_permission(permission: Permission) -> bool:
+    return permission.content_type.app_label.endswith("_app")
+
+def _permission_name(permission: Permission) -> str:
+    return f"{permission.content_type.app_label}.{permission.codename}"
+
+def resolve_custom_permission(permission_name: str) -> Permission:
+    app_label, codename = permission_name.split(".", 1)
+    permissions_qs = Permission.objects.filter(
+        content_type__app_label=app_label,
+        codename=codename,
+    ).select_related("content_type").order_by("content_type__model", "id")
+
+    if not permissions_qs.exists():
+        raise serializers.ValidationError(
+            f"Permission '{permission_name}' does not exist."
+        )
+
+    return permissions_qs.first()
 
 def get_user_auth_payload(user):
+    profile_pic_url = user.profile_picture.url if user.profile_picture else None
     return {
         "id": user.id,
         "email": user.email,
         "full_name": user.full_name,
         "institution": user.institution,
         "role": user.role,
+        "profile_picture": profile_pic_url,
+        "avatar": profile_pic_url,
         "groups": list(user.groups.values_list("name", flat=True)),
-        "permissions": sorted(user.get_all_permissions()),
+        "permissions": sorted(
+            permission
+            for permission in user.get_all_permissions()
+            if permission.split(".", 1)[0].endswith("_app") or permission.split(".", 1)[0] == "auth"
+        ),
         "is_superuser": user.is_superuser,
+        "is_active": user.is_active,
+        "is_verified": user.is_verified,
     }
 
 class SignupSerializer(serializers.ModelSerializer):
@@ -118,7 +147,8 @@ class AddUserSerializer(serializers.ModelSerializer):
             ("active", "Active"),
             ("inactive", "Inactive"),
         ],
-        default="active",
+        default="inactive",
+        required=False,
     )
     department = serializers.CharField(required=False, allow_blank=True)
 
@@ -141,6 +171,13 @@ class AddUserSerializer(serializers.ModelSerializer):
 
         return value
 
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if request and not request.user.is_superuser:
+            attrs["institution"] = request.user.institution
+            attrs["status"] = "inactive"
+        return attrs
+
     def create(self, validated_data):
         with transaction.atomic():
             user = User.objects.create_user(
@@ -150,14 +187,14 @@ class AddUserSerializer(serializers.ModelSerializer):
                 department=validated_data.get("department", ""),
                 password=None,
                 role=validated_data["role"],
-                is_active=validated_data.get("status", "active") == "active",
+                is_active=False,
             )
 
             sync_user_role_group(user)
 
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            set_password_link = f"http://localhost:5173/create-password/{uid}/{token}"
+            set_password_link = f"http://localhost:5173/reset-password/{uid}/{token}?mode=setup"
 
             try:
                 send_mail(
@@ -211,6 +248,7 @@ class CreatePasswordSerializer(serializers.Serializer):
         password = self.validated_data["password"]
         user.set_password(password)
         user.is_verified = True
+        user.is_active = True  # Activate user on first password setup
         user.save()
         return user
 
@@ -274,9 +312,24 @@ class GoogleLoginSerializer(serializers.Serializer):
         user, created = User.objects.get_or_create(
             email=email,
             defaults={
-                "username": email,
+                "full_name": name or email,
+                "institution": "Google User",
+                "role": "student",
+                "is_verified": True,
+                "is_active": True,
             }
         )
+
+        if created:
+            sync_user_role_group(user)
+        else:
+            if not user.is_verified:
+                user.is_verified = True
+            sync_user_role_group(user)
+            user.save(update_fields=["is_verified"])
+
+        if not user.is_active:
+            raise serializers.ValidationError("Account is deactivated")
 
         refresh = RefreshToken.for_user(user)
 
@@ -326,10 +379,16 @@ class UserListSerializer(serializers.ModelSerializer):
             "is_superuser",
             "groups",
             "permissions",
+            "last_login",
+            "date_joined",
         ]
 
     def get_permissions(self, obj):
-        return sorted(obj.get_all_permissions())
+        return sorted(
+            permission
+            for permission in obj.get_all_permissions()
+            if permission.split(".", 1)[0].endswith("_app") or permission.split(".", 1)[0] == "auth"
+        )
 
     def get_status(self, obj):
         return "active" if obj.is_active else "inactive"
@@ -396,7 +455,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "email", "role", "groups", "permissions", "is_superuser"]
 
     def get_permissions(self, obj):
-        return sorted(obj.get_all_permissions())
+        return sorted(
+            permission
+            for permission in obj.get_all_permissions()
+            if permission.split(".", 1)[0].endswith("_app") or permission.split(".", 1)[0] == "auth"
+        )
 
 
 class UserRoleAssignSerializer(serializers.Serializer):
@@ -419,6 +482,12 @@ class UserRoleAssignSerializer(serializers.Serializer):
         if "role" in validated_data:
             instance.role = validated_data["role"]
             instance.save()
+            # synchronize group membership to reflect role change
+            try:
+                sync_user_role_group(instance)
+            except Exception:
+                # best-effort: do not block role assignment on sync failures
+                pass
         return instance
 
     def create(self, validated_data):
@@ -440,18 +509,7 @@ class GroupPermissionsUpdateSerializer(serializers.Serializer):
                     "Each permission must be in the format '<app_label>.<codename>'."
                 )
 
-            app_label, codename = permission_name.split(".", 1)
-            try:
-                permission = Permission.objects.get(
-                    content_type__app_label=app_label,
-                    codename=codename,
-                )
-            except Permission.DoesNotExist:
-                raise serializers.ValidationError(
-                    f"Permission '{permission_name}' does not exist."
-                )
-
-            permission_objects.append(permission)
+            permission_objects.append(resolve_custom_permission(permission_name))
 
         self._validated_permissions = permission_objects
         return value
@@ -461,9 +519,77 @@ class GroupPermissionsUpdateSerializer(serializers.Serializer):
         if group is None:
             raise serializers.ValidationError("Group context is required.")
 
-        group.permissions.set(self._validated_permissions)
+        # Preserve permissions that do not end with _app (e.g. auth.*)
+        non_custom_perms = [
+            p for p in group.permissions.all()
+            if not p.content_type.app_label.endswith("_app")
+        ]
+        
+        # Merge with validated permissions
+        final_permissions = list(set(self._validated_permissions + non_custom_perms))
+        group.permissions.set(final_permissions)
         return group
 
+class GroupUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False, max_length=150)
+    description = serializers.CharField(required=False, allow_blank=True)
+    permissions = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+    )
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Role name cannot be empty.")
+
+        group = self.context.get("group")
+        queryset = Group.objects.filter(name__iexact=value)
+        if group is not None:
+            queryset = queryset.exclude(pk=group.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("A role with this name already exists.")
+        return value
+
+    def validate_permissions(self, value):
+        permission_objects = []
+
+        for permission_name in value:
+            if "." not in permission_name:
+                raise serializers.ValidationError(
+                    "Each permission must be in the format '<app_label>.<codename>'."
+                )
+
+            permission_objects.append(resolve_custom_permission(permission_name))
+
+        self._validated_permissions = permission_objects
+        return value
+
+    def save(self, **kwargs):
+        group = self.context.get("group")
+        if group is None:
+            raise serializers.ValidationError("Group context is required.")
+
+        if "name" in self.validated_data:
+            group.name = self.validated_data["name"]
+            group.save(update_fields=["name"])
+
+        metadata, _ = RoleMetadata.objects.get_or_create(group=group)
+        if "description" in self.validated_data:
+            metadata.description = self.validated_data["description"]
+            metadata.save(update_fields=["description", "updated_at"])
+
+        if "permissions" in self.validated_data:
+            non_custom_perms = [
+                p for p in group.permissions.all()
+                if not p.content_type.app_label.endswith("_app")
+            ]
+            final_permissions = list(set(self._validated_permissions + non_custom_perms))
+            group.permissions.set(final_permissions)
+            metadata.save(update_fields=["updated_at"])
+
+        return group
 
 class UserPermissionUpdateSerializer(serializers.Serializer):
     permissions = serializers.ListField(
@@ -480,18 +606,7 @@ class UserPermissionUpdateSerializer(serializers.Serializer):
                     "Each permission must be in the format '<app_label>.<codename>'."
                 )
 
-            app_label, codename = permission_name.split(".", 1)
-            try:
-                permission = Permission.objects.get(
-                    content_type__app_label=app_label,
-                    codename=codename,
-                )
-            except Permission.DoesNotExist:
-                raise serializers.ValidationError(
-                    f"Permission '{permission_name}' does not exist."
-                )
-
-            permission_objects.append(permission)
+            permission_objects.append(resolve_custom_permission(permission_name))
 
         self._validated_permissions = permission_objects
         return value
@@ -501,7 +616,14 @@ class UserPermissionUpdateSerializer(serializers.Serializer):
         if user is None:
             raise serializers.ValidationError("User context is required.")
 
-        user.user_permissions.set(self._validated_permissions)
+        # Preserve permissions that do not end with _app (e.g. auth.*)
+        non_custom_perms = [
+            p for p in user.user_permissions.all()
+            if not p.content_type.app_label.endswith("_app")
+        ]
+        
+        final_permissions = list(set(self._validated_permissions + non_custom_perms))
+        user.user_permissions.set(final_permissions)
         return user
 
 
@@ -530,17 +652,29 @@ class UserGroupAssignSerializer(serializers.Serializer):
 
 class GroupSerializer(serializers.ModelSerializer):
     permissions = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    last_modified = serializers.SerializerMethodField()
 
     class Meta:
         model = Group
-        fields = ["id", "name", "permissions"]
+        fields = ["id", "name", "description", "permissions", "last_modified"]
 
     def get_permissions(self, obj):
         return sorted(
-            f"{permission.content_type.app_label}.{permission.codename}"
-            for permission in obj.permissions.select_related("content_type")
+            {
+                _permission_name(permission)
+                for permission in obj.permissions.select_related("content_type").all()
+                if _is_custom_permission(permission)
+            }
         )
 
+    def get_description(self, obj):
+        metadata = getattr(obj, "metadata", None)
+        return metadata.description if metadata else ""
+
+    def get_last_modified(self, obj):
+        metadata = getattr(obj, "metadata", None)
+        return metadata.updated_at.isoformat() if metadata else None
 
 class PermissionSerializer(serializers.ModelSerializer):
     permission = serializers.SerializerMethodField()

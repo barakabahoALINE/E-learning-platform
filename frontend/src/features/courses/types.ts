@@ -14,6 +14,7 @@ export interface ContentBlock {
   id: string | number;
   type: ContentType;
   content: string;
+  link?: string;
 }
 
 export interface ContentItem {
@@ -91,6 +92,7 @@ export interface Course {
   modules: Module[];
   final_assessment?: Quiz;
   rating?: number;
+  skills?: string[];
   created_at?: string;
   updated_at?: string;
   has_unpublished_changes?: boolean;

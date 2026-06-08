@@ -81,10 +81,6 @@ export const HomePage: React.FC = () => {
         }
     };
 
-    const handleLogout = () => {
-        dispatch(logout());
-    };
-
     const getCategoryIconAndColor = (name: string) => {
         const lowerName = name.toLowerCase();
         if (lowerName.includes('web') || lowerName.includes('dev') || lowerName.includes('code')) {
@@ -211,41 +207,24 @@ export const HomePage: React.FC = () => {
                         </a>
                     </div>
                     <div className="flex items-center space-x-3">
-                        {isLoggedIn ? (
-                            <>
-                                <Link to="/dashboard">
-                                    <Button className="bg-[#2D51A1] text-white hover:bg-[#1C3E85] font-semibold rounded-full px-5 py-2 text-sm transition-all duration-300">
-                                        Dashboard
-                                    </Button>
-                                </Link>
-                                <Button
-                                    variant="ghost"
-                                    onClick={handleLogout}
-                                    className="text-gray-700 hover:text-red-600 font-semibold"
-                                >
-                                    Sign Out
+                        <>
+                            <Link to="/signup">
+                                <Button className="hidden sm:block bg-[#2D51A1] text-white hover:bg-[#1C3E85] font-semibold rounded- px-5 py-2 text-sm transition-all duration-300">
+                                    Get Started
                                 </Button>
-                            </>
-                        ) : (
-                            <>
-                                <Link to="/signup">
-                                    <Button className="hidden sm:block bg-[#2D51A1] text-white hover:bg-[#1C3E85] font-semibold rounded- px-5 py-2 text-sm transition-all duration-300">
-                                        Get Started
-                                    </Button>
-                                </Link>
-                                <Link to="/login">
-                                    <Button className="bg-[#2D51A1] text-white hover:bg-[#1C3E85] font-semibold rounded- px-5 py-2 text-sm transition-all duration-300">
-                                        Sign in
-                                    </Button>
-                                </Link>
-                            </>
-                        )}
+                            </Link>
+                            <Link to="/login">
+                                <Button className="bg-[#2D51A1] text-white hover:bg-[#1C3E85] font-semibold rounded- px-5 py-2 text-sm transition-all duration-300">
+                                    Sign in
+                                </Button>
+                            </Link>
+                        </>
                     </div>
                 </div>
             </nav>
 
             {/* Hero Section */}
-            <section className="relative overflow-hidden min-h-[600px] lg:h-[700px] flex items-center w-full pt-20 lg:pt-0">
+            <section className="relative overflow-hidden min-h-[600px] lg:h-screen flex items-center w-full pt-20 lg:pt-0">
                 {/* Background Image spanning the entire hero container */}
                 <div className="absolute inset-0 w-full h-full select-none pointer-events-none">
                     <img
@@ -455,7 +434,7 @@ export const HomePage: React.FC = () => {
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center text-sm text-gray-600">
                                             <Users className="w-4 h-4 mr-1" />
-                                            {course.enrolled_students_count || 0} students
+                                            {course.enrolled_students_count || 0} {course.enrolled_students_count == 1 ? "student" : "students"}
                                         </div>
                                         {Number(course.price) === 0 ? (
                                             <span className="text-xl font-bold text-green-600">Free</span>

@@ -3,6 +3,7 @@ from django.db import models
 from django.contrib.auth.models import (
     AbstractBaseUser,
     BaseUserManager,
+    Group,
     PermissionsMixin
 )
 from django.utils import timezone
@@ -90,3 +91,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     
     def __str__(self):
         return self.email
+
+
+class RoleMetadata(models.Model):
+    group = models.OneToOneField(Group, on_delete=models.CASCADE, related_name="metadata")
+    description = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.group.name} metadata"

@@ -7,18 +7,15 @@ import { ThemeProvider } from 'next-themes';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { useAppSelector } from '../hooks/reduxHooks';
 import { selectIsAuthenticated, selectCurrentUser } from '../features/auth/authSelectors';
-
-// Auth Pages
+import { hasAnyPermission } from '../features/auth/permissions';
+import { PermissionRoute } from './components/auth/PermissionRoute';
+import { RoleBasedRedirect } from './components/auth/RoleBasedRedirect';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
-
-// Onboarding
 import { OnboardingPage } from './pages/OnboardingPage';
-
-// Main Pages (Learner)
 import { DashboardPage } from './pages/DashboardPage';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseDetailPage } from './pages/CourseDetailPage';
@@ -29,8 +26,6 @@ import { CertificatePage } from './pages/CertificatePage';
 import { PricingPage } from './pages/PricingPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
-
-// Admin Pages
 import { DashboardLayout } from './components/layout/DashboardLayout';
 import { DashboardPage as AdminDashboardPage } from './pages/Dashboard';
 import { LearnersPage } from './pages/Learners';
@@ -40,46 +35,50 @@ import { AnalyticsPage } from './pages/Analytics';
 import { SecurityPage } from './pages/Security';
 import { SettingsPage as AdminSettingsPage } from './pages/Settings';
 import { HomePage } from './pages/HomePage';
+import { RBACDashboardPage } from './pages/RBACDashboard';
+import { UsersManagementPage } from './pages/UsersManagement';
+import { RoleManagementPage } from './pages/RoleManagement';
+import { PermissionManagementPage } from './pages/PermissionManagement';
+import { AuditLogsPage } from './pages/AuditLogs';
+import { CourseFeedbackPage } from './pages/CourseFeedbackPage';
+import { MyLearningPage } from './pages/MyLearningPage';
+import { InstructorCourseStudents } from './pages/InstructorCourseStudents';
+
+// Permissions that grant access to the shared admin/instructor portal
+const ADMIN_ACCESS_PERMISSIONS = [
+  "users_app.view_user",
+  "courses_app.add_course",
+  "users_app.view_analytics",
+  "auth.view_group",
+  "auth.view_permission",
+  "users_app.change_platform_settings",
+];
+
+const AdminIndexPage: React.FC = () => <AdminDashboardPage />;
 
 function AppRoutes() {
   const user = useAppSelector(selectCurrentUser);
+  const canAccessAdmin = hasAnyPermission(user, ADMIN_ACCESS_PERMISSIONS);
 
-  // Protected Route Component
   const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
-
-    if (!isAuthenticated) {
-      return <Navigate to="/login" replace />;
-    }
-
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
     return <>{children}</>;
   };
 
-  // Admin Route Component
+  // Guards the shared portal (/admin). All roles that have any admin-level permission enter here.
   const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
     const currentUser = useAppSelector(selectCurrentUser);
-
-    if (!isAuthenticated) {
-      return <Navigate to="/login" replace />;
-    }
-
-    if (currentUser?.role !== 'admin') {
-      return <Navigate to="/dashboard" replace />;
-    }
-
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (!hasAnyPermission(currentUser, ADMIN_ACCESS_PERMISSIONS)) return <Navigate to="/dashboard" replace />;
     return <>{children}</>;
   };
 
-  // Public Route Component (redirect to dashboard if already authenticated)
+  // Redirects already-authenticated users away from public pages to their portal.
   const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
-    const userRole = useAppSelector(selectCurrentUser)?.role;
-
-    if (isAuthenticated) {
-      return <Navigate to={userRole === 'admin' ? '/admin' : '/dashboard'} replace />;
-    }
-
+    if (isAuthenticated) return <RoleBasedRedirect />;
     return <>{children}</>;
   };
 
@@ -87,64 +86,23 @@ function AppRoutes() {
     <Router>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route
-          path="/login"
-          element={
-            <PublicRoute>
-              <LoginPage />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/signup"
-          element={
-            <PublicRoute>
-              <SignupPage />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/forgot-password"
-          element={
-            <PublicRoute>
-              <ForgotPasswordPage />
-            </PublicRoute>
-          }
-        />
 
-        <Route
-          path="/onboarding"
-          element={
-            <ProtectedRoute>
-              <OnboardingPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Public (auth) routes */}
+        <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+        <Route path="/signup" element={<PublicRoute><SignupPage /></PublicRoute>} />
+        <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
+        <Route path="/verify-email/:uid/:token" element={<PublicRoute><VerifyEmailPage /></PublicRoute>} />
+        <Route path="/reset-password/:uid/:token" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
 
-        <Route
-          path="/verify-email/:uid/:token"
-          element={
-            <PublicRoute>
-              <VerifyEmailPage />
-            </PublicRoute>
-          }
-        />
+        {/* Onboarding */}
+        <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
 
-        <Route
-          path="/reset-password/:uid/:token"
-          element={
-            <PublicRoute>
-              <ResetPasswordPage />
-            </PublicRoute>
-          }
-        />
-
-        {/* Learner Routes */}
+        {/* Learner routes */}
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
-              {user?.role === 'admin' ? <Navigate to="/admin" replace /> : <DashboardPage />}
+              {canAccessAdmin ? <Navigate to="/admin" replace /> : <DashboardPage />}
             </ProtectedRoute>
           }
         />
@@ -152,76 +110,29 @@ function AppRoutes() {
           path="/courses"
           element={
             <ProtectedRoute>
-              {user?.role === 'admin' ? <Navigate to="/admin/courses" replace /> : <CoursesPage />}
+              {canAccessAdmin ? <Navigate to="/admin/courses" replace /> : <CoursesPage />}
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/course/:courseId"
-          element={
-            <ProtectedRoute>
-              <CourseDetailPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/learning/:courseId/:moduleId"
-          element={
-            <ProtectedRoute>
-              <LessonPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/learning/:courseId/quiz/:moduleId"
-          element={
-            <ProtectedRoute>
-              <QuizPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/learning/:courseId/final-assessment"
-          element={
-            <ProtectedRoute>
-              <FinalAssessmentPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/certificate/:courseId"
-          element={
-            <ProtectedRoute>
-              <CertificatePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/pricing"
-          element={
-            <ProtectedRoute>
-              <PricingPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <ProfilePage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/course/:courseId" element={<ProtectedRoute><CourseDetailPage /></ProtectedRoute>} />
+        <Route path="/learning/:courseId/:moduleId" element={<ProtectedRoute><LessonPage /></ProtectedRoute>} />
+        <Route path="/learning/:courseId/quiz/:moduleId" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
+        <Route path="/learning/:courseId/final-assessment" element={<ProtectedRoute><FinalAssessmentPage /></ProtectedRoute>} />
+        <Route path="/certificate/:courseId" element={<ProtectedRoute><CertificatePage /></ProtectedRoute>} />
+        <Route path="/course-feedback/:courseId" element={<ProtectedRoute><CourseFeedbackPage /></ProtectedRoute>} />
+        <Route path="/my-learning" element={<ProtectedRoute><MyLearningPage /></ProtectedRoute>} />
+        <Route path="/pricing" element={<ProtectedRoute><PricingPage /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route
           path="/settings"
           element={
             <ProtectedRoute>
-              {user?.role === 'admin' ? <Navigate to="/admin/settings" replace /> : <SettingsPage />}
+              {canAccessAdmin ? <Navigate to="/admin/settings" replace /> : <SettingsPage />}
             </ProtectedRoute>
           }
         />
 
-        {/* Admin Routes */}
+        {/* Shared portal for SuperAdmin, Admin, Viewer, and Instructor. Menu items and features are gated by the user's role/permissions inside the layout. */}
         <Route
           path="/admin"
           element={
@@ -230,16 +141,72 @@ function AppRoutes() {
             </AdminRoute>
           }
         >
-          <Route index element={<AdminDashboardPage />} />
-          <Route path="learners" element={<LearnersPage />} />
-          <Route path="courses" element={<AdminCoursesPage />} />
-          <Route path="courses/builder/:id" element={<CourseBuilderPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="security" element={<SecurityPage />} />
-          <Route path="settings" element={<AdminSettingsPage />} />
+          {/* Role-aware dashboard index */}
+          <Route index element={<AdminIndexPage />} />
+
+          {/* Learner management */}
+          <Route
+            path="learners"
+            element={<PermissionRoute permission="users_app.view_user"><LearnersPage /></PermissionRoute>}
+          />
+
+          {/* Course management */}
+          <Route
+            path="courses"
+            element={<PermissionRoute permission="courses_app.view_course"><AdminCoursesPage /></PermissionRoute>}
+          />
+          <Route
+            path="courses/builder/:id"
+            element={<PermissionRoute permission="courses_app.change_course"><CourseBuilderPage /></PermissionRoute>}
+          />
+
+          {/* Analytics */}
+          <Route
+            path="analytics"
+            element={<PermissionRoute permission="users_app.view_analytics"><AnalyticsPage /></PermissionRoute>}
+          />
+
+          {/* Security */}
+          <Route
+            path="security"
+            element={<PermissionRoute permission="users_app.view_user"><SecurityPage /></PermissionRoute>}
+          />
+
+          {/* Platform settings */}
+          <Route
+            path="settings"
+            element={<PermissionRoute permission="users_app.change_platform_settings"><AdminSettingsPage /></PermissionRoute>}
+          />
+
+          {/* Access control — restricted to Admin and SuperAdmin */}
+          <Route
+            path="rbac"
+            element={<PermissionRoute permission="users_app.modify_permission"><RBACDashboardPage /></PermissionRoute>}
+          />
+          <Route
+            path="rbac/users"
+            element={<PermissionRoute permission="users_app.view_user"><UsersManagementPage /></PermissionRoute>}
+          />
+          <Route
+            path="rbac/roles"
+            element={<PermissionRoute permission="auth.view_group"><RoleManagementPage /></PermissionRoute>}
+          />
+          <Route
+            path="rbac/permissions"
+            element={<PermissionRoute permission="auth.view_permission"><PermissionManagementPage /></PermissionRoute>}
+          />
+          <Route
+            path="rbac/audit-logs"
+            element={<PermissionRoute permission="users_app.view_user"><AuditLogsPage /></PermissionRoute>}
+          />
+
+          {/* Instructor-specific routes (mounted under /admin so they share DashboardLayout) */}
+          <Route
+            path="instructor/course/:courseId/students"
+            element={<PermissionRoute permission="enrollments_app.view_enrollment"><InstructorCourseStudents /></PermissionRoute>}
+          />
         </Route>
 
-        <Route path="/" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toaster />
@@ -248,7 +215,7 @@ function AppRoutes() {
 }
 
 export default function App() {
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "979040117820-9qgcmv76nbqpa250ioal8qf3mj54un9t.apps.googleusercontent.com";
+  const googleClientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "979040117820-9qgcmv76nbqpa250ioal8qf3mj54un9t.apps.googleusercontent.com";
 
   return (
     <GoogleOAuthProvider clientId={googleClientId}>

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { User, Course, mockUser, mockCourses } from '../data/mock-data';
+import { User, Course, mockUser, mockCourses, CourseFeedback } from '../data/mock-data';
 
 interface AppContextType {
   user: User | null;
@@ -13,6 +13,9 @@ interface AppContextType {
   updateUserProfile: (updates: Partial<User>) => void;
   completeLesson: (courseId: string, lessonId: string) => void;
   completeCourse: (courseId: string) => void;
+  submitCourseFeedback: (courseId: string, feedback: CourseFeedback) => void;
+  hasSubmittedFeedback: (courseId: string) => boolean;
+  hasCompletedFinalAssessment: (courseId: string) => boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -70,7 +73,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const isAlreadyCompleted = user.completedLessons.some(
         cl => cl.courseId === courseId && cl.lessonId === lessonId
       );
-      
+
       if (!isAlreadyCompleted) {
         setUser({
           ...user,
@@ -88,6 +91,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         enrolledCourses: user.enrolledCourses.filter(id => id !== courseId),
       });
     }
+  };
+
+  const submitCourseFeedback = (courseId: string, feedback: CourseFeedback) => {
+    if (user) {
+      // Remove existing feedback for this course if any
+      const updatedFeedback = user.courseFeedback.filter(
+        (f: any) => String(f.courseId) !== String(courseId)
+      );
+
+      setUser({
+        ...user,
+        courseFeedback: [...updatedFeedback, { courseId, feedback }],
+      });
+    }
+  };
+
+  const hasSubmittedFeedback = (courseId: string): boolean => {
+    return user?.courseFeedback.some((f: any) => String(f.courseId) === String(courseId)) || false;
+  };
+
+  const hasCompletedFinalAssessment = (courseId: string): boolean => {
+    return user?.completedFinalAssessments?.includes(courseId) || false;
   };
 
   const enrolledCourses = courses.filter(course =>
@@ -108,6 +133,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateUserProfile,
         completeLesson,
         completeCourse,
+        submitCourseFeedback,
+        hasSubmittedFeedback,
+        hasCompletedFinalAssessment
       }}
     >
       {children}
