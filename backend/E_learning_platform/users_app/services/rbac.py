@@ -78,6 +78,19 @@ def _assign_default_permissions(group):
     return
 
 
+def _ensure_default_admin_permissions(group):
+    if group.name != ROLE_ADMIN:
+        return
+
+    core_apps = {"auth", "contenttypes", "sessions", "admin"}
+    all_admin_permissions = Permission.objects.exclude(content_type__app_label__in=core_apps)
+    current_permission_ids = set(group.permissions.values_list("id", flat=True))
+    missing_permissions = [perm for perm in all_admin_permissions if perm.id not in current_permission_ids]
+
+    if missing_permissions:
+        group.permissions.add(*missing_permissions)
+
+
 def _ensure_default_student_permissions(group):
     if group.name != ROLE_STUDENT:
         return
@@ -99,6 +112,7 @@ def _ensure_default_student_permissions(group):
 def sync_user_role_group(user):
     role_to_group = {
         "admin": ROLE_ADMIN,
+        "super_admin": ROLE_ADMIN,
         "instructor": ROLE_INSTRUCTOR,
         "student": ROLE_STUDENT,
         "viewer": ROLE_VIEWER,
@@ -111,6 +125,8 @@ def sync_user_role_group(user):
     group, created = Group.objects.get_or_create(name=group_name)
     if created or group.permissions.count() == 0:
         _assign_default_permissions(group)
+    elif group.name == ROLE_ADMIN:
+        _ensure_default_admin_permissions(group)
     elif group.name == ROLE_STUDENT:
         _ensure_default_student_permissions(group)
 
@@ -125,6 +141,7 @@ def seed_roles():
     }
 
     _assign_default_permissions(groups[ROLE_ADMIN])
+    _ensure_default_admin_permissions(groups[ROLE_ADMIN])
     # _assign_default_permissions(groups[ROLE_INSTRUCTOR])
     _assign_default_permissions(groups[ROLE_STUDENT])
     # _assign_default_permissions(groups[ROLE_VIEWER])

@@ -112,6 +112,7 @@ class CourseProgress(models.Model):
         permissions = [
             ("view_progress", "Can view progress"),
             ("change_progress", "Can change progress"),
+            ("complete_progress", "Can complete progress"),
         ]
 
     def __str__(self):

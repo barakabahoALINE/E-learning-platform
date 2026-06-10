@@ -10,25 +10,72 @@ from django.utils.http import urlsafe_base64_decode,urlsafe_base64_encode
 from .tokens import email_verification_token
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated
-from .serializers import *
-from django.contrib.auth.tokens import PasswordResetTokenGenerator 
+from .serializers import (
+    AddUserSerializer,
+    CreatePasswordSerializer,
+    GroupPermissionsUpdateSerializer,
+    GroupSerializer,
+    LoginSerializer,
+    LogoutSerializer,
+    PermissionSerializer,
+    ProfilePictureSerializer,
+    SignupSerializer,
+    UpdateNameSerializer,
+    UserGroupAssignSerializer,
+    UserListSerializer,
+    UserPermissionUpdateSerializer,
+    UserProfileSerializer,
+    UserRoleAssignSerializer,
+    UserUpdateSerializer,
+)
+from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
 from django.utils.encoding import force_bytes, force_str
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.core.mail import send_mail
 from rest_framework.decorators import api_view
-from django.contrib.auth.tokens import default_token_generator
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .permissions import CanAssignRoles, CanModifyPermissions, CanViewUsers, CanChangeUsers, CanDeleteUsers, CanViewRoles, CanViewPermissions
+from .permissions import CanAssignRoles, CanModifyPermissions, CanViewUsers, CanChangeUsers, CanDeleteUsers, CanViewRoles, CanViewPermissions,CanAddUsers
 import json
-from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
-from django.contrib.auth import get_user_model
-from .serializers import UserListSerializer, UserUpdateSerializer
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
+from .services.rbac import DEFAULT_ROLES
 
 User = get_user_model()
+
+class StructuredResponseMixin:
+    def handle_exception(self, exc):
+        response = super().handle_exception(exc)
+        if response is None:
+            return response
+
+        if response.status_code >= status.HTTP_400_BAD_REQUEST:
+            message = None
+            if isinstance(response.data, dict):
+                if "detail" in response.data and len(response.data) == 1:
+                    message = force_str(response.data["detail"])
+                else:
+                    first_value = next(iter(response.data.values()), None)
+                    if isinstance(first_value, list):
+                        message = str(first_value[0]) if first_value else "Validation failed."
+                    elif isinstance(first_value, dict):
+                        nested = next(iter(first_value.values()), None)
+                        message = str(nested[0]) if isinstance(nested, list) and nested else str(nested)
+                    else:
+                        message = str(first_value)
+            else:
+                message = str(response.data)
+
+            if not message:
+                message = "Validation failed."
+
+            response.data = {
+                "status": "failed",
+                "message": message,
+                "data": None,
+            }
+
+        return response
+
 
 class SignupView(generics.CreateAPIView):
     serializer_class = SignupSerializer
@@ -41,14 +88,55 @@ class SignupView(generics.CreateAPIView):
             {
                 "status": "success",
                 "message": "User created successfully",
-                "user": {
+                "data": {
                     "email": user.email,
                     "full_name": user.full_name,
                     "institution": user.institution,
-                }
+                },
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_201_CREATED,
         )
+
+
+class AddUserApiView(StructuredResponseMixin, generics.CreateAPIView):
+    serializer_class = AddUserSerializer
+    permission_classes = [IsAuthenticated, CanAddUsers]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {
+                "status": "success",
+                "message": "User created successfully.",
+                "data": UserListSerializer(user).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CreatePasswordApiView(StructuredResponseMixin, APIView):
+    permission_classes = []
+
+    def post(self, request):
+        serializer = CreatePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {
+                "status": "success",
+                "message": "Password set successfully.",
+                "data": {
+                    "id": user.id,
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "role": user.role,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
 class VerifyEmailView(APIView):
 
     def get(self, request, uidb64, token):
@@ -146,7 +234,8 @@ class GoogleLoginAPIView(APIView):
                         "id": user.id,
                         "email": user.email,
                         "full_name": user.full_name,
-                        "role": user.role
+                        "role": user.role,
+                        "Permissions": user.get_all_permissions()
                     }
                 }
             })

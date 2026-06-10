@@ -34,6 +34,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         ("instructor", "Instructor"),
         ("viewer", "Viewer"),
         ("admin", "Admin"),
+        ("super_admin", "Super Admin"),
     )
     LEVEL_CHOICES = (
         ('beginner', 'Beginner'),
@@ -41,12 +42,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         ('advanced', 'Advanced'),
     )
 
-    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default='beginner')
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, null=True, blank=True)
 
 
     email = models.EmailField(unique=True)
     full_name = models.CharField(max_length=255)
     institution = models.CharField(max_length=255)
+    department = models.CharField(max_length=255, null=True, blank=True)
     profile_picture = models.ImageField(upload_to='profiles/', null=True, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="student")
     is_active = models.BooleanField(default=True)
@@ -68,8 +70,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         ]
     
     def save(self, *args, **kwargs):
-        # ensure staff status matches role
-        if self.role == "admin":
+        # set role based on is_superuser status
+        if self.is_superuser:
+            self.role = "super_admin"
+            self.is_staff = True
+            self.is_verified = True
+        elif self.role == "admin":
             self.is_staff = True 
         else:
             self.is_staff = False

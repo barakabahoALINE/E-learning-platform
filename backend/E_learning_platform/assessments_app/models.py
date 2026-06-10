@@ -37,12 +37,6 @@ class Assessment(models.Model):
     has_unpublished_changes = models.BooleanField(default=False)
     pending_delete = models.BooleanField(default=False)
 
-    class Meta:
-        permissions = [
-            ("grade_assessment", "Can grade assessments"),
-            ("unlock_attempt", "Can unlock assessment attempts"),
-        ]
-
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
