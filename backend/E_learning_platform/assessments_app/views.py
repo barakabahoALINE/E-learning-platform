@@ -554,7 +554,6 @@ class SaveAnswerAPIView(APIView):
             answer.selected_choice = None
 
             answer.text_answer = None
-
             answer.selected_choices.set(valid_choices)
 
             correct_ids = set(

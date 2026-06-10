@@ -366,8 +366,8 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
 
 class CourseListSerializer(serializers.ModelSerializer):
     admin = serializers.CharField(source="created_by.username", read_only=True)
-
     modules_count = serializers.SerializerMethodField()
+    enrolled_students_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Course
@@ -385,6 +385,7 @@ class CourseListSerializer(serializers.ModelSerializer):
             "is_published",
             "admin",
             "modules_count",
+            "enrolled_students_count",
             "created_at",
             "updated_at",
         ]

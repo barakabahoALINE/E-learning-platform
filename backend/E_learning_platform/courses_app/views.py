@@ -41,7 +41,9 @@ class CourseListAPIView(generics.ListAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        queryset = Course.objects.select_related("category", "level")
+        queryset = Course.objects.select_related("category", "level").annotate(
+            enrolled_students_count=models.Count("enrollments", distinct=True)
+        )
         user = self.request.user
         if user.is_authenticated and (
             user.is_superuser or user.groups.filter(name="Admin").exists()
