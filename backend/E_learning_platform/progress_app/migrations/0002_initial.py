@@ -12,6 +12,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('progress_app', '0001_initial'),
         ('enrollments_app', '0002_initial'),
+        ('progress_app', '0001_initial'),
         ('courses_app', '0002_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
