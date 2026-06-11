@@ -37,6 +37,11 @@ class Assessment(models.Model):
     has_unpublished_changes = models.BooleanField(default=False)
     pending_delete = models.BooleanField(default=False)
 
+    class Meta:
+        permissions = [
+            ("start_assessment", "Can start assessment"),
+        ]
+
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)

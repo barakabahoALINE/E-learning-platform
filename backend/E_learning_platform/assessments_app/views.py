@@ -10,6 +10,7 @@ from .serializers import *
 from courses_app.models import Course
 from progress_app.models import (ModuleProgress, SectionProgress, _refresh_course_progress, _refresh_module_progress)
 from enrollments_app.models import Enrollment
+from progress_app.models import (_refresh_course_progress, _refresh_module_progress)
 from .permissions import *
 from .utils import *
 from .services.rules import (
