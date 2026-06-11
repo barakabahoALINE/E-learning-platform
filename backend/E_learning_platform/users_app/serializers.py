@@ -5,9 +5,12 @@ from django.urls import reverse
 from django.conf import settings
 from django.core.mail import send_mail
 from rest_framework.exceptions import ValidationError
-from .tokens import email_verification_token
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.contrib.auth.password_validation import validate_password as django_validate_password
 from django.contrib.auth.tokens import default_token_generator
+from .tokens import email_verification_token
 from django.utils.encoding import force_bytes, force_str
+import re
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from rest_framework_simplejwt.tokens import RefreshToken
 from google.oauth2 import id_token
@@ -19,6 +22,33 @@ from .services.rbac import sync_user_role_group
 
 
 User = get_user_model()
+
+
+def get_password_validation_errors(password, user=None):
+    errors = []
+
+    try:
+        django_validate_password(password, user=user)
+    except DjangoValidationError as exc:
+        errors.extend(exc.messages)
+
+    if not re.search(r"[A-Z]", password):
+        errors.append("Password must contain at least one uppercase letter.")
+    if not re.search(r"[a-z]", password):
+        errors.append("Password must contain at least one lowercase letter.")
+    if not re.search(r"\d", password):
+        errors.append("Password must contain at least one digit.")
+    if not re.search(r"[^A-Za-z0-9]", password):
+        errors.append("Password must contain at least one special character.")
+
+    return errors
+
+
+def validate_strong_password(password, user=None):
+    errors = get_password_validation_errors(password, user=user)
+    if errors:
+        raise serializers.ValidationError({"password": errors})
+    return password
 
 
 def get_user_auth_payload(user):
@@ -39,6 +69,9 @@ class SignupSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['email', 'full_name', 'institution', 'password']
+
+    def validate_password(self, value):
+        return validate_strong_password(value)
 
     def create(self, validated_data):
         user = User.objects.create_user(
@@ -150,6 +183,9 @@ class CreatePasswordSerializer(serializers.Serializer):
     token = serializers.CharField()
     password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_password(self, value):
+        return validate_strong_password(value)
 
     def validate(self, attrs):
         password = attrs.get("password")

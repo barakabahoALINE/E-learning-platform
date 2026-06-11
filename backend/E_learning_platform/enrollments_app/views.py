@@ -61,6 +61,19 @@ class MyEnrollmentsAPIView(generics.ListAPIView):
         return Enrollment.objects.filter(
             student=self.request.user
         ).select_related("course")
+
+    def get_recent_in_progress_course(self, queryset):
+        recent_enrollment = (
+            queryset.filter(status=Enrollment.Status.ACTIVE)
+            .order_by("-enrolled_at", "-updated_at", "-id")
+            .first()
+        )
+
+        if recent_enrollment is None:
+            return None
+
+        return self.get_serializer(recent_enrollment).data
+
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
@@ -70,6 +83,7 @@ class MyEnrollmentsAPIView(generics.ListAPIView):
                 "status": "success",
                 "message": "Enrollments retrieved successfully.",
                 "data": serializer.data,
+                "recent_in_progress_course": self.get_recent_in_progress_course(queryset),
             }
         )
 class EnrollmentDetailAPIView(generics.RetrieveAPIView):

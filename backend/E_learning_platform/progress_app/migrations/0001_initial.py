@@ -10,8 +10,8 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('courses_app', '0001_initial'),
         ('enrollments_app', '0001_initial'),
+        ('courses_app', '0001_initial'),
     ]
 
     operations = [

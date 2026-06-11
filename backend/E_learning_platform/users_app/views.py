@@ -27,13 +27,17 @@ from .serializers import (
     UserProfileSerializer,
     UserRoleAssignSerializer,
     UserUpdateSerializer,
+    validate_strong_password,
+    get_password_validation_errors,
 )
 from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.encoding import force_bytes, force_str
 from django.http import HttpResponse, JsonResponse
 from django.core.mail import send_mail
 from rest_framework.decorators import api_view
 from django.views.decorators.csrf import csrf_exempt
+from .password_rules import get_password_rules_display
 from .permissions import CanAssignRoles, CanModifyPermissions, CanViewUsers, CanChangeUsers, CanDeleteUsers, CanViewRoles, CanViewPermissions,CanAddUsers
 import json
 from django.contrib.auth.models import Group, Permission
@@ -284,6 +288,26 @@ class LogoutView(APIView):
             "message": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
+
+class PasswordRulesView(APIView):
+    """
+    Public endpoint that returns password requirements.
+    Frontend can fetch this to display password rules during signup, password creation, and password reset.
+    """
+    permission_classes = []
+
+    def get(self, request):
+        rules = get_password_rules_display()
+        return Response(
+            {
+                "success": True,
+                "message": "Password requirements",
+                "data": rules,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 # Create your views here.
 
 
@@ -365,6 +389,10 @@ def reset_password(request, uidb64, token):
 
     if not default_token_generator.check_token(user, token):
         return JsonResponse({"error": "Invalid or expired token"}, status=400)
+
+    errors = get_password_validation_errors(password1, user=user)
+    if errors:
+        return JsonResponse({"error": errors}, status=400)
 
     user.set_password(password1)
     user.save()
