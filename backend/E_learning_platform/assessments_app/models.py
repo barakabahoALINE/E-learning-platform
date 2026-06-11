@@ -118,6 +118,12 @@ class Attempt(models.Model):
     class Meta:
         unique_together = ["student", "assessment", "attempt_number"]
         ordering = ["-started_at"]
+        permissions = [
+            ("start_assessment", "Can start assessment"),
+            ("lock_attempt", "Can lock attempt"),
+            ("unlock_attempt", "Can unlock attempt"),
+            ("grade_assessment", "Can grade assessment"),
+        ]
 
     def __str__(self):
         return f"{self.student} - Attempt {self.attempt_number}"

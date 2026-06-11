@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'enrollments_app',
     'progress_app',
     'assessments_app',
+    'certificate_app',
     
 ]
 

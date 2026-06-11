@@ -8,9 +8,8 @@ from rest_framework import status
 from .models import Assessment,StudentAnswer, Question, Choice, Attempt
 from .serializers import *
 from courses_app.models import Course
-from progress_app.models import (ModuleProgress, SectionProgress)
+from progress_app.models import (ModuleProgress, SectionProgress, _refresh_course_progress, _refresh_module_progress)
 from enrollments_app.models import Enrollment
-from progress_app.models import _refresh_course_progress
 from .permissions import *
 from .utils import *
 from .services.rules import (
@@ -797,9 +796,6 @@ def _calculate_attempt_score(attempt, user):
         attempt.assessment.assessment_type == "QUIZ"
         and attempt.is_passed
     ):
-        from enrollments_app.models import Enrollment
-        from progress_app.models import _refresh_module_progress
-
         enrollment = Enrollment.objects.filter(
             student=user,
             course=attempt.assessment.course,

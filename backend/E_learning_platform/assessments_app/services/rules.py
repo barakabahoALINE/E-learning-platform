@@ -6,7 +6,7 @@ from assessments_app.models import Assessment, Attempt
 from courses_app.models import Module
 
 
-COOLDOWN_HOURS = 24  
+COOLDOWN_HOURS = 0.04 
 
 class RuleError(Exception):
 
