@@ -49,6 +49,11 @@ class Assessment(models.Model):
     def __str__(self):
         return self.title
 
+    class Meta:
+        permissions = [
+            ("start_assessment", "Can start assessment"),
+        ]
+
 class Question(models.Model):
 
     class QuestionType(models.TextChoices):

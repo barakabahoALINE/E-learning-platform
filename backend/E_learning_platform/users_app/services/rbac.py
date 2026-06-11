@@ -46,15 +46,14 @@ def _get_permissions(permission_names):
             continue
 
         app_label, codename = permission_name.split(".", 1)
-        try:
-            permissions.append(
-                Permission.objects.get(
-                    content_type__app_label=app_label,
-                    codename=codename,
-                )
-            )
-        except Permission.DoesNotExist:
+        queryset = Permission.objects.filter(
+            content_type__app_label=app_label,
+            codename=codename,
+        )
+        if not queryset.exists():
             continue
+
+        permissions.extend(list(queryset))
 
     return permissions
 
