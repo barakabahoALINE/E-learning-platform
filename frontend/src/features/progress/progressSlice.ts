@@ -5,6 +5,7 @@ import {
   CompletionRateKPI,
   LearningHoursKPI,
   CoursesKPI,
+  LearningActivityKPI,
   LessonContentProgress,
   LessonProgress,
   ModuleProgress,
@@ -20,6 +21,7 @@ interface ProgressState {
   courseModulesProgress: Record<number, ModuleProgress[]>;
   moduleContentsProgress: Record<number, ModuleProgress>;
   learningHours: LearningHoursKPI | null;
+  learningActivity: LearningActivityKPI | null;
   coursesKPI: CoursesKPI | null;
   completionRateKPI: CompletionRateKPI | null;
   loading: boolean;
@@ -35,6 +37,7 @@ const initialState: ProgressState = {
   courseModulesProgress: {},
   moduleContentsProgress: {},
   learningHours: null,
+  learningActivity: null,
   coursesKPI: null,
   completionRateKPI: null,
   loading: false,
@@ -73,6 +76,17 @@ export const fetchLearningHoursKPI = createAsyncThunk(
       return await courseAPI.fetchLearningHoursKPI();
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to fetch learning hours');
+    }
+  }
+);
+
+export const fetchLearningActivityKPI = createAsyncThunk(
+  'progress/fetchLearningActivityKPI',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await courseAPI.fetchLearningActivityKPI();
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to fetch learning activity');
     }
   }
 );
@@ -238,6 +252,9 @@ const progressSlice = createSlice({
       })
       .addCase(fetchLearningHoursKPI.fulfilled, (state, action) => {
         state.learningHours = action.payload;
+      })
+      .addCase(fetchLearningActivityKPI.fulfilled, (state, action) => {
+        state.learningActivity = action.payload;
       })
       .addCase(fetchCoursesKPI.fulfilled, (state, action) => {
         state.coursesKPI = action.payload;

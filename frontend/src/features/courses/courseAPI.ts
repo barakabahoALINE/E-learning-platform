@@ -14,6 +14,7 @@ import {
   CourseModulesProgressResponse,
   CourseSectionsProgressResponse,
   LearningHoursKPI,
+  LearningActivityKPI,
   ModuleContentsProgressResponse,
   ModuleProgress,
   CompletionRateKPI,
@@ -265,6 +266,11 @@ const courseAPI = {
 
   fetchLearningHoursKPI: async (): Promise<LearningHoursKPI> => {
     const response = await api.get('progress/kpi/learning-hours/');
+    return response.data.data;
+  },
+
+  fetchLearningActivityKPI: async (): Promise<LearningActivityKPI> => {
+    const response = await api.get('progress/kpi/learning-activity/');
     return response.data.data;
   },
 
