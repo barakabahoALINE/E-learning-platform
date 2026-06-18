@@ -277,5 +277,19 @@ export interface CompletionRateKPI {
   month_over_month_change?: number;
 }
 
+export interface LearningActivityDay {
+  day: string;
+  hours: number;
+  minutes: number;
+  date: string;
+}
+
+export interface LearningActivityKPI {
+  current_streak: number;
+  weekly_activity: LearningActivityDay[];
+  week_start: string;
+  week_end: string;
+}
+
 export type LessonContentProgress = ContentProgress;
 export type LessonProgress = SectionProgress;

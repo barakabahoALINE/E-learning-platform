@@ -46,6 +46,7 @@ urlpatterns = [
     
      # KPI APIS
     path("kpi/learning-hours/", LearningHoursKPIAPIView.as_view(), name="kpi-learning-hours"),
+    path("kpi/learning-activity/", LearningActivityKPIAPIView.as_view(), name="kpi-learning-activity"),
     path("kpi/courses/",        CoursesKPIAPIView.as_view(),        name="kpi-courses"),
     path("kpi/completion-rate/", CompletionRateAPIView.as_view()),
 ]

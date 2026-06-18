@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from datetime import timedelta
 from django.db.models import Sum
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
@@ -1025,6 +1026,63 @@ class LearningHoursKPIAPIView(APIView):
                 "completed_sessions_minutes": completed_minutes,
                 "active_sessions_minutes": active_minutes,
                 "active_sessions_count": active_sessions.count()
+            }
+        })
+
+
+class LearningActivityKPIAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanViewProgress]
+
+    def get(self, request):
+        today = timezone.localdate()
+        days_since_sunday = (today.weekday() + 1) % 7
+        week_start = today - timedelta(days=days_since_sunday)
+        week_dates = [week_start + timedelta(days=i) for i in range(7)]
+        week_index = {date: index for index, date in enumerate(week_dates)}
+
+        sessions = LearningSession.objects.filter(student=request.user)
+        session_dates = set()
+        daily_minutes = [0] * 7
+
+        for session in sessions:
+            started_date = session.started_at.astimezone(timezone.get_current_timezone()).date()
+            if session.ended_at:
+                duration = session.duration_minutes
+            else:
+                duration = int((timezone.now() - session.started_at).total_seconds() / 60)
+            duration = max(duration, 0)
+
+            session_dates.add(started_date)
+            if started_date in week_index:
+                daily_minutes[week_index[started_date]] += duration
+
+        current_streak = 0
+        if session_dates:
+            last_session_date = max(session_dates)
+            day = last_session_date
+            while day in session_dates:
+                current_streak += 1
+                day -= timedelta(days=1)
+
+        weekly_activity = []
+        day_labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        for index, calendar_date in enumerate(week_dates):
+            minutes = daily_minutes[index]
+            weekly_activity.append({
+                "day": day_labels[index],
+                "hours": round(minutes / 60, 2),
+                "minutes": minutes,
+                "date": calendar_date.isoformat(),
+            })
+
+        return Response({
+            "success": True,
+            "message": "Learning activity KPI retrieved successfully",
+            "data": {
+                "current_streak": current_streak,
+                "weekly_activity": weekly_activity,
+                "week_start": week_start.isoformat(),
+                "week_end": (week_start + timedelta(days=6)).isoformat(),
             }
         })
 
