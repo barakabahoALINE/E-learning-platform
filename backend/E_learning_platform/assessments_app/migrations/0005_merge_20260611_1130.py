@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('assessments_app', '0004_alter_assessment_options'),
+        ('assessments_app', '0005_alter_assessment_options'),
         ('assessments_app', '0004_alter_attempt_options'),
     ]
 
