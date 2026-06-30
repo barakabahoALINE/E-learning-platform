@@ -264,6 +264,12 @@ export interface LearningHoursKPI {
   completed_sessions_minutes: number;
   active_sessions_minutes: number;
   active_sessions_count: number;
+  weekly_totals?: Array<{
+    week_start: string;
+    week_end: string;
+    minutes: number;
+    hours: number;
+  }>;
 }
 
 export interface CoursesKPI {

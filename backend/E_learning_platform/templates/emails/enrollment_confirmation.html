@@ -1,0 +1,44 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Enrollment Confirmation - E-Learning Platform{% endblock %}
+
+{% block header_subtitle %}<p>You're All Set!</p>{% endblock %}
+
+{% block content %}
+    <h2>Welcome, {{ full_name }}!</h2>
+    
+    <p>Great news! You have successfully enrolled in the following course:</p>
+    
+    <div style="background-color: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 4px;">
+        <p style="margin: 0; font-weight: 600; color: #333;">{{ course_title }}</p>
+    </div>
+
+    <p>Your learning journey is about to begin! Access your course materials, start viewing lessons, and track your progress.</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ course_link }}" class="cta-button">Access Your Course</a>
+    </div>
+
+    <p style="text-align: center; color: #999; font-size: 13px;">
+        Or copy and paste this link in your browser:
+    </p>
+
+    <div class="fallback-link">
+        <p>Course Link:</p>
+        <a href="{{ course_link }}">{{ course_link }}</a>
+    </div>
+
+    <div style="margin-top: 30px; padding: 20px; background-color: #f0f7ff; border-radius: 4px; border-left: 4px solid #667eea;">
+        <p style="margin: 0 0 10px 0; font-weight: 600; color: #333;">Getting Started:</p>
+        <ul style="list-style: disc; margin-left: 20px; margin-top: 10px; color: #666; font-size: 14px;">
+            <li>Review course materials and syllabus</li>
+            <li>Complete all lessons in order</li>
+            <li>Attempt quizzes and assessments</li>
+            <li>Track your progress on the dashboard</li>
+        </ul>
+    </div>
+
+    <p style="margin-top: 25px; color: #888; font-size: 13px;">
+        If you have any questions or need assistance with the course, please contact our support team or reach out to your instructor.
+    </p>
+{% endblock %}

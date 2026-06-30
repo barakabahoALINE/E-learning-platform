@@ -150,6 +150,31 @@ class LearningSession(models.Model):
             self.is_active = False
             self.save()
 
+    def end_session_at(self, end_time=None):
+        """
+        End the session at a specific time (useful when capping at course completion).
+        If `end_time` is not provided, behaves like `end_session()`.
+        """
+        if not self.is_active:
+            return
+
+        end_time = end_time or timezone.now()
+
+        # If the enrollment has a completed_at timestamp, never go past it
+        try:
+            enrollment_completed_at = self.enrollment.completed_at
+        except Exception:
+            enrollment_completed_at = None
+
+        if enrollment_completed_at:
+            end_time = min(end_time, enrollment_completed_at)
+
+        self.ended_at = end_time
+        duration = (self.ended_at - self.started_at).total_seconds() / 60
+        self.duration_minutes = max(int(duration), 0)
+        self.is_active = False
+        self.save()
+
     def __str__(self):
         return f"{self.student} - {self.course} ({self.duration_minutes} mins)"
 
@@ -299,4 +324,9 @@ def _refresh_course_progress(student, course, enrollment):
         course_prog.completed_at = None
 
     course_prog.save()
+
+    # If the enrollment was just marked completed, end any active learning sessions
+    if course_prog.completed and enrollment.completed_at:
+        for session in LearningSession.objects.filter(student=student, course=course, is_active=True):
+            session.end_session_at(enrollment.completed_at)
 

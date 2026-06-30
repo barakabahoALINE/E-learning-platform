@@ -96,7 +96,7 @@ export const DashboardPage: React.FC = () => {
     return { total, completed };
   };
 
-  const totalHours = learningHours?.total_hours_learned || 0;
+  const totalHours = learningHours?.weekly_totals?.[0]?.hours ?? learningHours?.total_hours_learned ?? 0;
   const currentStreak = learningActivity?.current_streak || 0;
   const weeklyProgress = learningActivity?.weekly_activity || [
     { day: "Sun", hours: 0, minutes: 0, date: "" },

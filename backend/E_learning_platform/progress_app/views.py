@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from datetime import timedelta
+import datetime
 from django.db.models import Sum
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
@@ -159,6 +160,9 @@ class CompleteContentAPIView(APIView):
             if completed_modules == total_modules and final_passed:
                 enrollment.status = Enrollment.Status.COMPLETED
                 enrollment.save()
+                # End any active learning sessions at completion time
+                for s in LearningSession.objects.filter(student=request.user, course_id=course_id, is_active=True):
+                    s.end_session_at(enrollment.completed_at)
                 course_completed = True
             elif enrollment.status == Enrollment.Status.COMPLETED:
                 course_completed = True
@@ -166,6 +170,8 @@ class CompleteContentAPIView(APIView):
             if total_sections > 0 and completed_sections == total_sections:
                 enrollment.status = Enrollment.Status.COMPLETED
                 enrollment.save()
+                for s in LearningSession.objects.filter(student=request.user, course_id=course_id, is_active=True):
+                    s.end_session_at(enrollment.completed_at)
                 course_completed = True
             elif enrollment.status == Enrollment.Status.COMPLETED:
                 course_completed = True
@@ -640,7 +646,7 @@ class StartLearningAPIView(APIView):
             enrollment = Enrollment.objects.get(
                 student=request.user,
                 course_id=course_id,
-                status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED],
+                status=Enrollment.Status.ACTIVE,
             )
         except Enrollment.DoesNotExist:
             return Response(
@@ -744,11 +750,16 @@ class ContinueLearningAPIView(APIView):
                 {"status": "failed", "message": "No learning history found.", "data": None},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # Ensure enrollment is still active before resuming
+        try:
+            enrollment = Enrollment.objects.get(student=request.user, course_id=course_id, status=Enrollment.Status.ACTIVE)
+        except Enrollment.DoesNotExist:
+            return Response({"status": "failed", "message": "Cannot resume learning; course is completed or not active.", "data": None}, status=status.HTTP_400_BAD_REQUEST)
 
         resumed_session = LearningSession.objects.create(
             student=request.user,
             course_id=course_id,
-            enrollment=last_session.enrollment,
+            enrollment=enrollment,
             started_at=timezone.now(),
             is_active=True,
         )
@@ -933,6 +944,10 @@ class AdminCompleteCourseAPIView(APIView):
         enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()
 
+        # End any active learning sessions at completion time
+        for s in LearningSession.objects.filter(student=student, course_id=course_id, is_active=True):
+            s.end_session_at(enrollment.completed_at)
+
         return Response({
             "success": True,
             "message": "Course marked as completed successfully",
@@ -978,6 +993,10 @@ class CompleteCourseAPIView(APIView):
 
         enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()
+
+        # End any active learning sessions at completion time
+        for s in LearningSession.objects.filter(student=request.user, course_id=course_id, is_active=True):
+            s.end_session_at(enrollment.completed_at)
         return Response({"success": True, "message": "Course marked as completed successfully"})
     
 
@@ -993,29 +1012,99 @@ class LearningHoursKPIAPIView(APIView):
     permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
+        # Recompute completed minutes with capping at enrollment completion time
+        completed_minutes = 0
+        completed_sessions = LearningSession.objects.filter(student=request.user, is_active=False)
+        for session in completed_sessions:
+            start = session.started_at
+            end = session.ended_at or timezone.now()
+            try:
+                if session.enrollment and session.enrollment.completed_at:
+                    end = min(end, session.enrollment.completed_at)
+            except Exception:
+                pass
+            duration = max(0, int((end - start).total_seconds() / 60))
+            completed_minutes += duration
 
-        # 1️⃣ Get total minutes from completed sessions
-        completed_minutes = LearningSession.objects.filter(
-            student=request.user,
-            is_active=False
-        ).aggregate(total=Sum("duration_minutes"))["total"] or 0
-
-        # 2️⃣ Add time from active sessions
-        active_sessions = LearningSession.objects.filter(
-            student=request.user,
-            is_active=True
-        )
-
+        # Active sessions: only count up to completion time if enrollment is completed
+        active_sessions = LearningSession.objects.filter(student=request.user, is_active=True)
         active_minutes = 0
-
         for session in active_sessions:
-            elapsed = (timezone.now() - session.started_at).total_seconds() / 60
-            active_minutes += int(elapsed)
+            start = session.started_at
+            end = timezone.now()
+            try:
+                if session.enrollment and session.enrollment.completed_at:
+                    end = min(end, session.enrollment.completed_at)
+            except Exception:
+                pass
+            elapsed = max(0, int((end - start).total_seconds() / 60))
+            active_minutes += elapsed
 
-        # 3️⃣ Total minutes
+        # Total minutes and hours
         total_minutes = completed_minutes + active_minutes
-
         total_hours = round(total_minutes / 60, 2)
+
+        # Weekly aggregation for the last N weeks (default 12)
+        try:
+            weeks = int(request.GET.get("weeks", 12))
+        except Exception:
+            weeks = 12
+        weeks = max(1, min(weeks, 52))
+
+        tz = timezone.get_current_timezone()
+        today = timezone.localdate()
+        days_since_sunday = (today.weekday() + 1) % 7
+        current_week_start = today - timedelta(days=days_since_sunday)
+
+        # preload sessions
+        sessions = LearningSession.objects.filter(student=request.user)
+
+        def _overlap_minutes(session, start_dt, end_dt, cap_active=False):
+            s = session.started_at.astimezone(tz)
+            e = session.ended_at.astimezone(tz) if session.ended_at else timezone.now().astimezone(tz)
+
+            # If this is an active session and we're capping active sessions
+            # for the current week, do not count time that started before
+            # the week's start (prevents carry-over from previous week).
+            if session.ended_at is None and cap_active and s < start_dt:
+                return 0
+
+            try:
+                if session.enrollment and session.enrollment.completed_at:
+                    e = min(e, session.enrollment.completed_at.astimezone(tz))
+            except Exception:
+                pass
+
+            overlap_start = max(s, start_dt)
+            overlap_end = min(e, end_dt)
+            if overlap_end <= overlap_start:
+                return 0
+            return int((overlap_end - overlap_start).total_seconds() / 60)
+
+        weekly_totals = []
+        for i in range(weeks):
+            wk_start_date = current_week_start - timedelta(weeks=i)
+            wk_end_date = wk_start_date + timedelta(days=6)
+            wk_start_dt = datetime.datetime.combine(wk_start_date, datetime.time.min)
+            wk_end_dt = datetime.datetime.combine(wk_end_date, datetime.time.max)
+            if timezone.is_naive(wk_start_dt):
+                wk_start_dt = timezone.make_aware(wk_start_dt, tz)
+            if timezone.is_naive(wk_end_dt):
+                wk_end_dt = timezone.make_aware(wk_end_dt, tz)
+
+            minutes = 0
+            for session in sessions:
+                # For the current week (i == 0) do not include active sessions
+                # that started before the week's start to avoid carry-over.
+                cap_active = (i == 0)
+                minutes += _overlap_minutes(session, wk_start_dt, wk_end_dt, cap_active=cap_active)
+
+            weekly_totals.append({
+                "week_start": wk_start_dt.date().isoformat(),
+                "week_end": wk_end_dt.date().isoformat(),
+                "minutes": minutes,
+                "hours": round(minutes / 60, 2),
+            })
 
         return Response({
             "success": True,
@@ -1025,7 +1114,8 @@ class LearningHoursKPIAPIView(APIView):
                 "total_minutes_learned": total_minutes,
                 "completed_sessions_minutes": completed_minutes,
                 "active_sessions_minutes": active_minutes,
-                "active_sessions_count": active_sessions.count()
+                "active_sessions_count": active_sessions.count(),
+                "weekly_totals": weekly_totals,
             }
         })
 
@@ -1045,13 +1135,17 @@ class LearningActivityKPIAPIView(APIView):
         daily_minutes = [0] * 7
 
         for session in sessions:
-            started_date = session.started_at.astimezone(timezone.get_current_timezone()).date()
-            if session.ended_at:
-                duration = session.duration_minutes
-            else:
-                duration = int((timezone.now() - session.started_at).total_seconds() / 60)
-            duration = max(duration, 0)
+            # compute session end respecting enrollment completion
+            start_dt = session.started_at.astimezone(timezone.get_current_timezone())
+            end_dt = session.ended_at.astimezone(timezone.get_current_timezone()) if session.ended_at else timezone.now().astimezone(timezone.get_current_timezone())
+            try:
+                if session.enrollment and session.enrollment.completed_at:
+                    end_dt = min(end_dt, session.enrollment.completed_at.astimezone(timezone.get_current_timezone()))
+            except Exception:
+                pass
 
+            duration = max(0, int((end_dt - start_dt).total_seconds() / 60))
+            started_date = start_dt.date()
             session_dates.add(started_date)
             if started_date in week_index:
                 daily_minutes[week_index[started_date]] += duration
