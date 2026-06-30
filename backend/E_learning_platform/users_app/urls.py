@@ -19,6 +19,7 @@ urlpatterns = [
     path('profile/', ProfileAPIView.as_view(), name='profile'),
     path('profile/update-picture/', UpdateProfilePictureAPIView.as_view()),
     path('profile/update-name/', UpdateNameAPIView.as_view()),
+    path('profile/update-password/', UpdatePasswordAPIView.as_view()),
     path('users/<int:user_id>/role-update/', UserRoleUpdateView.as_view(), name='role-update'),
     path('users/<int:user_id>/permissions-update/', UserPermissionsUpdateView.as_view(), name='user-permissions-update'),
     path('users/<int:user_id>/groups-update/', UserGroupsUpdateView.as_view(), name='user-groups-update'),

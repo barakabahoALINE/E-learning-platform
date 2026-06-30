@@ -1,3 +1,4 @@
+import logging
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -8,7 +9,6 @@ from .permissions import CanViewEnrollment, CanAddEnrollment, CanChangeEnrollmen
 from enrollments_app.models import Enrollment
 from courses_app.models import Course
 from rest_framework import generics
-from django.core.mail import send_mail
 from django.conf import settings
 from django.db.models import Q
 
@@ -43,6 +43,9 @@ def _same_institution_enrollment(enrollment, user):
     if enrollment.course.created_by and enrollment.course.created_by.institution != user.institution:
         return False
     return True
+from .services.email_service import send_enrollment_confirmation_email, send_enrollment_admin_email
+
+logger = logging.getLogger(__name__)
 
   
 
@@ -57,24 +60,19 @@ class EnrollCourseAPIView(generics.CreateAPIView):
 
         enrollment = serializer.save()
 
-        # Send Email
-        send_mail(
-            subject="Enrollment Confirmation",
-            message=f"""
-Hello {request.user.full_name},
-
-You have successfully enrolled in:
-{enrollment.course.title}
-
-Start learning now and enjoy!
-
-Best regards,
-E-Learning Team
-""",
-            from_email=settings.EMAIL_HOST_USER,
-            recipient_list=[request.user.email],
-            fail_silently=False,
-        )
+        # Send Enrollment Confirmation Email
+        try:
+            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+            course_link = f"{frontend_url}/course/{enrollment.course.id}"
+            send_enrollment_confirmation_email(
+                request.user,
+                enrollment.course,
+                course_link
+            )
+        except Exception as e:
+            # Log email error but don't fail the enrollment
+            logger.error(f"Failed to send enrollment confirmation email: {str(e)}")
+        
         # Use detailed serializer for response
         response_serializer = StudentEnrollmentListSerializer(enrollment)
 
@@ -359,25 +357,18 @@ class AdminCreateEnrollmentView(APIView):
             enrollment = serializer.save()
             student_email = enrollment.student.email
             course_title = enrollment.course.title
-
-            send_mail(
-                subject="Course Enrollment Successful",
-                message=f"""
-Hello {enrollment.student.full_name},
-
-You have been successfully enrolled in the course:
-
-Course: {course_title}
-
-You can now log in to the platform and start learning.
-
-Best regards,
-E-Learning Platform
-""",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[student_email],
-                fail_silently=False,
-            )
+            # Send Admin Enrollment Email
+            try:
+                frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+                course_link = f"{frontend_url}/course/{enrollment.course.id}"
+                send_enrollment_admin_email(
+                    enrollment.student,
+                    enrollment.course,
+                    course_link
+                )
+            except Exception as e:
+                # Log email error but don't fail the enrollment
+                logger.error(f"Failed to send admin enrollment email: {str(e)}")
 
             return Response({
                 "success": True,

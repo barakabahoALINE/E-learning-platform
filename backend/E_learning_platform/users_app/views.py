@@ -42,13 +42,21 @@ from rest_framework.decorators import api_view
 from django.views.decorators.csrf import csrf_exempt
 from .password_rules import get_password_rules_display
 from .permissions import CanAssignRoles, CanModifyPermissions, CanViewUsers, CanChangeUsers, CanDeleteUsers, CanViewRoles, CanViewPermissions,CanAddUsers
+from .services.email_service import (
+    send_verification_email,
+    send_invitation_email,
+    send_password_reset_email,
+    send_password_changed_email,
+)
 import json
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from .services.rbac import DEFAULT_ROLES
 from .models import RoleMetadata
+import logging
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 def check_permission_modification_allowed(request_user, target_role_name):
     if request_user.is_superuser:
@@ -405,12 +413,7 @@ def forgot_password(request):
     reset_link = f"http://localhost:5173/reset-password/{uid}/{token}"
 
     try:
-        send_mail(
-            subject="Reset Your Password",
-            message=f"Click to this link to reset your password:\n{reset_link}",
-            from_email=None,
-            recipient_list=[email],
-        )
+        send_password_reset_email(user, reset_link)
     except Exception as e:
         return Response(
             {"error": "Failed to send email. Please try again later."},
@@ -841,3 +844,64 @@ class UpdateNameAPIView(APIView):
             "status": "failed",
             "errors": serializer.errors
         }, status=400)
+
+
+class UpdatePasswordAPIView(APIView):
+    """
+    Allow authenticated users to update their password.
+
+    PATCH /api/profile/update-password/
+    Payload: { old_password, new_password, confirm_password }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _handle(self, request):
+        user = request.user
+
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+        confirm_password = request.data.get("confirm_password")
+
+        # Required fields
+        if not old_password:
+            return Response({"success": False, "message": "Old password is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not new_password:
+            return Response({"success": False, "message": "New password is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not confirm_password:
+            return Response({"success": False, "message": "Confirm password is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verify current password
+        if not user.check_password(old_password):
+            return Response({"success": False, "message": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # New/confirm match
+        if new_password != confirm_password:
+            return Response({"success": False, "message": "New password and confirm password do not match."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Reject if same as current
+        if user.check_password(new_password):
+            return Response({"success": False, "message": "New password must be different from the current password."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate strength and policy
+        errors = get_password_validation_errors(new_password, user=user)
+        if errors:
+            return Response({"success": False, "message": "Password does not meet security requirements.", "errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        # All good — set the new password
+        user.set_password(new_password)
+        user.save()
+
+        # Send notification email (do not include the password)
+        try:
+            send_password_changed_email(user)
+        except Exception:
+            logger.exception("Failed to send password change notification email for user %s", user.email)
+
+        return Response({"success": True, "message": "Password updated successfully."}, status=status.HTTP_200_OK)
+
+    def patch(self, request, *args, **kwargs):
+        return self._handle(request)
+
+    # also accept POST for clients that cannot send PATCH
+    def post(self, request, *args, **kwargs):
+        return self._handle(request)

@@ -20,6 +20,12 @@ from django.db import transaction
 from django.contrib.auth.models import Group, Permission
 from .services.rbac import sync_user_role_group
 from .models import RoleMetadata
+from .services.email_service import (
+    send_verification_email,
+    send_invitation_email,
+    send_password_reset_email,
+    send_password_changed_email,
+)
 
 
 User = get_user_model()
@@ -118,13 +124,7 @@ class SignupSerializer(serializers.ModelSerializer):
         verification_link = f"http://localhost:5173/verify-email/{uid}/{token}"
 
         try:
-            send_mail(
-                subject="Verify your email",
-                message=f"Click the link to verify your email: {verification_link}",
-                from_email=settings.EMAIL_HOST_USER,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
+            send_verification_email(user, verification_link)
         except Exception as e:
             raise serializers.ValidationError(
                 "Failed to send verification email. Please try again later."
@@ -197,18 +197,7 @@ class AddUserSerializer(serializers.ModelSerializer):
             set_password_link = f"http://localhost:5173/reset-password/{uid}/{token}?mode=setup"
 
             try:
-                send_mail(
-                    subject="Set your platform password",
-                    message=(
-                        f"Dear {user.full_name},\n\n"
-                        "You have been added to the platform by an administrator.\n"
-                        f"Please set your password using the link below:\n{set_password_link}\n\n"
-                        "If you did not expect this message, please contact your administrator."
-                    ),
-                    from_email=settings.EMAIL_HOST_USER,
-                    recipient_list=[user.email],
-                    fail_silently=False,
-                )
+                send_invitation_email(user, set_password_link)
             except Exception:
                 raise serializers.ValidationError("Failed to send invite email. Please try again later.")
 
