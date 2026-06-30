@@ -45,7 +45,7 @@ export const CourseDetailPage: React.FC = () => {
   const navigate = useNavigate();
 
   const { currentCourse: course, isLoading: isCourseLoading, categories, levels, status: courseStatus } = useAppSelector((state) => state.courses);
-  
+
   const { myEnrollments, loading: isEnrollmentLoading } = useAppSelector((state) => state.enrollments);
   const { courseProgress, courseModulesProgress } = useAppSelector((state) => state.progress);
   const { user } = useAppSelector((state) => state.auth);
@@ -140,7 +140,7 @@ export const CourseDetailPage: React.FC = () => {
     // Smart resume navigation - find the first incomplete module
     const modulesProgress = courseModulesProgress[numericCourseId] || [];
     const incompleteModuleProgress = modulesProgress.find(m => !m.module_completed);
-    
+
     let targetModule = course.modules?.[0];
     if (incompleteModuleProgress) {
       const foundModule = course.modules?.find(m => Number(m.id) === Number(incompleteModuleProgress.module_id));
@@ -148,7 +148,7 @@ export const CourseDetailPage: React.FC = () => {
         targetModule = foundModule;
       }
     }
-    
+
     if (targetModule) {
       navigate(`/learning/${course.id}/${targetModule.id}`);
     }
@@ -169,7 +169,7 @@ export const CourseDetailPage: React.FC = () => {
     categories.find(c => c.id === course.category_id || c.id === Number(course.category))?.name ||
     "Uncategorized";
   const levelName =
-    (typeof course.level === "string" && course.level) ||
+    (typeof course.level === "string" && isNaN(Number(course.level)) && course.level) ||
     levels.find(l => l.id === course.level_id || l.id === Number(course.level))?.name ||
     "All Levels";
 
@@ -205,7 +205,7 @@ export const CourseDetailPage: React.FC = () => {
                       <Star className="w-4 h-4 text-yellow-400 mr-2 fill-yellow-400" />
                       <span className="font-semibold">{course?.rating || 0}</span>
                       <span className="ml-1 opacity-70">
-                        ({course.enrolled_students_count || 0} students)
+                        ({course.enrolled_students_count || 0} {course.enrolled_students_count == 1 ? "student" : "students"})
                       </span>
                     </div>
                     <div className="flex items-center bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full">
@@ -223,7 +223,7 @@ export const CourseDetailPage: React.FC = () => {
 
             {/* Tabs */}
             <Tabs defaultValue="overview" className="w-full">
-              <TabsList className="grid w-full grid-cols-3"> 
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="overview" className="cursor-pointer">Overview</TabsTrigger>
                 <TabsTrigger value="curriculum" className="cursor-pointer">Curriculum</TabsTrigger>
                 <TabsTrigger value="instructor" className="cursor-pointer">Instructor</TabsTrigger>
@@ -324,7 +324,7 @@ export const CourseDetailPage: React.FC = () => {
                                   className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50"
                                 >
                                   <div className="flex items-center space-x-3">
-                                      <FileText className="w-5 h-5 text-gray-400" />
+                                    <FileText className="w-5 h-5 text-gray-400" />
                                     <span className="text-sm">{lesson.title}</span>
                                   </div>
                                 </div>
@@ -344,7 +344,7 @@ export const CourseDetailPage: React.FC = () => {
                     <div className="flex items-start space-x-4 mb-6">
                       <Avatar className="w-20 h-20">
                         <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
-                          {course.admin ? course.admin.substring(0, 2).toUpperCase() : course.instructor ? course.instructor.substring(0,2).toUpperCase() : "AD"}
+                          {course.admin ? course.admin.substring(0, 2).toUpperCase() : course.instructor ? course.instructor.substring(0, 2).toUpperCase() : "AD"}
                         </AvatarFallback>
                       </Avatar>
                       <div>
@@ -452,7 +452,7 @@ export const CourseDetailPage: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    <Button 
+                    <Button
                       className="w-full" size="lg"
                       onClick={handleEnroll}
                       disabled={isEnrollmentLoading}

@@ -19,12 +19,15 @@ import {
   Video,
   Image as ImageIcon,
   File as FileIcon,
+  Clock,
+  RefreshCw,
 } from "lucide-react";
 
 import StatusModal from "../components/ui/StatusModal";
 import { LessonModal } from "./course-builder/LessonModal";
 import { AssessmentModal } from "./course-builder/AssessmentModal";
 import { CoursePreviewModal } from "./course-builder/CoursePreviewModal";
+import { FinalAssessmentSettingsModal } from "./course-builder/FinalAssessmentSettingsModal";
 
 import { 
   fetchCourseDetails, 
@@ -42,7 +45,7 @@ import {
   deleteContent,
   unpublishCourse
 } from "../../features/courses/courseSlice";
-import { createAssessment, addQuestion, updateQuestion, deleteQuestionAction, deleteAssessmentAction } from "../../features/assessments/assessmentSlice";
+import { createAssessment, addQuestion, updateQuestion, deleteQuestionAction, deleteAssessmentAction, updateAssessmentSettings } from "../../features/assessments/assessmentSlice";
 import {  
   ContentItem, 
   QuizQuestion 
@@ -60,6 +63,22 @@ export function CourseBuilderPage() {
   const [expandedModules, setExpandedModules] = useState<Set<string | number>>(new Set());
   const [expandedSections, setExpandedSections] = useState<Set<string | number>>(new Set());
   const [expandedContentItems, setExpandedContentItems] = useState<Set<string | number>>(new Set());
+
+  // Keep a ref mirror so async callbacks can read & restore the expanded state
+  // even after a fetchCourseDetails re-fetch resets the component.
+  const expandedModulesRef = useRef<Set<string | number>>(new Set());
+  const expandedSectionsRef = useRef<Set<string | number>>(new Set());
+
+  // Helper: dispatch fetchCourseDetails while preserving expanded state
+  const refetchCourse = async (courseId: string | number) => {
+    // Snapshot current expansion before the async call
+    const savedModules = new Set(expandedModulesRef.current);
+    const savedSections = new Set(expandedSectionsRef.current);
+    await dispatch(fetchCourseDetails(courseId));
+    // Re-apply after the store update triggers a re-render
+    setExpandedModules(savedModules);
+    setExpandedSections(savedSections);
+  };
   
   const [showContentItemModal, setShowContentItemModal] = useState(false);
   const [editingContentItem, setEditingContentItem] = useState<{
@@ -80,6 +99,7 @@ export function CourseBuilderPage() {
   const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: string, payload: any } | null>(null);
   const [deleteQuestionTarget, setDeleteQuestionTarget] = useState<{ type: 'final' | 'module', questionId: any, moduleId?: string | number } | null>(null);
+  const [showFinalAssessmentSettings, setShowFinalAssessmentSettings] = useState<'create' | 'edit' | null>(null);
   const hasInitializedExpansion = useRef(false);
 
   useEffect(() => {
@@ -116,6 +136,7 @@ export function CourseBuilderPage() {
     const next = new Set(expandedModules);
     if (next.has(moduleId)) next.delete(moduleId);
     else next.add(moduleId);
+    expandedModulesRef.current = next;
     setExpandedModules(next);
   };
 
@@ -123,6 +144,7 @@ export function CourseBuilderPage() {
     const next = new Set(expandedSections);
     if (next.has(sectionId)) next.delete(sectionId);
     else next.add(sectionId);
+    expandedSectionsRef.current = next;
     setExpandedSections(next);
   };
 
@@ -142,6 +164,7 @@ export function CourseBuilderPage() {
       })).unwrap();
       const next = new Set(expandedModules);
       next.add(res.data.id);
+      expandedModulesRef.current = next;
       setExpandedModules(next);
       toast.success("Module created successfully");
     } catch (e: any) {
@@ -181,7 +204,7 @@ export function CourseBuilderPage() {
             duration: 30
           })).unwrap();
           toast.success("Quiz enabled successfully for this module!");
-          dispatch(fetchCourseDetails(course.id));
+          refetchCourse(course.id);
         } catch (e: any) {
           toast.error(e || "Failed to enable quiz");
         }
@@ -189,7 +212,7 @@ export function CourseBuilderPage() {
         try {
           await dispatch(deleteAssessmentAction(module.quiz.id)).unwrap();
           toast.success("Quiz disabled successfully for this module!");
-          dispatch(fetchCourseDetails(course.id));
+          refetchCourse(course.id);
         } catch (e: any) {
           toast.error(e || "Failed to disable quiz");
         }
@@ -270,7 +293,7 @@ export function CourseBuilderPage() {
         })).unwrap();
         toast.success("Content added successfully");
       }
-      dispatch(fetchCourseDetails(course.id));
+      refetchCourse(course.id);
     } catch (e: any) {
       toast.error(e?.message || "Failed to save content");
     }
@@ -297,7 +320,7 @@ export function CourseBuilderPage() {
         await dispatch(deleteContent({ courseId: course.id, moduleId: payload.moduleId, sectionId: payload.sectionId, contentId: payload.contentItemId })).unwrap();
         toast.success("Content item deleted successfully");
       }
-      dispatch(fetchCourseDetails(course.id));
+      refetchCourse(course.id);
     } catch (e: any) {
       toast.error(e?.message || `Failed to delete ${deleteTarget.type}`);
     }
@@ -347,9 +370,9 @@ export function CourseBuilderPage() {
         const questionData = {
           assessment: assessmentId,
           question_text: data.question,
-          question_type: "single" as const, 
-          marks: 1,
-          choices: data.options.map((opt, idx) => ({
+          question_type: (data.question_type || "single") as any, 
+          marks: data.marks || 1,
+          choices: data.choices || data.options.map((opt, idx) => ({
             text: opt,
             is_correct: idx === data.correctAnswer
           }))
@@ -369,6 +392,50 @@ export function CourseBuilderPage() {
       toast.error(typeof err === 'string' ? err : 'Failed to save question');
     }
     setShowAssessmentModal(null);
+  };
+
+  /**
+   * Called from FinalAssessmentSettingsModal when creating the final assessment for the first time.
+   * Creates the assessment with the chosen settings, then opens the question editor.
+   */
+  const handleCreateFinalAssessmentWithSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number }) => {
+    try {
+      await dispatch(createAssessment({
+        course: course.id,
+        title: "Final Assessment",
+        is_final: true,
+        assessment_type: "FINAL",
+        pass_mark: settings.pass_mark,
+        max_attempts: settings.max_attempts,
+        duration: settings.duration,
+      })).unwrap();
+      dispatch(fetchCourseDetails(course.id));
+      toast.success("Final assessment created successfully!");
+    } catch (e: any) {
+      toast.error(e || "Failed to create final assessment");
+      throw e;
+    } finally {
+      setShowFinalAssessmentSettings(null);
+      // After creating, open the question editor
+      setShowAssessmentModal({ type: 'final' });
+    }
+  };
+
+  /**
+   * Called from FinalAssessmentSettingsModal when editing an existing final assessment's settings.
+   */
+  const handleUpdateFinalAssessmentSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number }) => {
+    const assessmentId = course.final_assessment?.id;
+    if (!assessmentId) return;
+    try {
+      await dispatch(updateAssessmentSettings({ assessmentId, data: settings })).unwrap();
+      dispatch(fetchCourseDetails(course.id));
+      toast.success("Assessment settings updated!");
+      setShowFinalAssessmentSettings(null);
+    } catch (e: any) {
+      toast.error(e || "Failed to update settings");
+      throw e;
+    }
   };
 
   const handleUnpublish = async () => {
@@ -911,13 +978,47 @@ export function CourseBuilderPage() {
               {course.final_assessment?.questions?.length || 0} question{(course.final_assessment?.questions?.length || 0) !== 1 ? "s" : ""} added
             </p>
           </div>
-          <button
-            onClick={() => setShowAssessmentModal({ type: 'final' })}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
-          >
-            <Plus className="w-5 h-5" />
-            {(course.final_assessment?.questions?.length || 0) === 0 ? "Create Assessment" : "Add Question"}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Show settings badges if final assessment exists */}
+            {course.final_assessment && (
+              <div className="flex items-center gap-1.5 mr-1">
+                {course.final_assessment.duration != null && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                    <Clock className="w-3 h-3" />
+                    {course.final_assessment.duration}m
+                  </span>
+                )}
+                {course.final_assessment.max_attempts != null && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    <RefreshCw className="w-3 h-3" />
+                    {course.final_assessment.max_attempts}x
+                  </span>
+                )}
+                <button
+                  onClick={() => setShowFinalAssessmentSettings('edit')}
+                  className="p-1.5 text-gray-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors"
+                  title="Edit Assessment Settings"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            <button
+              onClick={() => {
+                if (!course.final_assessment) {
+                  // No assessment yet — configure settings first
+                  setShowFinalAssessmentSettings('create');
+                } else {
+                  // Assessment exists — go straight to adding a question
+                  setShowAssessmentModal({ type: 'final' });
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+            >
+              <Plus className="w-5 h-5" />
+              {(course.final_assessment?.questions?.length || 0) === 0 ? "Create Assessment" : "Add Question"}
+            </button>
+          </div>
         </div>
  
         {(!course.final_assessment || (course.final_assessment?.questions?.length || 0) === 0) ? (
@@ -967,7 +1068,7 @@ export function CourseBuilderPage() {
             course: course.id as any,
             blocks: (() => {
               const item = editingContentItem.contentItem as any;
-              if (item.contents?.length > 0) return item.contents.map((b: any) => ({ id: b.id, type: b.type, content: b.content }));
+              if (item.contents?.length > 0) return item.contents.map((b: any) => ({ id: b.id, type: b.type, content: b.content, link: b.link }));
               
               const text = item.text_content;
               if (text && (text.startsWith('[') || text.startsWith('{'))) {
@@ -996,6 +1097,26 @@ export function CourseBuilderPage() {
           onClose={() => setShowAssessmentModal(null)}
           onSave={saveAssessment}
           initialQuestion={showAssessmentModal.question}
+        />
+      )}
+
+      {showFinalAssessmentSettings === 'create' && (
+        <FinalAssessmentSettingsModal
+          isCreating
+          onClose={() => setShowFinalAssessmentSettings(null)}
+          onConfirm={handleCreateFinalAssessmentWithSettings}
+        />
+      )}
+
+      {showFinalAssessmentSettings === 'edit' && (
+        <FinalAssessmentSettingsModal
+          initialValues={{
+            duration: course.final_assessment?.duration,
+            max_attempts: course.final_assessment?.max_attempts,
+            pass_mark: course.final_assessment?.pass_mark,
+          }}
+          onClose={() => setShowFinalAssessmentSettings(null)}
+          onConfirm={handleUpdateFinalAssessmentSettings}
         />
       )}
 

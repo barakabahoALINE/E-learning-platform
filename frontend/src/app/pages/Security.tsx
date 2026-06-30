@@ -69,55 +69,52 @@ export function SecurityPage() {
   };
 
   return (
-    <div className="max-w-[1440px] mx-auto">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-8">Security</h1>
-
-      {/* Security Stats */}
+    <>
       <div className="grid grid-cols-4 gap-6 mb-8">
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg transition-shadow">
           <div className="flex items-start justify-between mb-4">
             <div className="p-3 rounded-lg bg-green-50">
               <Shield className="w-6 h-6 text-green-600" />
             </div>
           </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">2,543</div>
-          <div className="text-sm text-gray-500">Active Sessions</div>
+          <div className="text-3xl font-bold text-gray-900 mb-1 dark:text-gray-100">2,543</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Active Sessions</div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg transition-shadow">
           <div className="flex items-start justify-between mb-4">
             <div className="p-3 rounded-lg bg-red-50">
               <AlertTriangle className="w-6 h-6 text-red-600" />
             </div>
           </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">25</div>
-          <div className="text-sm text-gray-500">Failed Login Attempts</div>
+          <div className="text-3xl font-bold text-gray-900 mb-1 dark:text-gray-100">25</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Failed Login Attempts</div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg transition-shadow">
           <div className="flex items-start justify-between mb-4">
             <div className="p-3 rounded-lg bg-orange-50">
               <Clock className="w-6 h-6 text-orange-600" />
             </div>
           </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">{suspendedAccounts.length}</div>
-          <div className="text-sm text-gray-500">Suspended Accounts</div>
+          <div className="text-3xl font-bold text-gray-900 mb-1 dark:text-gray-100">{suspendedAccounts.length}</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Suspended Accounts</div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg transition-shadow">
           <div className="flex items-start justify-between mb-4">
             <div className="p-3 rounded-lg bg-blue-50">
               <Settings className="w-6 h-6 text-blue-600" />
             </div>
           </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">30min</div>
-          <div className="text-sm text-gray-500">Session Timeout</div>
+          <div className="text-3xl font-bold text-gray-900 mb-1 dark:text-gray-100">30min</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Session Timeout</div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         {/* Failed Login Chart */}
-        <div className="col-span-2 bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="col-span-2 bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg transition-shadow">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">
             Failed Login Attempts (Last 7 Days)
           </h3>
@@ -139,7 +136,7 @@ export function SecurityPage() {
         </div>
 
         {/* Security Settings */}
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg transition-shadow">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">
             Security Settings
           </h3>
@@ -189,7 +186,7 @@ export function SecurityPage() {
       </div>
 
       {/* Login Activity */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-8">
+      <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl mb-8 hover:shadow-lg transition-shadow">
         <div className="p-6 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-gray-900">Recent Login Activity</h3>
         </div>
@@ -239,11 +236,10 @@ export function SecurityPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
-                      className={`px-3 py-1 text-xs font-medium rounded-full border ${
-                        activity.status === "success"
-                          ? "bg-green-50 text-green-700 border-green-200"
-                          : "bg-red-50 text-red-700 border-red-200"
-                      }`}
+                      className={`px-3 py-1 text-xs font-medium rounded-full border ${activity.status === "success"
+                        ? "bg-green-50 text-green-700 border-green-200"
+                        : "bg-red-50 text-red-700 border-red-200"
+                        }`}
                     >
                       {activity.status === "success" ? "Success" : "Failed"}
                     </span>
@@ -256,7 +252,7 @@ export function SecurityPage() {
       </div>
 
       {/* Suspended Accounts */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl hover:shadow-lg transition-shadow">
         <div className="p-6 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-gray-900">Suspended Accounts</h3>
         </div>
@@ -320,6 +316,6 @@ export function SecurityPage() {
           </table>
         </div>
       </div>
-    </div>
+    </>
   );
 }

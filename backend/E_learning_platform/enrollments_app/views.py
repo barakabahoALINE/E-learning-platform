@@ -3,13 +3,46 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Enrollment
-from .serializers import EnrollmentCreateSerializer, StudentEnrollmentListSerializer, EnrollmentSerializer
+from .serializers import EnrollmentCreateSerializer, StudentEnrollmentListSerializer, EnrollmentSerializer, InstructorEnrollmentSerializer
 from .permissions import CanViewEnrollment, CanAddEnrollment, CanChangeEnrollment, CanDeleteEnrollment
 from enrollments_app.models import Enrollment
 from courses_app.models import Course
 from rest_framework import generics
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db.models import Q
+
+
+def _is_admin_user(user):
+    return user.is_authenticated and (
+        user.is_superuser or user.groups.filter(name="Admin").exists()
+    )
+
+def _is_unrestricted_user(user):
+    return user.is_authenticated and (
+        user.is_superuser or
+        getattr(user, "role", "") in ["admin", "viewer"] or
+        user.groups.filter(name__in=["Admin", "Viewer"]).exists()
+    )
+
+def _same_institution_queryset(queryset, user, relation="student__institution"):
+    if _is_unrestricted_user(user):
+        return queryset
+    if user.is_authenticated and getattr(user, "institution", None):
+        return queryset.filter(**{relation: user.institution})
+    return queryset
+
+
+def _same_institution_enrollment(enrollment, user):
+    if _is_unrestricted_user(user):
+        return True
+    if not user.is_authenticated:
+        return False
+    if enrollment.student.institution != user.institution:
+        return False
+    if enrollment.course.created_by and enrollment.course.created_by.institution != user.institution:
+        return False
+    return True
 
   
 
@@ -86,6 +119,59 @@ class MyEnrollmentsAPIView(generics.ListAPIView):
                 "recent_in_progress_course": self.get_recent_in_progress_course(queryset),
             }
         )
+
+
+class InstructorCourseEnrollmentsAPIView(generics.ListAPIView):
+    """
+    Instructors view all students enrolled in courses they created.
+    Filters by course created_by = request.user.
+    """
+    serializer_class = InstructorEnrollmentSerializer
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Enrollment.objects.select_related("course", "student").filter(
+            Q(course__created_by=user) | Q(course__created_by__isnull=True)
+        )
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+
+        return Response(
+            {
+                "status": "success",
+                "message": "Course enrollments retrieved successfully.",
+                "data": serializer.data,
+            }
+        )
+
+
+class InstructorCourseEnrollmentDetailAPIView(generics.RetrieveAPIView):
+    """
+    Instructor views a specific student enrollment in their course.
+    """
+    serializer_class = EnrollmentSerializer
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
+
+    def get_queryset(self):
+        return Enrollment.objects.select_related("course", "student").filter(
+            course__created_by=self.request.user
+        )
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+
+        return Response(
+            {
+                "status": "success",
+                "message": "Enrollment retrieved successfully.",
+                "data": serializer.data,
+            }
+        )
 class EnrollmentDetailAPIView(generics.RetrieveAPIView):
     serializer_class = StudentEnrollmentListSerializer
     permission_classes = [IsAuthenticated, CanViewEnrollment]
@@ -145,7 +231,8 @@ class AdminListEnrollmentsView(APIView):
         permission_classes = [IsAuthenticated, CanViewEnrollment]
 
         def get(self, request):
-            enrollments = Enrollment.objects.all()
+            enrollments = Enrollment.objects.select_related("student", "course", "course__created_by")
+            enrollments = _same_institution_queryset(enrollments, request.user, relation="course__created_by__institution")
             serializer = EnrollmentSerializer(enrollments, many=True)
 
             return Response({
@@ -161,9 +248,14 @@ class AdminEnrollmentDetailView(APIView):
     def get(self, request, pk):
 
         try:
-            enrollment = Enrollment.objects.get(pk=pk)
-
+            enrollment = Enrollment.objects.select_related("course", "course__created_by").get(pk=pk)
         except Enrollment.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Enrollment not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if not _same_institution_enrollment(enrollment, request.user):
             return Response({
                 "success": False,
                 "message": "Enrollment not found"
@@ -184,9 +276,14 @@ class AdminUpdateEnrollmentView(APIView):
     def patch(self, request, pk):
 
         try:
-            enrollment = Enrollment.objects.get(pk=pk)
-
+            enrollment = Enrollment.objects.select_related("course", "course__created_by").get(pk=pk)
         except Enrollment.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Enrollment not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if not _same_institution_enrollment(enrollment, request.user):
             return Response({
                 "success": False,
                 "message": "Enrollment not found"
@@ -216,9 +313,14 @@ class AdminDeleteEnrollmentView(APIView):
     def delete(self, request, pk):
 
         try:
-            enrollment = Enrollment.objects.get(pk=pk)
-
+            enrollment = Enrollment.objects.select_related("course", "course__created_by").get(pk=pk)
         except Enrollment.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Enrollment not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if not _same_institution_enrollment(enrollment, request.user):
             return Response({
                 "success": False,
                 "message": "Enrollment not found"
@@ -236,12 +338,25 @@ class AdminCreateEnrollmentView(APIView):
     permission_classes = [IsAuthenticated, CanAddEnrollment]
 
     def post(self, request):
-
         serializer = EnrollmentSerializer(data=request.data)
 
         if serializer.is_valid():
-            enrollment = serializer.save()
+            student = serializer.validated_data.get("student")
+            course = serializer.validated_data.get("course")
 
+            if not request.user.is_superuser:
+                if student.institution != request.user.institution:
+                    return Response({
+                        "success": False,
+                        "message": "Cannot enroll a student outside your institution."
+                    }, status=status.HTTP_403_FORBIDDEN)
+                if course.created_by and course.created_by.institution != request.user.institution:
+                    return Response({
+                        "success": False,
+                        "message": "Cannot enroll students in courses outside your institution."
+                    }, status=status.HTTP_403_FORBIDDEN)
+
+            enrollment = serializer.save()
             student_email = enrollment.student.email
             course_title = enrollment.course.title
 

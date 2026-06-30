@@ -4,6 +4,9 @@ export interface User {
   full_name: string;
   institution: string;
   role?: string;
+  groups?: string[];
+  permissions?: string[];
+  is_superuser?: boolean;
   avatar?: string;
   profile_picture?: string | null;
 }
@@ -24,6 +27,13 @@ export interface ResetPasswordData {
   new_password?: string;
   confirm_new_password?: string;
   [key: string]: string | undefined;
+}
+
+export interface CreatePasswordData {
+  uidb64: string;
+  token: string;
+  password: string;
+  confirm_password: string;
 }
 
 export interface AuthResponse<T = unknown> {

@@ -61,7 +61,7 @@ export const SignupPage: React.FC = () => {
 
   const handleModalClose = () => {
     setIsModalOpen(false);
-    
+
     if (status === 'succeeded') {
       setName("");
       setEmail("");
@@ -248,29 +248,17 @@ export const SignupPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                <div className="min-w-0">
-                  <GoogleLogin
-                    onSuccess={(credentialResponse) => {
-                      if (credentialResponse.credential) {
-                        setIsGoogleAuth(true);
-                        dispatch(googleLogin(credentialResponse.credential));
-                      }
-                    }}
-                    onError={() => setIsModalOpen(true)}
-                    width="100%"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsModalOpen(true)}
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  <Github className="mr-2 h-4 w-4" />
-                  GitHub
-                </Button>
+              <div className="mt-6">
+                <GoogleLogin
+                  onSuccess={(credentialResponse) => {
+                    if (credentialResponse.credential) {
+                      setIsGoogleAuth(true);
+                      dispatch(googleLogin(credentialResponse.credential));
+                    }
+                  }}
+                  onError={() => setIsModalOpen(true)}
+                  width="100%"
+                />
               </div>
             </div>
 
@@ -294,8 +282,8 @@ export const SignupPage: React.FC = () => {
         isOpen={isModalOpen}
         type={status === 'succeeded' ? 'success' : 'error'}
         title={status === 'succeeded' ? 'Account Created!' : 'Signup Failed'}
-        description={status === 'succeeded' 
-          ? 'Your account has been created successfully. Please check your email to verify your account.' 
+        description={status === 'succeeded'
+          ? 'Your account has been created successfully. Please check your email to verify your account.'
           : (error as string) || 'Something went wrong during signup.'}
         onClose={handleModalClose}
         onConfirm={handleModalConfirm}

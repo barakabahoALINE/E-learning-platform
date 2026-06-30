@@ -7,6 +7,7 @@ import { useData } from "../../context/DataContext";
 import { useNavigate } from "react-router-dom";
 import { NotificationPanel } from "../notifications/NotificationPanel";
 import { ThemeToggle } from "../ThemeToggle";
+import { getMediaUrl } from "../../utils/media";
 
 interface Notification {
   id: number;
@@ -74,7 +75,7 @@ export function TopNav() {
   const handleLogout = async () => {
     await dispatch(logout());
     setShowDropdown(false);
-    navigate("/login");
+    // navigate("/");
   };
 
   const handleProfileSettings = () => {
@@ -125,7 +126,7 @@ export function TopNav() {
             </button>
           </div>
 
-          {/* <ThemeToggle /> */}
+          <ThemeToggle />
 
           {/* User Profile Dropdown */}
           <div className="relative">
@@ -137,18 +138,24 @@ export function TopNav() {
               className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors"
             >
               <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium overflow-hidden">
-                {adminProfile.avatar ? (
-                  <img src={adminProfile.avatar} alt="Admin" className="w-full h-full object-cover" />
+                {user?.profile_picture || user?.avatar ? (
+                  <img src={getMediaUrl(user?.profile_picture || user?.avatar, '')} alt="Admin" className="w-full h-full object-cover" />
                 ) : (
-                  `${adminProfile.firstName[0]}${adminProfile.lastName[0]}`
+                  (user?.full_name || user?.email || "AU")
+                    .split(" ")
+                    .filter(Boolean)
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2)
                 )}
               </div>
               <div className="text-left hidden sm:block">
                 <div className="text-sm font-medium text-gray-900">
-                  {`${adminProfile.firstName} ${adminProfile.lastName}`}
+                  {user?.full_name || "Admin User"}
                 </div>
                 <div className="text-xs text-gray-500">
-                  {adminProfile.email}
+                  {user?.email}
                 </div>
               </div>
               <ChevronDown className="w-4 h-4 text-gray-500" />
@@ -161,7 +168,7 @@ export function TopNav() {
                     {user?.full_name || "Admin User"}
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    System Administrator
+                    {user?.role?.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) || ""}
                   </p>
                 </div>
 

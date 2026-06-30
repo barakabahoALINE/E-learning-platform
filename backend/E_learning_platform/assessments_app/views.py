@@ -101,8 +101,42 @@ class CreateAssessmentAPIView(APIView):
             return Response({"success": True, "message": "Module quiz deleted successfully"})
 
         return Response({"success": False, "error": "Assessment ID or Module ID is required"}, status=400)
-        
-        
+
+    def patch(self, request):
+        """Update assessment settings (duration, max_attempts, pass_mark, instructions)."""
+        assessment_id = request.data.get("assessment_id")
+        if not assessment_id:
+            return Response({"success": False, "error": "assessment_id is required"}, status=400)
+
+        assessment = get_object_or_404(Assessment, id=assessment_id)
+
+        allowed_fields = ["duration", "max_attempts", "pass_mark", "instructions", "title"]
+        update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+
+        for field, value in update_data.items():
+            setattr(assessment, field, value)
+
+        assessment.save(update_fields=list(update_data.keys()))
+
+        # Mark course as having unpublished changes if already published
+        if assessment.course.is_published:
+            assessment.has_unpublished_changes = True
+            assessment.save(update_fields=["has_unpublished_changes"])
+            assessment.course.has_unpublished_changes = True
+            assessment.course.save(update_fields=["has_unpublished_changes"])
+
+        return Response({
+            "success": True,
+            "message": "Assessment settings updated successfully",
+            "data": {
+                "id": assessment.id,
+                "duration": assessment.duration,
+                "max_attempts": assessment.max_attempts,
+                "pass_mark": assessment.pass_mark,
+                "instructions": assessment.instructions,
+            }
+        })
+
 # ✅ Create Question API (Admin only)
 class CreateQuestionAPIView(APIView):
 

@@ -177,7 +177,7 @@ export const DashboardPage: React.FC = () => {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
+          <Card className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -195,7 +195,7 @@ export const DashboardPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -210,7 +210,7 @@ export const DashboardPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -225,7 +225,7 @@ export const DashboardPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -298,7 +298,7 @@ export const DashboardPage: React.FC = () => {
                           <div className="flex items-start justify-between mb-2">
                             <div>
                               <Badge variant="secondary" className="mb-2">
-                                {courseDetail.category}
+                                {typeof courseDetail.category === "string" ? courseDetail.category : categories.find(c => c.id === Number(courseDetail.category))?.name || "Category"}
                               </Badge>
                               <h3 className="font-bold text-lg mb-1">{courseDetail.title}</h3>
                               <p className="text-sm text-gray-600">

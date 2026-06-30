@@ -10,6 +10,8 @@ import { Course } from "../../features/courses/types";
 import { Button } from "../components/ui/button";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { selectAllCourses, selectCourseCategories, selectCoursesLoading } from "../../features/courses/courseSelectors";
+import { selectCurrentUser } from "../../features/auth/authSelectors";
+import { hasPermission } from "../../features/auth/permissions";
 import { ScrollArea, ScrollBar } from "../components/ui/scroll-area";
 import { Card, CardContent } from "../components/ui/card";
 
@@ -19,50 +21,55 @@ export function CoursesPage() {
   const courses = useAppSelector(selectAllCourses);
   const categories = useAppSelector(selectCourseCategories);
   const isLoading = useAppSelector(selectCoursesLoading);
-  
+  const user = useAppSelector(selectCurrentUser);
+  const isInstructor = user?.role === 'instructor' || user?.groups?.includes('Instructor');
+  const canCreateCourse = hasPermission(user, 'courses_app.add_course');
+  const canEditCourse = hasPermission(user, 'courses_app.change_course');
+  const canDeleteCourse = hasPermission(user, 'courses_app.delete_course');
+
   const getImageUrl = (url: string | null) => {
     if (!url) return "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80";
     if (url.startsWith("http")) return url;
     return `http://localhost:8000${url}`;
   };
-  
+
   const [searchQuery, setSearchQuery] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hoveredCourse, setHoveredCourse] = useState<number | string | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | string | null>(null);
-  
+
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
   const [activeCategory, setActiveCategory] = useState<number | string | 'all'>('all');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [status, setStatus] = useState<{ type: "success" | "error"; title: string; message: string } | null>(null);
 
   useEffect(() => {
-    dispatch(fetchCourses(true));
+    dispatch(fetchCourses(!isInstructor));
     dispatch(fetchCategories());
-  }, [dispatch]);
+  }, [dispatch, isInstructor]);
 
   const filteredCourses = courses.filter((course) => {
     const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = 
-      statusFilter === 'all' || 
-      (statusFilter === 'published' && course.is_published) || 
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'published' && course.is_published) ||
       (statusFilter === 'draft' && !course.is_published);
-    
-    const matchesCategory = 
-      activeCategory === 'all' || 
+
+    const matchesCategory =
+      activeCategory === 'all' ||
       String((course as any).category_id || course.category) === String(activeCategory);
-    
+
     return matchesSearch && matchesStatus && matchesCategory;
   });
 
   const getCategoryCount = (categoryId: number | 'all') => {
     return courses.filter(course => {
-      const matchesStatus = 
-        statusFilter === 'all' || 
-        (statusFilter === 'published' && course.is_published) || 
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'published' && course.is_published) ||
         (statusFilter === 'draft' && !course.is_published);
-      
+
       const matchesCategory = categoryId === 'all' || String((course as any).category_id || course.category) === String(categoryId);
       return matchesStatus && matchesCategory;
     }).length;
@@ -77,7 +84,7 @@ export function CoursesPage() {
   const handleSaveCourse = () => {
     setIsModalOpen(false);
     setEditingCourse(null);
-    dispatch(fetchCourses(true));
+    dispatch(fetchCourses(!isInstructor));
   };
 
   const handleEditCourse = (course: Course) => {
@@ -92,7 +99,7 @@ export function CoursesPage() {
       setDeleteConfirm(null);
       setHoveredCourse(null);
       toast.success(response.message || "Course deleted successfully");
-      dispatch(fetchCourses(true));
+      dispatch(fetchCourses(!isInstructor));
     } catch (error: any) {
       setDeleteConfirm(null);
       toast.error(error || "Something went wrong while deleting the course.");
@@ -121,13 +128,15 @@ export function CoursesPage() {
             Create and manage learning courses
           </p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
-        >
-          <Plus className="w-5 h-5" />
-           <span className="hidden sm:block">Create</span> Course
-        </button>
+        {canCreateCourse && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+          >
+            <Plus className="w-5 h-5" />
+            <span className="hidden sm:block">Create</span> Course
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-6 mb-8">
@@ -142,9 +151,9 @@ export function CoursesPage() {
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          
+
           <div className="relative flex justify-end sm:justify-start">
-            <button 
+            <button
               onClick={() => setShowFilterDropdown(!showFilterDropdown)}
               className={`flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer ${statusFilter !== 'all' ? 'border-blue-500 text-blue-600' : ''}`}
             >
@@ -154,8 +163,8 @@ export function CoursesPage() {
 
             {showFilterDropdown && (
               <>
-                <div 
-                  className="fixed inset-0 z-10" 
+                <div
+                  className="fixed inset-0 z-10"
                   onClick={() => setShowFilterDropdown(false)}
                 ></div>
                 <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-20 py-1 animate-in fade-in zoom-in-95 duration-100">
@@ -184,11 +193,10 @@ export function CoursesPage() {
             <div className="flex items-center gap-2 w-max px-1">
               <button
                 onClick={() => setActiveCategory('all')}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                  activeCategory === 'all'
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-100"
-                    : "bg-white text-gray-600 border border-gray-200 hover:border-blue-200 hover:text-blue-600"
-                }`}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${activeCategory === 'all'
+                  ? "bg-blue-600 text-white shadow-xs shadow-blue-100"
+                  : "bg-white text-gray-600 border border-gray-200 hover:border-blue-200 hover:text-blue-600"
+                  }`}
               >
                 <span>All Courses</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeCategory === 'all' ? 'bg-white/20' : 'bg-gray-100'}`}>
@@ -199,11 +207,10 @@ export function CoursesPage() {
                 <button
                   key={cat.id}
                   onClick={() => setActiveCategory(cat.id)}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                    activeCategory === cat.id
-                      ? "bg-blue-600 text-white shadow-md shadow-blue-100"
-                      : "bg-white text-gray-600 border border-gray-200 hover:border-blue-200 hover:text-blue-600"
-                  }`}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${activeCategory === cat.id
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-100"
+                    : "bg-white text-gray-600 border border-gray-200 hover:border-blue-200 hover:text-blue-600"
+                    }`}
                 >
                   <span>{cat.name}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeCategory === cat.id ? 'bg-white/20' : 'bg-gray-100'}`}>
@@ -238,81 +245,81 @@ export function CoursesPage() {
               onMouseLeave={() => setHoveredCourse(null)}
             >
               <CardContent className="p-0 h-full flex flex-col">
-              <div className="relative">
-                <img
-                  src={getImageUrl(course.thumbnail)}
-                  alt={course.title}
-                  className="w-full h-60 object-cover"
-                />
-                {hoveredCourse === course.id && (
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2">
-                    <button
-                      onClick={() => navigate(`/admin/courses/builder/${course.id}`)}
-                      className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium cursor-pointer"
-                    >
-                      <Layers className="w-4 h-4" />
-                      {course.is_published ? 
-                      (
-                        <>
-                           Edit <span className="hidden sm:block"> Course </span> Content
-                        </>
-                      )
-                       : "Build Course"}
-                    </button>
-                    <button
-                      onClick={() => handleEditCourse(course)}
-                      className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                    >
-                      <Edit2 className="w-4 h-4 text-gray-700" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteConfirm(course.id)}
-                      className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-5">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  {course.title}
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">{course.admin}</p>
-
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                    <FileText className="w-4 h-4" />
-                    <span>{course.modules_count || 0} Modules</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                    <Users className="w-4 h-4" />
-                    <span>{course.enrolled_students_count || 0} enrolled</span>
-                  </div>
+                <div className="relative">
+                  <img
+                    src={getImageUrl(course.thumbnail)}
+                    alt={course.title}
+                    className="w-full h-60 object-cover"
+                  />
+                  {hoveredCourse === course.id && (canEditCourse || canDeleteCourse) && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2">
+                      {canEditCourse && (
+                        <button
+                          onClick={() => navigate(`/admin/courses/builder/${course.id}`)}
+                          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium cursor-pointer"
+                        >
+                          <Layers className="w-4 h-4" />
+                          {course.is_published ? (
+                            <>Edit <span className="hidden sm:block"> Course </span> Content</>
+                          ) : "Build Course"}
+                        </button>
+                      )}
+                      {canEditCourse && (
+                        <button
+                          onClick={() => handleEditCourse(course)}
+                          className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                        >
+                          <Edit2 className="w-4 h-4 text-gray-700" />
+                        </button>
+                      )}
+                      {canDeleteCourse && (
+                        <button
+                          onClick={() => setDeleteConfirm(course.id)}
+                          className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                <button
-                  onClick={() => handleTogglePublish(course)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                    course.is_published
+                <div className="p-5">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    {course.title}
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">{course.admin}</p>
+
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                      <FileText className="w-4 h-4" />
+                      <span>{course.modules_count || 0} Modules</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                      <Users className="w-4 h-4" />
+                      <span>{course.enrolled_students_count || 0} enrolled</span>
+                    </div>
+                  </div>
+
+                  <button
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full transition-colors ${course.is_published
                       ? "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
                       : "bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100"
-                  }`}
-                >
-                  {course.is_published ? (
-                    <>
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      Published
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="w-3.5 h-3.5" />
-                      Draft
-                    </>
-                  )}
-                </button>
-              </div>
+                      }`}
+                  >
+                    {course.is_published ? (
+                      <>
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Published
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-3.5 h-3.5" />
+                        Draft
+                      </>
+                    )}
+                  </button>
+                </div>
               </CardContent>
             </Card>
           ))}

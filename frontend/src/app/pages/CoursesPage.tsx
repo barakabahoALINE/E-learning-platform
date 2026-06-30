@@ -33,7 +33,6 @@ import { getMediaUrl } from "../utils/media";
 export const CoursesPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const { courses, categories, levels, isLoading } = useAppSelector((state) => state.courses);
-  
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
@@ -74,7 +73,8 @@ export const CoursesPage: React.FC = () => {
       course.description.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesCategory = !selectedCategory || Number(course.category_id) === selectedCategory;
-    const matchesLevel = selectedLevels.length === 0 || (course.level_id !== undefined && course.level_id !== null && selectedLevels.includes(Number(course.level_id)));
+    const courseLevelId = course.level || levels.find(l => l.name === course.level)?.id;
+    const matchesLevel = selectedLevels.length === 0 || (courseLevelId !== undefined && courseLevelId !== null && selectedLevels.includes(Number(courseLevelId)));
 
     const isFree = Number(course.price) === 0;
     const matchesPrice =
@@ -219,22 +219,22 @@ export const CoursesPage: React.FC = () => {
         <div className="flex flex-col md:flex-row gap-6">
           {/* Filters Sidebar (Desktop) */}
           <div className={`${showFilters ? 'hidden md:block' : 'hidden'} w-64 flex-shrink-0`}>
-             <Card className="sticky top-20 border-none bg-gray-50/50 shadow-none">
-                <CardContent className="p-0">
-                  <FilterSections
-                    categories={categories}
-                    selectedCategory={selectedCategory}
-                    toggleCategory={toggleCategory}
-                    levels={levels}
-                    selectedLevels={selectedLevels}
-                    toggleLevel={toggleLevel}
-                    priceFilter={priceFilter}
-                    setPriceFilter={setPriceFilter}
-                    activeFiltersCount={activeFiltersCount}
-                    clearFilters={clearFilters}
-                  />
-                </CardContent>
-             </Card>
+            <Card className="sticky top-20 border-none bg-gray-50/50 shadow-none">
+              <CardContent className="p-0">
+                <FilterSections
+                  categories={categories}
+                  selectedCategory={selectedCategory}
+                  toggleCategory={toggleCategory}
+                  levels={levels}
+                  selectedLevels={selectedLevels}
+                  toggleLevel={toggleLevel}
+                  priceFilter={priceFilter}
+                  setPriceFilter={setPriceFilter}
+                  activeFiltersCount={activeFiltersCount}
+                  clearFilters={clearFilters}
+                />
+              </CardContent>
+            </Card>
           </div>
 
           {/* Course Grid */}
@@ -251,95 +251,95 @@ export const CoursesPage: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {sortedCourses.map((course) => (
-                <Link key={course.id} to={`/course/${course.id}`}>
-                  <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
-                    <CardContent className="p-0">
-                      <div className="relative">
-                        <img
-                          src={getMediaUrl(course.thumbnail)}
-                          alt={course.title}
-                          className="w-full h-48 object-cover rounded-t-lg"
-                        />
-                        {Number(course.price) === 0 && (
-                          <Badge className="absolute top-3 right-3 bg-green-600">
-                            Free
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        <Badge variant="secondary" className="mb-2">
-                          {categories.find(c => c.id === course.category_id)?.name || "Uncategorized"}
-                        </Badge>
-                        <h3 className="font-medium mb-2 line-clamp-2">
-                          {course.title}
-                        </h3>
-                        <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                          {course.description}
-                        </p>
-
-                        <div className="flex items-center space-x-2 mb-3">
-                          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold">
-                            {course.admin ? course.admin.substring(0, 2).toUpperCase() : course.instructor ? course.instructor.substring(0, 2).toUpperCase() : "AD"}
-                          </div>
-                          <span className="text-sm text-gray-600">
-                            {course.admin || course.instructor || "Platform Instructor"}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between mb-3 text-sm text-gray-600">
-                          <div className="flex items-center">
-                            <Star className="w-4 h-4 text-yellow-500 mr-1 fill-yellow-500" />
-                            <span>{course?.rating || 0}</span>
-                          </div>
-                          <div className="flex items-center">
-                            <Users className="w-4 h-4 mr-1" />
-                            <span>
-                              {course.enrolled_students_count || 0}
-                            </span>
-                          </div>
-                          <div className="flex items-center">
-                            <Clock className="w-4 h-4 mr-1" />
-                            <span>{course.duration}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-3 border-t">
-                          <Badge variant="outline">
-                            {levels.find(l => l.id === course.level_id)?.name || "All Levels"}
-                          </Badge>
-                          <div className="font-medium">
-                            {Number(course.price) === 0 ? (
-                              <span className="text-green-600">Free</span>
-                            ) : (
-                              <span>Frw {Number(course.price).toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2
-                            })}</span>
+                  {sortedCourses.map((course) => (
+                    <Link key={course.id} to={`/course/${course.id}`}>
+                      <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
+                        <CardContent className="p-0">
+                          <div className="relative">
+                            <img
+                              src={getMediaUrl(course.thumbnail)}
+                              alt={course.title}
+                              className="w-full h-48 object-cover rounded-t-lg"
+                            />
+                            {Number(course.price) === 0 && (
+                              <Badge className="absolute top-3 right-3 bg-green-600">
+                                Free
+                              </Badge>
                             )}
                           </div>
-                        </div>
-                      </div>
+                          <div className="p-4">
+                            <Badge variant="secondary" className="mb-2">
+                              {categories.find(c => c.id === course.category_id)?.name || "Uncategorized"}
+                            </Badge>
+                            <h3 className="font-medium mb-2 line-clamp-2">
+                              {course.title}
+                            </h3>
+                            <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                              {course.description}
+                            </p>
+
+                            <div className="flex items-center space-x-2 mb-3">
+                              <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold">
+                                {course.admin ? course.admin.substring(0, 2).toUpperCase() : course.instructor ? course.instructor.substring(0, 2).toUpperCase() : "AD"}
+                              </div>
+                              <span className="text-sm text-gray-600">
+                                {course.admin || course.instructor || "Platform Instructor"}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between mb-3 text-sm text-gray-600">
+                              <div className="flex items-center">
+                                <Star className="w-4 h-4 text-yellow-500 mr-1 fill-yellow-500" />
+                                <span>{course?.rating || 0}</span>
+                              </div>
+                              <div className="flex items-center">
+                                <Users className="w-4 h-4 mr-1" />
+                                <span>
+                                  {course.enrolled_students_count || 0}
+                                </span>
+                              </div>
+                              <div className="flex items-center">
+                                <Clock className="w-4 h-4 mr-1" />
+                                <span>{course.duration}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-3 border-t">
+                              <Badge variant="outline">
+                                {typeof course.level === 'string' && isNaN(Number(course.level)) ? course.level : (levels.find(l => l.id === course.level)?.name || "All Levels")}
+                              </Badge>
+                              <div className="font-medium">
+                                {Number(course.price) === 0 ? (
+                                  <span className="text-green-600">Free</span>
+                                ) : (
+                                  <span>Frw {Number(course.price).toLocaleString('en-US', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                  })}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+
+                {sortedCourses.length === 0 && (
+                  <Card>
+                    <CardContent className="p-12 text-center">
+                      <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg mb-2">No courses found</h3>
+                      <p className="text-gray-600 mb-4">
+                        Try adjusting your filters or search terms
+                      </p>
+                      <Button onClick={clearFilters}>Clear filters</Button>
                     </CardContent>
                   </Card>
-                </Link>
-              ))}
-            </div>
-
-            {sortedCourses.length === 0 && (
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg mb-2">No courses found</h3>
-                  <p className="text-gray-600 mb-4">
-                    Try adjusting your filters or search terms
-                  </p>
-                  <Button onClick={clearFilters}>Clear filters</Button>
-                </CardContent>
-              </Card>
+                )}
+              </>
             )}
-            </>
-          )}
           </div>
         </div>
       </div>

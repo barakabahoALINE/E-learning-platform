@@ -15,6 +15,7 @@ from .serializers import (
     CreatePasswordSerializer,
     GroupPermissionsUpdateSerializer,
     GroupSerializer,
+    GroupUpdateSerializer,
     LoginSerializer,
     LogoutSerializer,
     PermissionSerializer,
@@ -29,7 +30,9 @@ from .serializers import (
     UserUpdateSerializer,
     validate_strong_password,
     get_password_validation_errors,
+    get_user_auth_payload,
 )
+from .services.rbac import sync_user_role_group
 from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.encoding import force_bytes, force_str
@@ -43,8 +46,56 @@ import json
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from .services.rbac import DEFAULT_ROLES
+from .models import RoleMetadata
 
 User = get_user_model()
+
+def check_permission_modification_allowed(request_user, target_role_name):
+    if request_user.is_superuser:
+        return True
+    
+    user_role = getattr(request_user, 'role', '').lower()
+    target_role = target_role_name.lower()
+    
+    if user_role == 'viewer':
+        return False
+        
+    if user_role == 'instructor':
+        # Instructor can only manage Student permissions
+        return target_role == 'student'
+        
+    if user_role == 'admin':
+        # Admin can manage Instructor, Viewer, Student
+        return target_role in ['instructor', 'viewer', 'student']
+        
+    return False
+
+def check_user_permission_modification_allowed(request_user, target_user):
+    if request_user.is_superuser:
+        return True
+        
+    user_role = getattr(request_user, 'role', '').lower()
+    target_role = getattr(target_user, 'role', '').lower()
+    
+    if user_role == 'viewer':
+        return False
+        
+    if user_role == 'instructor':
+        # Instructor can only manage Student
+        return target_role == 'student'
+        
+    if user_role == 'admin':
+        # Admin can manage Instructor, Viewer, Student within their own institution
+        if target_user.is_superuser:
+            return False
+        if target_role == 'admin':
+            return False
+        if getattr(target_user, 'institution', '') != getattr(request_user, 'institution', ''):
+            return False
+        return target_role in ['instructor', 'viewer', 'student']
+        
+    return False
+
 
 class StructuredResponseMixin:
     def handle_exception(self, exc):
@@ -222,8 +273,23 @@ class GoogleLoginAPIView(APIView):
                     "institution": "Google User",
                     "role": "student",
                     "is_verified": True,
+                    "is_active": True,
                 }
             )
+
+            if created:
+                sync_user_role_group(user)
+            else:
+                if not user.is_verified:
+                    user.is_verified = True
+                sync_user_role_group(user)
+                user.save(update_fields=["is_verified"])
+
+            if not user.is_active:
+                return Response({
+                    "success": False,
+                    "message": "Account is deactivated"
+                }, status=403)
 
             # GENERATE JWT
             refresh = RefreshToken.for_user(user)
@@ -234,13 +300,7 @@ class GoogleLoginAPIView(APIView):
                 "data": {
                     "access": str(refresh.access_token),
                     "refresh": str(refresh),
-                    "user": {
-                        "id": user.id,
-                        "email": user.email,
-                        "full_name": user.full_name,
-                        "role": user.role,
-                        "Permissions": user.get_all_permissions()
-                    }
+                    "user": get_user_auth_payload(user),
                 }
             })
 
@@ -395,14 +455,25 @@ def reset_password(request, uidb64, token):
         return JsonResponse({"error": errors}, status=400)
 
     user.set_password(password1)
+    if request.GET.get("mode") == "setup" or data.get("mode") == "setup":
+        user.is_verified = True
+        user.is_active = True
     user.save()
 
     return JsonResponse({"message": "Password has been reset successfully"})
 
 class UserListView(generics.ListAPIView):
-    queryset = User.objects.all()
     serializer_class = UserListSerializer
     permission_classes = [IsAuthenticated, CanViewUsers]
+
+    def get_queryset(self):
+        queryset = User.objects.all()
+        user = self.request.user
+        if user.is_superuser:
+            return queryset
+        if getattr(user, 'role', '') in ['admin', 'viewer'] or user.groups.filter(name__in=['Admin', 'Viewer']).exists():
+            return queryset
+        return queryset.filter(institution=user.institution)
     
 class UserUpdateView(generics.UpdateAPIView):
     queryset = User.objects.all()
@@ -469,6 +540,12 @@ class UserPermissionsUpdateView(APIView):
         except User.DoesNotExist:
             return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        if not check_user_permission_modification_allowed(request.user, user):
+            return Response(
+                {"detail": "You do not have permission to modify permissions for this user."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         serializer = UserPermissionUpdateSerializer(
             data=request.data,
             context={"user": user},
@@ -487,6 +564,12 @@ class UserGroupsUpdateView(APIView):
             user = User.objects.get(pk=user_id)
         except User.DoesNotExist:
             return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not check_user_permission_modification_allowed(request.user, user):
+            return Response(
+                {"detail": "You do not have permission to modify roles/groups for this user."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         serializer = UserGroupAssignSerializer(
             data=request.data,
@@ -508,6 +591,12 @@ class RolePermissionUpdateView(APIView):
             return Response(
                 {"detail": "Role not found."},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not check_permission_modification_allowed(request.user, group.name):
+            return Response(
+                {"detail": "You do not have permission to modify permissions for this role."},
+                status=status.HTTP_403_FORBIDDEN
             )
 
         serializer = GroupPermissionsUpdateSerializer(
@@ -536,12 +625,26 @@ class RoleListView(generics.ListAPIView):
 
 
 class PermissionListView(generics.ListAPIView):
-    queryset = Permission.objects.select_related("content_type").all().order_by(
-        "content_type__app_label",
-        "codename",
-    )
     serializer_class = PermissionSerializer
     permission_classes = [IsAuthenticated, CanViewPermissions]
+
+    def get_queryset(self):
+        return Permission.objects.select_related("content_type").filter(
+            content_type__app_label__endswith="_app"
+        ).order_by(
+            "content_type__app_label",
+            "codename",
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        unique_permissions = {}
+        for permission in queryset:
+            key = f"{permission.content_type.app_label}.{permission.codename}"
+            if key not in unique_permissions:
+                unique_permissions[key] = permission
+        serializer = self.get_serializer(list(unique_permissions.values()), many=True)
+        return Response(serializer.data)
 
 
 class RoleCreateView(APIView):
@@ -553,6 +656,7 @@ class RoleCreateView(APIView):
 
     def post(self, request):
         name = request.data.get("name")
+        description = request.data.get("description", "")
         perms = request.data.get("permissions", [])
 
         if not name:
@@ -564,6 +668,9 @@ class RoleCreateView(APIView):
             return Response({"detail": "Cannot create reserved role."}, status=403)
 
         group, created = Group.objects.get_or_create(name=name)
+        metadata, _ = RoleMetadata.objects.get_or_create(group=group)
+        metadata.description = description
+        metadata.save()
 
         # validate and attach permissions
         if perms:
@@ -594,12 +701,11 @@ class RoleDetailView(APIView):
         # Only superuser can rename or modify default roles
         from .services.rbac import DEFAULT_ROLES
         if group.name in DEFAULT_ROLES and not request.user.is_superuser:
-            # allow updating permissions but not renaming
-            perms = request.data.get("permissions")
-            if perms is None:
-                return Response({"detail": "Modifying reserved role requires superuser."}, status=403)
+            requested_name = request.data.get("name")
+            if requested_name and requested_name != group.name:
+                return Response({"detail": "Renaming reserved roles requires superuser."}, status=403)
 
-        serializer = GroupPermissionsUpdateSerializer(data=request.data, context={"group": group})
+        serializer = GroupUpdateSerializer(data=request.data, context={"group": group})
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
@@ -644,6 +750,12 @@ class RolePermissionAssignView(APIView):
             group = Group.objects.get(pk=role_id)
         except Group.DoesNotExist:
             return Response({"detail": "Role not found."}, status=404)
+
+        if not check_permission_modification_allowed(request.user, group.name):
+            return Response(
+                {"detail": "You do not have permission to modify permissions for this role."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         serializer = GroupPermissionsUpdateSerializer(data=request.data, context={"group": group})
         serializer.is_valid(raise_exception=True)

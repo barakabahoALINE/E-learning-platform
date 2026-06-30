@@ -101,11 +101,15 @@ class SectionSerializer(serializers.ModelSerializer):
     def get_contents(self, obj):
         contents = obj.contents.all()
         request = self.context.get('request')
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+        user = request.user if request else None
+        is_admin = user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
+        )
+        if not is_admin:
             contents = contents.filter(is_published=True)
-        else:
-            contents = list(contents)
-        return ContentDetailSerializer(contents, many=True, context=self.context).data
+        return ContentDetailSerializer(list(contents), many=True, context=self.context).data
 
     def validate(self, attrs):
         view = self.context.get("view")
@@ -197,18 +201,28 @@ class ModuleSerializer(serializers.ModelSerializer):
     def get_sections(self, obj):
         sections = obj.sections.all()
         request = self.context.get('request')
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+        user = request.user if request else None
+        is_admin = user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
+        )
+        if not is_admin:
             sections = sections.filter(is_published=True)
-        else:
-            sections = list(sections)
-        return SectionSerializer(sections, many=True, context=self.context).data
+        return SectionSerializer(list(sections), many=True, context=self.context).data
 
     def get_quiz(self, obj):
         from assessments_app.models import Assessment
         from assessments_app.serializers import AssessmentDetailSerializer
         quizzes = Assessment.objects.filter(module=obj, assessment_type="QUIZ")
         request = self.context.get('request')
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+        user = request.user if request else None
+        is_admin = user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
+        )
+        if not is_admin:
             quizzes = quizzes.filter(is_published=True)
         quiz = quizzes.first()
         if quiz:
@@ -368,6 +382,7 @@ class CourseListSerializer(serializers.ModelSerializer):
     admin = serializers.CharField(source="created_by.username", read_only=True)
     modules_count = serializers.SerializerMethodField()
     enrolled_students_count = serializers.IntegerField(read_only=True)
+    rating = serializers.FloatField(read_only=True)
 
     class Meta:
         model = Course
@@ -386,6 +401,7 @@ class CourseListSerializer(serializers.ModelSerializer):
             "admin",
             "modules_count",
             "enrolled_students_count",
+            "rating",
             "created_at",
             "updated_at",
         ]
@@ -423,31 +439,42 @@ class CourseListSerializer(serializers.ModelSerializer):
 class CourseDetailSerializer(serializers.ModelSerializer):
     modules = serializers.SerializerMethodField()
     final_assessment = serializers.SerializerMethodField()
+    enrolled_students_count = serializers.IntegerField(read_only=True)
+    rating = serializers.FloatField(read_only=True)
 
     category = serializers.CharField(source="category.name", read_only=True)
     level = serializers.CharField(source="level.name", read_only=True)
-
-    def get_modules(self, obj):
-        modules = obj.modules.all()
-        request = self.context.get('request')
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
-            modules = modules.filter(is_published=True)
-        else:
-            modules = list(modules)
-        return ModuleSerializer(modules, many=True, context=self.context).data
 
     def get_final_assessment(self, obj):
         from assessments_app.models import Assessment
         from assessments_app.serializers import AssessmentDetailSerializer
         finals = Assessment.objects.filter(course=obj, assessment_type="FINAL")
         request = self.context.get('request')
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
+        user = request.user if request else None
+        is_admin = user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
+        )
+        if not is_admin:
             finals = finals.filter(is_published=True)
         final = finals.first()
         if final:
             return AssessmentDetailSerializer(final).data
-        
         return obj.final_assessment if obj.final_assessment else None
+
+    def get_modules(self, obj):
+        modules = obj.modules.all()
+        request = self.context.get('request')
+        user = request.user if request else None
+        is_admin = user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
+        )
+        if not is_admin:
+            modules = modules.filter(is_published=True)
+        return ModuleSerializer(list(modules), many=True, context=self.context).data
 
     class Meta:
         model = Course
@@ -458,20 +485,11 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request and not (
-            request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
+            request.user.is_superuser or request.user.groups.filter(name__in=["Admin", "Instructor"]).exists()
         ):
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
         return data
-
-    def get_modules(self, obj):
-        modules = obj.modules.all()
-        request = self.context.get('request')
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
-            modules = modules.filter(is_published=True)
-        else:
-            modules = list(modules)
-        return ModuleSerializer(modules, many=True, context=self.context ).data
 
 # Level / Category
 
