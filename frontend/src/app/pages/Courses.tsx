@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Plus, Search, Filter, Users, FileText, Edit2, Trash2, Layers, CheckCircle, XCircle } from "lucide-react";
+import { Plus, Search, Filter, Users, FileText, Edit2, Trash2, Layers, CheckCircle, XCircle, UserPlus } from "lucide-react";
 import { CourseCreationModal } from "../components/courses/CourseCreationModal";
+import { CourseLearnerEnrollmentModal } from "../components/courses/CourseLearnerEnrollmentModal";
 import StatusModal from "../components/ui/StatusModal";
 import DeleteModal from "../components/ui/DeleteModal";
 import { toast } from "sonner";
@@ -26,6 +27,7 @@ export function CoursesPage() {
   const canCreateCourse = hasPermission(user, 'courses_app.add_course');
   const canEditCourse = hasPermission(user, 'courses_app.change_course');
   const canDeleteCourse = hasPermission(user, 'courses_app.delete_course');
+  const canEnrollLearners = hasPermission(user, 'enrollments_app.add_enrollment') || isInstructor;
 
   const getImageUrl = (url: string | null) => {
     if (!url) return "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80";
@@ -37,6 +39,7 @@ export function CoursesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hoveredCourse, setHoveredCourse] = useState<number | string | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [enrollmentCourse, setEnrollmentCourse] = useState<Course | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
@@ -81,10 +84,13 @@ export function CoursesPage() {
     setActiveCategory("all");
   };
 
-  const handleSaveCourse = () => {
+  const handleSaveCourse = (savedCourse?: Course) => {
     setIsModalOpen(false);
     setEditingCourse(null);
     dispatch(fetchCourses(!isInstructor));
+    if (!editingCourse && savedCourse?.id && savedCourse.is_published && canEnrollLearners) {
+      setEnrollmentCourse(savedCourse);
+    }
   };
 
   const handleEditCourse = (course: Course) => {
@@ -252,16 +258,14 @@ export function CoursesPage() {
                     className="w-full h-60 object-cover"
                   />
                   {hoveredCourse === course.id && (canEditCourse || canDeleteCourse) && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2">
+                    <div className="absolute inset-0 bg-black/50 flex flex-col sm:flex-row items-center justify-center gap-2">
                       {canEditCourse && (
                         <button
                           onClick={() => navigate(`/admin/courses/builder/${course.id}`)}
-                          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium cursor-pointer"
+                          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium cursor-pointer w-full sm:w-auto justify-center"
                         >
                           <Layers className="w-4 h-4" />
-                          {course.is_published ? (
-                            <>Edit <span className="hidden sm:block"> Course </span> Content</>
-                          ) : "Build Course"}
+                          {course.is_published ? (<>Edit <span className="hidden sm:inline"> Course </span> Content</>) : "Build Course"}
                         </button>
                       )}
                       {canEditCourse && (
@@ -278,6 +282,17 @@ export function CoursesPage() {
                           className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4 text-red-600" />
+                        </button>
+                      )}
+                      {canEnrollLearners && course.is_published && (
+                        <button
+                          onClick={() => {
+                            setEnrollmentCourse(course);
+                            setHoveredCourse(null);
+                          }}
+                          className="flex items-center gap-2 px-3 py-2 bg-white text-gray-800 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium cursor-pointer"
+                        >
+                          <UserPlus className="w-4 h-4 text-blue-600" />
                         </button>
                       )}
                     </div>
@@ -345,6 +360,13 @@ export function CoursesPage() {
         onClose={handleCloseModal}
         onSave={handleSaveCourse}
         editCourse={editingCourse}
+      />
+
+      <CourseLearnerEnrollmentModal
+        isOpen={enrollmentCourse !== null}
+        course={enrollmentCourse}
+        onClose={() => setEnrollmentCourse(null)}
+        onEnrolled={() => dispatch(fetchCourses(!isInstructor))}
       />
 
       {status && (

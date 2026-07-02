@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, ExternalLink } from 'lucide-react';
+import { AlertCircle, FileText, ExternalLink } from 'lucide-react';
 import { Button } from '../ui/button';
 
 interface ContentBlock {
@@ -10,55 +10,103 @@ interface ContentBlock {
 
 interface ContentBlockRendererProps {
   blocks: ContentBlock[];
+  onVideoWatchedToEnd?: (blockId: string | number) => void;
 }
 
 const getFileExtension = (url: string): string =>
   url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
 
-const getEmbeddableVideoUrl = (rawUrl: string): string | null => {
-  try {
-    const url = new URL(rawUrl);
-    const hostname = url.hostname.replace(/^www\./, "");
-
-    if (hostname === "youtu.be") {
-      const videoId = url.pathname.split("/").filter(Boolean)[0];
-      return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
-    }
-
-    if (hostname === "youtube.com" || hostname === "m.youtube.com") {
-      let videoId = "";
-
-      if (url.pathname.startsWith("/watch")) {
-        videoId = url.searchParams.get("v") || "";
-      } else if (url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/embed/")) {
-        videoId = url.pathname.split("/").filter(Boolean)[1] || "";
-      }
-
-      return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
-    }
-
-    if (hostname === "vimeo.com") {
-      const videoId = url.pathname.split("/").filter(Boolean)[0];
-      return videoId ? `https://player.vimeo.com/video/${videoId}` : null;
-    }
-
-    if (hostname === "player.vimeo.com") {
-      return rawUrl;
-    }
-
-    return rawUrl;
-  } catch {
-    return null;
-  }
+const isVideoFile = (url: string) => {
+  const cleanedUrl = url.split("?")[0].toLowerCase();
+  const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
+  return (
+    url.startsWith("blob:") ||
+    url.startsWith("data:video/") ||
+    videoExtensions.some(ext => cleanedUrl.endsWith(ext)) ||
+    cleanedUrl.includes('/media/course_media/') ||
+    cleanedUrl.includes('/media/')
+  );
 };
 
-export const ContentBlockRenderer: React.FC<ContentBlockRendererProps> = ({ blocks }) => {
-  if (!blocks || !Array.isArray(blocks)) return null;
+const TrackableVideo = ({
+  block,
+  onWatchedToEnd,
+}: {
+  block: ContentBlock;
+  onWatchedToEnd?: (blockId: string | number) => void;
+}) => {
+  const watchStateRef = React.useRef({
+    hasPlayed: false,
+    hasReported: false,
+    lastTime: 0,
+    watchedSeconds: 0,
+  });
 
-  const isVideoFile = (url: string) => {
-    const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
-    return videoExtensions.some(ext => url.toLowerCase().endsWith(ext)) || url.toLowerCase().includes('/media/course_media/');
+  React.useEffect(() => {
+    watchStateRef.current = {
+      hasPlayed: false,
+      hasReported: false,
+      lastTime: 0,
+      watchedSeconds: 0,
+    };
+  }, [block.content]);
+
+  const handlePlay = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    watchStateRef.current.hasPlayed = true;
+    watchStateRef.current.lastTime = event.currentTarget.currentTime;
   };
+
+  const handleTimeUpdate = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget;
+    const state = watchStateRef.current;
+    if (!state.hasPlayed || video.paused || video.seeking) {
+      state.lastTime = video.currentTime;
+      return;
+    }
+
+    const elapsed = video.currentTime - state.lastTime;
+    if (elapsed > 0 && elapsed <= 2.5) {
+      state.watchedSeconds += elapsed;
+    }
+    state.lastTime = video.currentTime;
+  };
+
+  const handleSeekBoundary = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    watchStateRef.current.lastTime = event.currentTarget.currentTime;
+  };
+
+  const handleEnded = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget;
+    const state = watchStateRef.current;
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    const requiredWatchSeconds = duration > 0 ? duration * 0.95 : 0;
+    const watchedEnough = duration === 0 || state.watchedSeconds >= requiredWatchSeconds;
+
+    if (state.hasPlayed && watchedEnough && !state.hasReported) {
+      state.hasReported = true;
+      onWatchedToEnd?.(block.id);
+    }
+  };
+
+  return (
+    <video
+      src={block.content}
+      controls
+      className="w-full h-full"
+      playsInline
+      onPlay={handlePlay}
+      onTimeUpdate={handleTimeUpdate}
+      onSeeking={handleSeekBoundary}
+      onSeeked={handleSeekBoundary}
+      onEnded={handleEnded}
+    >
+      Your browser does not support the video tag.
+    </video>
+  );
+};
+
+export const ContentBlockRenderer: React.FC<ContentBlockRendererProps> = ({ blocks, onVideoWatchedToEnd }) => {
+  if (!blocks || !Array.isArray(blocks)) return null;
 
   return (
     <div className="space-y-8">
@@ -74,30 +122,16 @@ export const ContentBlockRenderer: React.FC<ContentBlockRendererProps> = ({ bloc
             );
 
           case 'video':
-            const embedUrl = getEmbeddableVideoUrl(block.content);
             return (
               <div key={block.id} className="rounded-2xl overflow-hidden bg-black aspect-video shadow-2xl border border-gray-800">
                 {isVideoFile(block.content) ? (
-                  <video
-                    src={block.content}
-                    controls
-                    className="w-full h-full"
-                    playsInline
-                  >
-                    Your browser does not support the video tag.
-                  </video>
-                ) : embedUrl ? (
-                  <iframe
-                    src={embedUrl}
-                    title="Video Content"
-                    className="w-full h-full border-0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    referrerPolicy="strict-origin-when-cross-origin"
-                    allowFullScreen
-                  />
+                  <TrackableVideo block={block} onWatchedToEnd={onVideoWatchedToEnd} />
                 ) : (
-                  <div className="flex h-full items-center justify-center p-6 text-center text-gray-400">
-                    This video link cannot be embedded. Please check the video URL.
+                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-gray-300">
+                    <AlertCircle className="h-8 w-8 text-amber-400" />
+                    <p className="max-w-md text-sm">
+                      Uploaded video files are required for completion tracking. Ask the instructor to replace this video link with an uploaded video file.
+                    </p>
                   </div>
                 )}
               </div>

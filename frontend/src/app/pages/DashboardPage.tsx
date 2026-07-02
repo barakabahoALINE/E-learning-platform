@@ -29,7 +29,7 @@ import { fetchCourses, fetchCategories } from "../../features/courses/courseSlic
 import { getMediaUrl } from "../utils/media";
 import {
   fetchCourseProgress,
-  fetchLearningHoursKPI,  fetchLearningActivityKPI,  fetchCoursesKPI,
+  fetchLearningHoursKPI, fetchLearningActivityKPI, fetchCoursesKPI,
   fetchCompletionRateKPI,
   continueLearning,
   fetchCourseSectionsProgress,

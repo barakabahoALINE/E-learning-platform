@@ -12,6 +12,7 @@ interface StatusModalProps {
   confirmLabel?: string;
   showConfirmButton?: boolean;
   showCloseButton?: boolean;
+  closeOnOutsideClick?: boolean;
 }
 
 const config = {
@@ -69,6 +70,7 @@ export default function StatusModal({
   confirmLabel = "Continue",
   showConfirmButton = true,
   showCloseButton = true,
+  closeOnOutsideClick = true,
 }: StatusModalProps) {
   const cfg = config[type] || config.info;
   const Icon = cfg.icon;
@@ -86,7 +88,7 @@ export default function StatusModal({
     if (!isOpen) return;
 
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && closeOnOutsideClick) onClose();
     };
 
     window.addEventListener("keydown", handleKey);
@@ -111,7 +113,7 @@ export default function StatusModal({
   return (
     <div
       ref={overlayRef}
-      onClick={(e) => e.target === overlayRef.current && onClose()}
+      onClick={(e) => e.target === overlayRef.current && closeOnOutsideClick && onClose()}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 animate-in fade-in duration-200"
     >
       <div className="w-full max-w-sm rounded-2xl overflow-hidden bg-white shadow-xl animate-in slide-in-from-bottom-3 duration-200">

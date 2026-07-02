@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, MoreVertical, Search, Trash2, Edit, Eye, Mail, BookOpen, Shield, Plus, AlertTriangle } from "lucide-react";
+import { Loader2, MoreVertical, Search, Trash2, Edit, Eye, Mail, BookOpen, Shield, AlertTriangle } from "lucide-react";
 import api from "../../services/api";
 import { toast } from "sonner";
-import { AddLearnerModal } from "../components/learners/AddLearnerModal";
 import { EditLearnerModal } from "../components/learners/EditLearnerModal";
 import { useAppSelector } from "../../hooks/reduxHooks";
 import { selectRBACUsers } from "../../features/rbac/rbacSelectors";
@@ -83,14 +82,12 @@ export function LearnersPage() {
   const [enrollments, setEnrollments] = useState<ApiEnrollment[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [viewLearnerId, setViewLearnerId] = useState<number | null>(null);
   const [editLearnerId, setEditLearnerId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   // Instructor sees only students enrolled in their own courses.
   const isInstructor = currentUser?.role === 'instructor' || currentUser?.groups?.includes('Instructor');
-  const canAddLearner = hasPermission(currentUser, 'users_app.add_user');
   const canManageLearner = hasPermission(currentUser, 'users_app.change_user');
   const canDeleteLearner = hasPermission(currentUser, 'users_app.delete_user');
 
@@ -229,27 +226,6 @@ export function LearnersPage() {
     }
   };
 
-  const handleAddLearner = async (learner: {
-    full_name: string;
-    email: string;
-    institution: string;
-    password: string;
-  }) => {
-    setIsSaving(true);
-    try {
-      await api.post("auth/signup/", learner);
-      toast.success("Learner added. They may need to verify their email before logging in.");
-      setIsAddModalOpen(false);
-      await loadLearners();
-    } catch (error: any) {
-      const detail = error.response?.data?.message || error.response?.data?.error || error.response?.data;
-      toast.error(typeof detail === "string" ? detail : "Failed to add learner.");
-      throw error;
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleEditSave = async (id: number, updates: any) => {
     const learnerToUpdate = users.find(u => u.id === id);
     if (!learnerToUpdate) return;
@@ -299,17 +275,8 @@ export function LearnersPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Learners</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage and monitor all learners</p>
+          <p className="text-sm text-gray-500 mt-1">Monitor learner accounts and course enrollments</p>
         </div>
-        {canAddLearner && (
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Add Learner
-          </button>
-        )}
       </div>
 
       <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-lg transition-shadow">
@@ -499,12 +466,6 @@ export function LearnersPage() {
         onSave={handleEditSave}
       />
 
-      <AddLearnerModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAdd={handleAddLearner}
-        isSaving={isSaving}
-      />
     </div>
   );
 }

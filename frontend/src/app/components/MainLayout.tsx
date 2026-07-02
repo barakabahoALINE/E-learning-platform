@@ -129,6 +129,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium">{displayName}</p>
                       <p className="text-xs text-gray-500">{user?.email}</p>
+                      {user?.role && <p className="text-xs text-gray-400">{user.role}</p>}
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />

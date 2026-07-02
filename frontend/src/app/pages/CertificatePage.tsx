@@ -9,8 +9,8 @@ import { claimCertificate, resetCertificateState } from '../../features/certific
 import { fetchCourseDetails, fetchCourses, fetchCategories, fetchLevels } from '../../features/courses/courseSlice';
 import { fetchMyEnrollments } from '../../features/enrollments/enrollmentSlice';
 import certificateAPI from '../../features/certificates/certificateAPI';
-import { toast } from 'sonner';
 import { Course } from '../../features/courses/types';
+import { toast } from 'sonner';
 
 export const CertificatePage: React.FC = () => {
   const { courseId } = useParams();
@@ -44,7 +44,7 @@ export const CertificatePage: React.FC = () => {
 
   useEffect(() => {
     if (certificateExists === false && eligible === true) {
-      navigate(`/course-feedback/${courseId}`);
+      navigate(`/course-feedback/${courseId}`, { replace: true });
     }
   }, [certificateExists, eligible, courseId, navigate]);
 
@@ -167,7 +167,9 @@ export const CertificatePage: React.FC = () => {
     : (course?.modules || []).map((m: any) => m?.title || m?.name || '').filter(Boolean).slice(0, 6);
 
   const lessonsCompleted = (course.modules || []).reduce((count: number, m: any) => count + (m.sections?.length ?? 0), 0) || course.modules_count || 0;
-  const completionRate = certificate?.percentage !== undefined ? `${Math.round(certificate.percentage)}%` : '100%';
+  const enrolledCount = myEnrollments?.length ?? 0;
+  const completedCount = myEnrollments?.filter(e => e.status === 'completed').length ?? 0;
+  const completionRate = enrolledCount > 0 ? Math.round((completedCount / enrolledCount) * 100) : 0;
   const finalPercentage = certificate?.percentage !== undefined ? `${Math.round(certificate.percentage)}%` : '';
   const currentCategoryId = (() => {
     if (!course) return undefined;
@@ -267,7 +269,7 @@ export const CertificatePage: React.FC = () => {
               <CardContent className="p-6">
                 <h3 className="font-medium mb-4 flex items-center"><Star className="mr-2 h-5 w-5 text-yellow-500" /> Your Achievement</h3>
                 <div className="space-y-4 text-sm text-gray-700">
-                  <div className="flex items-center justify-between"><span className="text-sm text-gray-600">Completion Rate</span><Badge className="bg-green-600">{completionRate}</Badge></div>
+                  <div className="flex items-center justify-between"><span className="text-sm text-gray-600">Completion Rate</span><Badge className="bg-green-600">{completionRate}%</Badge></div>
                   <div className="flex items-center justify-between"><span className="text-sm text-gray-600">Lessons Completed</span><span className="font-medium">{lessonsCompleted}</span></div>
                   <div className="flex items-center justify-between"><span className="text-sm text-gray-600">Final Percentage</span><span className="font-medium">{finalPercentage}</span></div>
                 </div>

@@ -52,6 +52,7 @@ export const INSTRUCTOR_FALLBACK_PERMISSIONS = [
   "courses_app.delete_course",
   "courses_app.publish_course",
   "enrollments_app.view_enrollment",
+  "enrollments_app.add_enrollment",
   "assessments_app.view_assessment",
   "assessments_app.add_assessment",
   "assessments_app.change_assessment",

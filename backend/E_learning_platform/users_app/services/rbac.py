@@ -49,6 +49,7 @@ ADMIN_PERMISSIONS = [
     "users_app.view_analytics",
     # Course management (institution-scoped)
     "courses_app.view_course",
+    "courses_app.view_published_course",
     "courses_app.add_course",
     "courses_app.change_course",
     "courses_app.delete_course",

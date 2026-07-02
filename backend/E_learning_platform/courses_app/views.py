@@ -43,6 +43,12 @@ def _is_admin_user(user):
         user.role in ["admin", "instructor"]
     )
 
+def _is_instructor_user(user):
+    return user.is_authenticated and (
+        getattr(user, "role", "") == "instructor" or
+        user.groups.filter(name="Instructor").exists()
+    )
+
 def _is_unrestricted_user(user):
     return user.is_authenticated and (
         user.is_superuser or
@@ -84,6 +90,9 @@ class CourseListAPIView(generics.ListAPIView):
             if _is_unrestricted_user(user):
                 return queryset.distinct()
 
+            if _is_instructor_user(user):
+                return queryset.filter(created_by=user).distinct()
+
             if _is_admin_user(user):
                 return queryset.filter(
                     models.Q(created_by__institution=user.institution) |
@@ -91,9 +100,7 @@ class CourseListAPIView(generics.ListAPIView):
                     models.Q(created_by__institution__isnull=True)
                 ).distinct()
 
-            # Use institution‑scoped queryset for instructors/viewers
-            # Super‑admin bypass handled earlier
-            return _same_institution_queryset(queryset.filter(is_published=True), user)
+            return queryset.filter(is_published=True).distinct()
 
 
         return queryset.filter(is_published=True).distinct()
@@ -130,7 +137,7 @@ class CourseCreateAPIView(generics.CreateAPIView):
 
 class CourseRetrieveAPIView(generics.RetrieveAPIView):
     serializer_class = CourseDetailSerializer
-    permission_classes = [IsAuthenticated, CanViewCourses]
+    permission_classes = [IsAuthenticated, CanViewPublishedCourse]
     queryset = Course.objects.select_related("category", "level", "created_by").annotate(
         enrolled_students_count=models.Count("enrollments", distinct=True),
         rating=models.Avg("certificate_feedback__overall_rating"),
@@ -139,14 +146,13 @@ class CourseRetrieveAPIView(generics.RetrieveAPIView):
     def get_object(self):
         course = super().get_object()
         if course.is_published:
-            request_user = self.request.user
-            if request_user.is_authenticated and not request_user.is_superuser:
-                if course.created_by and course.created_by.institution != request_user.institution:
-                    raise PermissionDenied("Course is not available for your institution.")
             return course
 
         user = self.request.user
-        if user.is_authenticated and _is_admin_user(user) and course.created_by and course.created_by.institution == user.institution:
+        if user.is_authenticated and (
+            _is_unrestricted_user(user) or
+            (_is_instructor_user(user) and course.created_by_id == user.id)
+        ):
             return course
         raise PermissionDenied("Course is not published.")
 

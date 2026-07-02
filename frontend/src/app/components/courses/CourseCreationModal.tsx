@@ -9,7 +9,7 @@ import { selectCourseCategories, selectCourseLevels } from "../../../features/co
 interface CourseCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (savedCourse?: Course) => void;
   editCourse?: Course | null;
 }
 
@@ -185,7 +185,7 @@ export function CourseCreationModal({
       setStatus({ type: "success", message: response.message || "Operation successful!" });
 
       setTimeout(() => {
-        onSave();
+        onSave(response.data || response);
         onClose();
       }, 3000);
     } catch (error: any) {
