@@ -1,0 +1,345 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Certificate of Completion</title>
+    <style>
+      @page { size: 842px 595px; margin: 0; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 0; background: #f5f2ec; }
+
+      .page {
+        position: relative;
+        width: 842px;
+        height: 595px;
+        margin: 12px auto;
+        padding: 0;
+        background: #fff;
+        font-family: 'Georgia', 'Times New Roman', serif;
+        color: #1a1a1a;
+      }
+
+      /* Thin gold outer border, with more breathing room from page edge */
+      .gold-border {
+        position: absolute;
+        top: 42px; left: 42px; right: 42px; bottom: 42px;
+        border: 3px solid #c98f1f;
+      }
+
+      /* Top-right L-shaped blue block: bleeds from the border out toward the page edge */
+      .block-blue-tr-h {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        width: 412px;
+        height: 35px;
+        background: #1e4d9b;
+      }
+      .block-blue-tr-v {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        width: 35px;
+        height: 415px;
+        background: #1e4d9b;
+      }
+      /* Gold right-angle accent, drawn on top of the blue block */
+      .block-gold-tr {
+        position: absolute;
+        top: 95px;
+        right: 95px;
+        width: 240px;
+        height: 110px;
+        border-top: 12px solid #c98f1f;
+        border-right: 12px solid #c98f1f;
+      }
+
+      /* Bottom-left L-shaped blue block: bleeds from the border out toward the page edge */
+      .block-blue-bl-v {
+        position: absolute;
+        bottom: 15px;
+        left: 15px;
+        width: 35px;
+        height: 415px;
+        background: #1e4d9b;
+      }
+      .block-blue-bl-h {
+        position: absolute;
+        bottom: 15px;
+        left: 15px;
+        width: 412px;
+        height: 35px;
+        background: #1e4d9b;
+      }
+        
+      .block-gold-bl {
+        position: absolute;
+        bottom: 95px;
+        left: 95px;
+        width: 240px;
+        height: 110px;
+        border-bottom: 10px solid #c98f1f;
+        border-left: 10px solid #c98f1f;
+      }
+
+      .content {
+        position: absolute;
+        top: 50px; left: 50px; right: 50px; bottom: 50px;
+      }
+
+      .logo-block {
+        position: absolute;
+        top: 0px;
+        left: 23px;
+      }
+      .logo-block img {
+        width: 80px;
+        display: block;
+      }
+
+      .header {
+        position: absolute;
+        top: 88px;
+        left: 20px;
+        right: 40px;
+      }
+      .main-title {
+        margin: 7;
+        font-family: 'Helvetica', Arial, sans-serif;
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        color: #111;
+        text-align: center;
+      }
+      .body-text {
+        position: absolute;
+        top: 160px;
+        left: 40px;
+        right: 40px;
+        text-align: center;
+      }
+      .subtitle {
+        margin:0;
+        font-family: 'Helvetica', Arial, sans-serif;
+        font-size: 12px;
+        color: #444;
+        text-transform: uppercase;
+        letter-spacing: 0.35em;
+      }
+      .learner-name {
+        margin: 18px 0 0;
+        font-size: 26px;
+        font-weight: 700;
+        color: #111;
+        font-family: 'Georgia', serif;
+      }
+      .body-label {
+        margin: 22px 0 0;
+        font-family: 'Helvetica', Arial, sans-serif;
+        font-size: 14px;
+        color: #444;
+      }
+      .course-name {
+        margin: 14px 0 0;
+        font-size: 26px;
+        font-weight: 700;
+        color: #111;
+        font-family: 'Georgia', serif;
+      }
+
+      .signatures {
+        position: absolute;
+        bottom: 80px;
+        left: 40px;
+        right: 40px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+      }
+      .signature-left {
+        width: 220px;
+        text-align: center;
+      }
+      .signature-right {
+        width: 220px;
+        text-align: center;
+      }
+      .signature-image {
+        min-height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .signature-image img {
+        max-height: 60px;
+        max-width: 180px;
+        object-fit: contain;
+      }
+      .signature-placeholder {
+        width: 180px;
+        height: 60px;
+        border-bottom: 1px dashed rgba(0, 0, 0, 0.18);
+      }
+      .signature-line {
+       width: 160px;
+        height: 1px;
+        background: #999;
+        margin: 8px auto 6px;
+      }
+      .signature-name {
+       margin: 0;
+        font-family: 'Georgia', serif;
+        font-size: 13px;
+        font-weight: bold;
+        color: #111;
+
+      }
+      .signature-title {
+        margin: 4px 0 0;
+        font-family: 'Helvetica', Arial, sans-serif;
+        font-size: 10px;
+        color: #555;
+        letter-spacing: 0.5px;
+
+      }
+
+      .seal-wrap {
+        position: absolute;
+        left: 50%;
+        bottom: 10px;
+        margin-left: -32px;
+        width: 64px;
+        height: 86px;
+
+      }
+      /* Ribbon tails behind the medal */
+      .seal-ribbon-left,
+      .seal-ribbon-right {
+        position: absolute;
+        bottom: 0;
+        width: 16px;
+        height: 34px;
+        background: #1e4d9b;
+      }
+      .seal-ribbon-left {
+        left: 10px;
+        transform: skewX(-12deg);
+      }
+      .seal-ribbon-right {
+         right: 10px;
+        transform: skewX(12deg);
+
+      }
+      /* Scalloped outer ring, simulated with a dashed double border */
+      .seal {
+        position: absolute;
+        top: 0;
+        left: 4px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 32%, #ffe39a 0%, #e8b339 45%, #c5871f 80%, #a96e16 100%);
+        border: 3px dashed #f3cf7a;
+        box-shadow: 0 0 0 3px #c5871f, 0 2px 4px rgba(0,0,0,0.25);
+      }
+      .seal-inner {
+        position: absolute;
+        top: 4px;
+        left: 8px;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(255,255,255,0.6);
+
+      }
+
+      .meta {
+        position: absolute;
+        bottom: 20px;
+        right: 40px;
+        text-align: right;
+        font-family: 'Helvetica', Arial, sans-serif;
+        font-size: 10px;
+        color: #333;
+        line-height: 1.6;
+
+      }
+      .meta strong { color: #111; }
+      @media print {
+        body { background: #fff; }
+        .page { margin: 0; box-shadow: none; }
+      }
+
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="gold-border"></div>
+      <div class="block-blue-tr-h"></div>
+      <div class="block-blue-tr-v"></div>
+      <div class="block-blue-bl-v"></div>
+      <div class="block-blue-bl-h"></div>
+      <div class="block-gold-tr"></div>
+      <div class="block-gold-bl"></div>
+
+      <div class="content">
+        <div class="logo-block">
+          <img src="{{ logo_url }}" alt="NISR logo" />
+        </div>
+
+        <div class="header">
+          <h1 class="main-title">CERTIFICATE OF COMPLETION</h1>
+        </div>
+
+        <div class="body-text">
+          <p class="subtitle">This certifies that</p>
+          <p class="learner-name">{{ learner_name }}</p>
+          <p class="body-label">has successfully completed</p>
+          <p class="course-name">{{ course_name }}</p>
+        </div>
+
+        <div class="signatures">
+          <div class="signature-left">
+            <div class="signature-image">
+              {% if director_signature_url %}
+                <img src="{{ director_signature_url }}" alt="Director signature" />
+              {% else %}
+                <div class="signature-placeholder"></div>
+              {% endif %}
+            </div>
+            <div class="signature-line"></div>
+            <p class="signature-name">Ivan MURENZI</p>
+            <p class="signature-title">DIRECTOR GENERAL</p>
+          </div>
+
+          <div class="seal-wrap">
+            <div class="seal-ribbon-left"></div>
+            <div class="seal-ribbon-right"></div>
+            <div class="seal"></div>
+            <div class="seal-inner"></div>
+          </div>
+
+          <div class="signature-right">
+            <div class="signature-image">
+              {% if manager_signature_url %}
+                <img src="{{ manager_signature_url }}" alt="Manager signature" />
+              {% else %}
+                <div class="signature-placeholder"></div>
+              {% endif %}
+            </div>
+            <div class="signature-line"></div>
+            <p class="signature-name">Michel R. NDAKIZE</p>
+            <p class="signature-title">TRAINING CENTER MANAGER</p>
+          </div>
+        </div>
+
+        <div class="meta">
+          <div>Issued on: <strong>{{ issue_date }}</strong></div>
+          <div>Certificate ID: <strong>{{ certificate_id }}</strong></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

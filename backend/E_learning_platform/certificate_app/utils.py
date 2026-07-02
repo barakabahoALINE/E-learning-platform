@@ -2,6 +2,8 @@ from datetime import datetime
 from io import BytesIO
 from django.core.files.base import ContentFile
 from django.utils import timezone
+from django.template.loader import render_to_string
+from django.conf import settings
 
 from enrollments_app.models import Enrollment
 from progress_app.models import CourseProgress
@@ -53,8 +55,6 @@ def build_plain_pdf_bytes(certificate):
         f"has successfully completed the course:",
         f"{certificate.course.title}",
         "",
-        f"Score: {certificate.score:.2f}",
-        f"Percentage: {certificate.percentage:.2f}%",
         f"Issued at: {certificate.issued_at.strftime('%B %d, %Y')}",
         f"Certificate number: {certificate.certificate_number}",
     ]
@@ -110,14 +110,54 @@ def build_plain_pdf_bytes(certificate):
     return pdf.getvalue()
 
 
-def generate_certificate_file(certificate):
+def generate_certificate_file(certificate, force=False):
     """
-    Generate and save the certificate PDF file if it doesn't already exist.
+    Generate and save the certificate PDF file.
+
+    Prefer rendering an HTML template to PDF using WeasyPrint when available.
+    Falls back to xhtml2pdf, and finally the plain PDF builder.
     """
-    if certificate.certificate_file:
+    if certificate.certificate_file and not force:
         return certificate.certificate_file.path
 
-    pdf_bytes = build_plain_pdf_bytes(certificate)
+    if certificate.certificate_file and force:
+        try:
+            certificate.certificate_file.delete(save=False)
+        except Exception:
+            pass
+
+    # Prepare context for template
+    import os
+    logo_path = os.path.join(settings.BASE_DIR, 'certificate_app', 'static', 'assets', 'nisr_logo.png')
+    signature_path = os.path.join(settings.BASE_DIR, 'certificate_app', 'templates', 'assets', 'Signature_transparent.png')
+    logo_url = f"file:///{logo_path.replace(chr(92), '/')}"
+    signature_url = f"file:///{signature_path.replace(chr(92), '/')}"
+    
+    context = {
+        "learner_name": certificate.student.full_name,
+        "course_name": certificate.course.title,
+        "certificate_id": certificate.certificate_number,
+        "issue_date": certificate.issued_at.strftime("%B %d, %Y") if getattr(certificate, "issued_at", None) else timezone.now().strftime("%B %d, %Y"),
+        "logo_url": logo_url,
+        "director_signature_url": signature_url,
+        "manager_signature_url": signature_url,
+    }
+
+    html_string = render_to_string("certificate_app/certificate.html", context)
+    base_url = getattr(settings, "BASE_DIR", None) or None
+
+    try:
+        from weasyprint import HTML, CSS
+        pdf_bytes = HTML(string=html_string, base_url=base_url).write_pdf()
+    except Exception:
+        try:
+            from xhtml2pdf import pisa
+            pdf_io = BytesIO()
+            pisa.CreatePDF(html_string, dest=pdf_io)
+            pdf_bytes = pdf_io.getvalue()
+        except Exception:
+            pdf_bytes = build_plain_pdf_bytes(certificate)
+
     filename = f"certificate_{certificate.certificate_number}.pdf"
     certificate.certificate_file.save(filename, ContentFile(pdf_bytes), save=True)
     return certificate.certificate_file.path

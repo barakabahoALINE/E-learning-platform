@@ -1,4 +1,4 @@
-from django.http import Http404
+from django.http import Http404, FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
@@ -151,17 +151,27 @@ class DownloadCertificateAPIView(APIView):
         if not (request.user.is_superuser or certificate.student == request.user):
             return Response({"success": False, "message": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
 
-        if not certificate.certificate_file:
-            generate_certificate_file(certificate)
+        generate_certificate_file(certificate, force=True)
 
         certificate.is_downloaded = True
         certificate.downloaded_at = timezone.now()
         certificate.save(update_fields=["is_downloaded", "downloaded_at"])
 
-        return Response({
-            "success": True,
-            "download_url": request.build_absolute_uri(certificate.certificate_file.url),
-        })
+        # If client explicitly asks for a link, return JSON with the file URL.
+        if request.GET.get("as_link"):
+            return Response({
+                "success": True,
+                "download_url": request.build_absolute_uri(certificate.certificate_file.url),
+            })
+
+        # Otherwise, stream the PDF directly as an attachment
+        try:
+            fp = certificate.certificate_file.open("rb")
+            response = FileResponse(fp, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="certificate_{certificate.certificate_number}.pdf"'
+            return response
+        except Exception:
+            return Response({"success": False, "message": "Failed to open certificate file."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ShareCertificateAPIView(APIView):
