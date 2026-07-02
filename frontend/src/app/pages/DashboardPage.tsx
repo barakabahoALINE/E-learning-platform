@@ -29,8 +29,7 @@ import { fetchCourses, fetchCategories } from "../../features/courses/courseSlic
 import { getMediaUrl } from "../utils/media";
 import {
   fetchCourseProgress,
-  fetchLearningHoursKPI,
-  fetchCoursesKPI,
+  fetchLearningHoursKPI,  fetchLearningActivityKPI,  fetchCoursesKPI,
   fetchCompletionRateKPI,
   continueLearning,
   fetchCourseSectionsProgress,
@@ -42,7 +41,7 @@ export const DashboardPage: React.FC = () => {
   const reduxUser = useAppSelector(selectCurrentUser);
   const { myEnrollments } = useAppSelector((state) => state.enrollments);
   const { courses, categories } = useAppSelector((state) => state.courses);
-  const { courseProgress, courseSectionsProgress, learningHours, coursesKPI, completionRateKPI } = useAppSelector((state) => state.progress);
+  const { courseProgress, courseSectionsProgress, learningHours, learningActivity, coursesKPI, completionRateKPI } = useAppSelector((state) => state.progress);
 
   const [isReturningUser, setIsReturningUser] = React.useState(false);
 
@@ -51,6 +50,7 @@ export const DashboardPage: React.FC = () => {
     dispatch(fetchCourses(false));
     dispatch(fetchCategories());
     dispatch(fetchLearningHoursKPI());
+    dispatch(fetchLearningActivityKPI());
     dispatch(fetchCoursesKPI());
     dispatch(fetchCompletionRateKPI());
   }, [dispatch]);
@@ -96,7 +96,17 @@ export const DashboardPage: React.FC = () => {
     return { total, completed };
   };
 
-  const totalHours = learningHours?.total_hours_learned || 0;
+  const totalHours = learningHours?.weekly_totals?.[0]?.hours ?? learningHours?.total_hours_learned ?? 0;
+  const currentStreak = learningActivity?.current_streak || 0;
+  const weeklyProgress = learningActivity?.weekly_activity || [
+    { day: "Sun", hours: 0, minutes: 0, date: "" },
+    { day: "Mon", hours: 0, minutes: 0, date: "" },
+    { day: "Tue", hours: 0, minutes: 0, date: "" },
+    { day: "Wed", hours: 0, minutes: 0, date: "" },
+    { day: "Thu", hours: 0, minutes: 0, date: "" },
+    { day: "Fri", hours: 0, minutes: 0, date: "" },
+    { day: "Sat", hours: 0, minutes: 0, date: "" },
+  ];
   const activeEnrollments = myEnrollments.filter(enrollment => enrollment.status !== "cancelled");
   const learningHistory = activeEnrollments
     .map((enrollment) => {
@@ -129,10 +139,6 @@ export const DashboardPage: React.FC = () => {
   const completedCount = learningHistory.filter(item => item!.status === "completed").length;
   const completionRate = enrolledCount > 0 ? Math.round((completedCount / enrolledCount) * 100) : 0;
   const completionRateChange = completionRateKPI?.change_percentage ?? completionRateKPI?.month_over_month_change;
-  const weeklyProgress = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => ({
-    day,
-    hours: 0,
-  }));
 
   return (
     <MainLayout>
@@ -158,7 +164,7 @@ export const DashboardPage: React.FC = () => {
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 min-w-[200px]">
               <div className="text-sm text-blue-100 mb-1">Learning Streak</div>
               <div className="flex items-baseline">
-                <div className="text-4xl">5</div>
+                <div className="text-4xl">{currentStreak}</div>
                 <div className="text-xl ml-2">days</div>
               </div>
               <div className="flex items-center mt-2 text-sm text-blue-100">
@@ -171,7 +177,7 @@ export const DashboardPage: React.FC = () => {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
+          <Card className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -189,7 +195,7 @@ export const DashboardPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -204,7 +210,7 @@ export const DashboardPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -219,7 +225,7 @@ export const DashboardPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -292,7 +298,7 @@ export const DashboardPage: React.FC = () => {
                           <div className="flex items-start justify-between mb-2">
                             <div>
                               <Badge variant="secondary" className="mb-2">
-                                {courseDetail.category}
+                                {typeof courseDetail.category === "string" ? courseDetail.category : categories.find(c => c.id === Number(courseDetail.category))?.name || "Category"}
                               </Badge>
                               <h3 className="font-bold text-lg mb-1">{courseDetail.title}</h3>
                               <p className="text-sm text-gray-600">
@@ -418,20 +424,23 @@ export const DashboardPage: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {weeklyProgress.map((day) => (
-                    <div key={day.day}>
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="text-gray-600">{day.day}</span>
-                        <span className="font-medium">{day.hours}h</span>
+                  {weeklyProgress.map((day) => {
+                    const width = Math.min(100, (day.hours / 3) * 100);
+                    return (
+                      <div key={day.day}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-gray-600">{day.day}</span>
+                          <span className="font-medium">{day.hours.toFixed(1)}h</span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-[#33A7DF] to-[#2D51A1] rounded-full transition-all"
+                            style={{ width: `${width}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-[#33A7DF] to-[#2D51A1] rounded-full transition-all"
-                          style={{ width: `${(day.hours / 3) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>

@@ -77,6 +77,17 @@ export const deleteAssessmentAction = createAsyncThunk(
   }
 );
 
+export const updateAssessmentSettings = createAsyncThunk(
+  'assessments/updateSettings',
+  async ({ assessmentId, data }: { assessmentId: number | string; data: { duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string } }, { rejectWithValue }) => {
+    try {
+      return await assessmentAPI.updateAssessmentSettings(assessmentId, data);
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.error || 'Failed to update assessment settings');
+    }
+  }
+);
+
 export const fetchAssessmentQuestions = createAsyncThunk(
   'assessments/fetchQuestions',
   async (assessmentId: number | string, { rejectWithValue }) => {

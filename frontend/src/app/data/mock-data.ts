@@ -26,6 +26,7 @@ export interface User {
   skillLevel?: string;
   learningPace?: string;
   learningHistory: LearningHistoryItem[];
+  [key: string]: any;
 }
 
 export interface Course {
@@ -92,6 +93,16 @@ export interface Question {
   options: string[];
   correctAnswer: number;
   explanation: string;
+}
+
+export interface CourseFeedback {
+  courseId?: number;
+  courseRating: number;
+  contentQuality: number;
+  instructorClarity: number;
+  platformUsability: number;
+  textFeedback: string;
+  submittedAt: string;
 }
 
 export const mockInstructors: Instructor[] = [

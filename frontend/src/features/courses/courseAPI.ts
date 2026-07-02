@@ -14,6 +14,7 @@ import {
   CourseModulesProgressResponse,
   CourseSectionsProgressResponse,
   LearningHoursKPI,
+  LearningActivityKPI,
   ModuleContentsProgressResponse,
   ModuleProgress,
   CompletionRateKPI,
@@ -182,6 +183,11 @@ const courseAPI = {
     return response.data.data || response.data;
   },
 
+  createCategory: async (name: string): Promise<{ success: boolean; data: Category }> => {
+    const response = await api.post('categories/create/', { name });
+    return response.data;
+  },
+
   uploadMedia: async (file: File): Promise<{ success: boolean; message: string; data: { id: number; file: string; uploaded_at: string } }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -265,6 +271,11 @@ const courseAPI = {
 
   fetchLearningHoursKPI: async (): Promise<LearningHoursKPI> => {
     const response = await api.get('progress/kpi/learning-hours/');
+    return response.data.data;
+  },
+
+  fetchLearningActivityKPI: async (): Promise<LearningActivityKPI> => {
+    const response = await api.get('progress/kpi/learning-activity/');
     return response.data.data;
   },
 

@@ -105,3 +105,42 @@ class EnrollmentSerializer(serializers.ModelSerializer):
                 })
 
         return data
+
+class InstructorEnrollmentSerializer(serializers.ModelSerializer):
+    """
+    Enrollment serializer for instructor views — returns nested student and course objects
+    so the frontend can display student names, emails, etc. without extra API calls.
+    """
+    student = serializers.SerializerMethodField()
+    course = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Enrollment
+        fields = [
+            "id",
+            "student",
+            "course",
+            "status",
+            "enrolled_at",
+            "updated_at",
+        ]
+
+    def get_student(self, obj):
+        s = obj.student
+        if s is None:
+            return None
+        return {
+            "id": s.id,
+            "email": s.email,
+            "full_name": getattr(s, "full_name", s.email),
+            "institution": getattr(s, "institution", ""),
+        }
+
+    def get_course(self, obj):
+        c = obj.course
+        if c is None:
+            return None
+        return {
+            "id": c.id,
+            "title": c.title,
+        }

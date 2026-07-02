@@ -40,7 +40,7 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
 
         # ── Shyira defaults mbere yo kugenzura ──────────
         if data.get('pass_mark') is None:
-            data['pass_mark'] = 60
+            data['pass_mark'] = 70
         if data.get('max_attempts') is None:
             data['max_attempts'] = 3
         if data.get('duration') is None:

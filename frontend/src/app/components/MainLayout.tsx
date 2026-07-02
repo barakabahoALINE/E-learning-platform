@@ -21,12 +21,14 @@ import {
   Menu,
   X,
   CreditCard,
+  Award,
 } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { logout } from "../../features/auth/authSlice";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
 import { ThemeToggle } from "./ThemeToggle";
 import Logo from "../assets/R.png";
+import { getMediaUrl } from "../utils/media";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -42,11 +44,13 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Courses", href: "/courses", icon: BookOpen },
+    { name: 'My Learning', href: '/my-learning', icon: Award, authOnly: true },
     { name: "Pricing", href: "/pricing", icon: CreditCard },
   ];
 
   const handleLogout = () => {
     dispatch(logout());
+    navigate("/");
   };
 
   const isActive = (path: string) => location.pathname === path;
@@ -77,7 +81,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   <Link key={item.name} to={item.href}>
                     <Button
                       variant={isActive(item.href) ? "secondary" : "ghost"}
-                      className="flex items-center"
+                      className="flex items-center text-xs"
                     >
                       <Icon className="w-4 h-4 mr-2" />
                       {item.name}
@@ -109,7 +113,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     className="relative h-10 w-10 rounded-full"
                   >
                     <Avatar>
-                      <AvatarImage src={user?.avatar} alt={displayName} />
+                      <AvatarImage src={getMediaUrl(user?.profile_picture || user?.avatar, '')} alt={displayName} />
                       <AvatarFallback>
                         {displayName
                           ?.split(" ")

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}E-Learning Platform{% endblock %}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+
+        .email-wrapper {
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Header */
+        .email-header {
+            background: radial-gradient(circle at top left, #7ec1f1 0%, #5d8fd4 45%, #2e5aa8 100%);
+            color: #ffffff !important;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        .email-header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+
+        .email-header p {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        /* Content */
+        .email-content {
+            padding: 40px;
+        }
+
+        .email-content h2 {
+            font-size: 22px;
+            color: #333;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .email-content p {
+            font-size: 16px;
+            color: #555;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .email-content ul {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .email-content li {
+            font-size: 16px;
+            color: #555;
+            margin-bottom: 12px;
+            padding-left: 25px;
+            position: relative;
+        }
+
+        .email-content li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #2e5aa8;
+            font-weight: bold;
+        }
+
+        /* CTA Button */
+        .cta-button {
+            display: inline-block;
+            padding: 14px 32px;
+            background: linear-gradient(135deg, #2e5aa8 100%, #7ec1f1 0%);
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 16px;
+            margin: 20px 0;
+            transition: transform 0.2s;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Fallback Link */
+        .fallback-link {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #2e5aa8;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .fallback-link p {
+            margin: 0 0 8px 0;
+            color: #666;
+            font-weight: 600;
+        }
+
+        .fallback-link a {
+            color: #2e5aa8;
+            text-decoration: none;
+            word-break: break-all;
+        }
+
+        /* Security Notice */
+        .security-notice {
+            margin-top: 25px;
+            margin-bottom: 25px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #259c37;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #92400e;
+        }
+
+        .security-notice strong {
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        /* Divider */
+        .divider {
+            height: 1px;
+            background-color: #e5e5e5;
+            margin: 30px 0;
+        }
+
+        /* Footer */
+        .email-footer {
+            background-color: #f9f9f9;
+            padding: 30px 40px;
+            text-align: center;
+            border-top: 1px solid #e5e5e5;
+        }
+
+        .email-footer p {
+            margin: 5px 0;
+            font-size: 13px;
+            color: #888;
+        }
+
+        .email-footer a {
+            color: #2e5aa8;
+            text-decoration: none;
+        }
+
+        .email-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            margin-top: 15px;
+        }
+
+        .footer-links a {
+            margin: 0 10px;
+            font-size: 12px;
+        }
+
+        .copyright {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e5e5;
+            font-size: 11px;
+            color: #aaa;
+        }
+
+        /* Responsive */
+        @media only screen and (max-width: 600px) {
+            .email-wrapper {
+                padding: 10px;
+            }
+
+            .email-header {
+                padding: 30px 15px;
+            }
+
+            .email-header h1 {
+                font-size: 24px;
+            }
+
+            .email-content {
+                padding: 25px;
+            }
+
+            .email-content h2 {
+                font-size: 18px;
+            }
+
+            .email-content p,
+            .email-content li {
+                font-size: 14px;
+            }
+
+            .cta-button {
+                display: block;
+                text-align: center;
+                padding: 12px 24px;
+                font-size: 14px;
+            }
+
+            .email-footer {
+                padding: 20px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="email-container">
+            <!-- Header -->
+            <div class="email-header">
+                <table role="presentation" width="100%" style="border-collapse:collapse;">
+                    <tr>
+                        <td style="width:140px; vertical-align:middle; text-align:left; padding-left:12px;">
+                            <img src="http://tc.statistics.gov.rw/wp-content/uploads/2021/07/logo-removebg-preview.png" alt="NISR Logo" width="120" style="display:block; max-width:120px; width:100%; height:auto; border:0; outline:none; text-decoration:none;" />
+                        </td>
+                        <td style="vertical-align:middle; text-align:center; padding:0 10px;">
+                            <h1 style="margin:0; font-size:28px; line-height:1.1;">{% block header_title %}E-Learning Platform{% endblock %}</h1>
+                            {% block header_subtitle %}<p style="margin-top:6px; font-size:14px; opacity:0.9;">Welcome to your learning journey</p>{% endblock %}
+                        </td>
+                        <td style="width:140px; vertical-align:middle; text-align:right; padding-right:12px;">
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Content -->
+            <div class="email-content">
+                {% block content %}
+                {% endblock %}
+            </div>
+
+            <!-- Footer -->
+            <div class="email-footer">
+                <p><strong>NISR E-Learning Platform</strong></p>
+                <p>Empowering education through technology</p>
+                
+                <div class="footer-links">
+                    <a href="http://localhost:5173">Visit Platform</a>
+                    <a href="mailto:support@elearning.com">Support</a>
+                </div>
+
+                <div class="copyright">
+                    <p>&copy; {% now "Y" %} NISR E-Learning Platform. All rights reserved.</p>
+                    <p>This is an automated email. Please do not reply directly to this message.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

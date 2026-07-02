@@ -73,7 +73,12 @@ const assessmentAPI = {
   deleteAssessment: async (assessmentId: number | string) => {
     const response = await api.delete('/assessments/create/', { data: { assessment_id: assessmentId } });
     return response.data;
-  }
+  },
+
+  updateAssessmentSettings: async (assessmentId: number | string, data: { duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string }) => {
+    const response = await api.patch('/assessments/create/', { assessment_id: assessmentId, ...data });
+    return response.data;
+  },
 };
 
 export default assessmentAPI;

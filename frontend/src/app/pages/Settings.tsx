@@ -1,23 +1,36 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { User, Bell, Lock, Mail, Globe, Palette, Upload, Check } from "lucide-react";
-import { useAppSelector } from "../../hooks/reduxHooks";
+import { useAppSelector, useAppDispatch } from "../../hooks/reduxHooks";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
 import { useData } from "../context/DataContext";
+import { updateProfileName, updateProfilePicture } from "../../features/auth/authSlice";
+import { getMediaUrl } from "../utils/media";
 
 type SettingsTab = "profile" | "notifications" | "security" | "email" | "platform" | "appearance";
 
 export function SettingsPage() {
+  const dispatch = useAppDispatch();
   const user = useAppSelector(selectCurrentUser);
-  const { adminProfile, updateAdminProfile } = useData();
+  const { updateAdminProfile } = useData();
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [showSuccess, setShowSuccess] = useState(false);
 
   // Profile State
   const [profileData, setProfileData] = useState({
-    firstName: adminProfile.firstName,
-    lastName: adminProfile.lastName,
-    email: adminProfile.email,
+    firstName: "",
+    lastName: "",
+    email: "",
   });
+
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        firstName: user.full_name?.split(" ")[0] || "",
+        lastName: user.full_name?.split(" ").slice(1).join(" ") || "",
+        email: user.email || "",
+      });
+    }
+  }, [user]);
 
   // Password State
   const [passwordData, setPasswordData] = useState({
@@ -45,15 +58,19 @@ export function SettingsPage() {
     marketingEmails: false,
   });
 
-  const handleSaveProfile = () => {
-    // Update global admin profile
-    updateAdminProfile({
-      firstName: profileData.firstName,
-      lastName: profileData.lastName,
-      email: profileData.email,
-    });
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  const handleSaveProfile = async () => {
+    const fullName = `${profileData.firstName} ${profileData.lastName}`.trim();
+    if (!fullName) {
+      alert("Name cannot be empty");
+      return;
+    }
+    try {
+      await dispatch(updateProfileName(fullName)).unwrap();
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err: any) {
+      alert(err || "Failed to update profile");
+    }
   };
 
   const handleUpdatePassword = () => {
@@ -69,7 +86,7 @@ export function SettingsPage() {
       alert("Password must be at least 8 characters long");
       return;
     }
-    
+
     setShowSuccess(true);
     setPasswordData({ current: "", new: "", confirm: "" });
     setTimeout(() => setShowSuccess(false), 3000);
@@ -85,22 +102,20 @@ export function SettingsPage() {
     setTimeout(() => setShowSuccess(false), 3000);
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
         alert("File size must be less than 2MB");
         return;
       }
-      // Create object URL for the uploaded file
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const avatarUrl = reader.result as string;
-        updateAdminProfile({ avatar: avatarUrl });
+      try {
+        await dispatch(updateProfilePicture(file)).unwrap();
         setShowSuccess(true);
         setTimeout(() => setShowSuccess(false), 3000);
-      };
-      reader.readAsDataURL(file);
+      } catch (err: any) {
+        alert(err || "Failed to update profile picture");
+      }
     }
   };
 
@@ -116,10 +131,16 @@ export function SettingsPage() {
             <div className="space-y-5">
               <div className="flex items-start gap-6">
                 <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-medium overflow-hidden">
-                  {adminProfile.avatar ? (
-                    <img src={adminProfile.avatar} alt="Admin Avatar" className="w-full h-full object-cover" />
+                  {user?.profile_picture || user?.avatar ? (
+                    <img src={getMediaUrl(user?.profile_picture || user?.avatar, '')} alt="Admin Avatar" className="w-full h-full object-cover" />
                   ) : (
-                    `${adminProfile.firstName[0]}${adminProfile.lastName[0]}`
+                    (user?.full_name || "Admin")
+                      .split(" ")
+                      .filter(Boolean)
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()
+                      .slice(0, 2)
                   )}
                 </div>
                 <div className="flex-1">
@@ -179,10 +200,8 @@ export function SettingsPage() {
                 <input
                   type="email"
                   value={profileData.email}
-                  onChange={(e) =>
-                    setProfileData({ ...profileData, email: e.target.value })
-                  }
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
                 />
               </div>
 
@@ -192,7 +211,7 @@ export function SettingsPage() {
                 </label>
                 <input
                   type="text"
-                  value="System Administrator"
+                  value={user?.role?.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) || ""}
                   disabled
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
                 />
@@ -202,9 +221,9 @@ export function SettingsPage() {
                 <button
                   onClick={() =>
                     setProfileData({
-                      firstName: user?.full_name?.split(" ")[0] || "Admin",
-                      lastName: user?.full_name?.split(" ")[1] || "User",
-                      email: user?.email || "admin@learnhub.com",
+                      firstName: user?.full_name?.split(" ")[0] || "",
+                      lastName: user?.full_name?.split(" ").slice(1).join(" ") || "",
+                      email: user?.email || "",
                     })
                   }
                   className="px-4 py-2.5 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
@@ -361,14 +380,12 @@ export function SettingsPage() {
                         [pref.key]: !notificationPrefs[pref.key],
                       })
                     }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notificationPrefs[pref.key] ? "bg-blue-600" : "bg-gray-200"
-                    }`}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${notificationPrefs[pref.key] ? "bg-blue-600" : "bg-gray-200"
+                      }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notificationPrefs[pref.key] ? "translate-x-6" : "translate-x-1"
-                      }`}
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${notificationPrefs[pref.key] ? "translate-x-6" : "translate-x-1"
+                        }`}
                     />
                   </button>
                 </div>
@@ -487,18 +504,16 @@ export function SettingsPage() {
                           [setting.key]: !platformSettings[setting.key],
                         })
                       }
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        platformSettings[setting.key]
-                          ? "bg-blue-600"
-                          : "bg-gray-200"
-                      }`}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${platformSettings[setting.key]
+                        ? "bg-blue-600"
+                        : "bg-gray-200"
+                        }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          platformSettings[setting.key]
-                            ? "translate-x-6"
-                            : "translate-x-1"
-                        }`}
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${platformSettings[setting.key]
+                          ? "translate-x-6"
+                          : "translate-x-1"
+                          }`}
                       />
                     </button>
                   </div>
@@ -581,11 +596,10 @@ export function SettingsPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                activeTab === tab.id
-                  ? "bg-blue-50 text-blue-700"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === tab.id
+                ? "bg-blue-50 text-blue-700"
+                : "text-gray-700 hover:bg-gray-50"
+                }`}
             >
               <tab.icon className="w-5 h-5" />
               <span className="text-sm font-medium">{tab.label}</span>

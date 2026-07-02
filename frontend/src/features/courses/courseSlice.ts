@@ -1,14 +1,14 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import courseAPI from './courseAPI';
-import { 
-  Course, 
-  CourseCreateData, 
-  CourseUpdateData, 
-  Module, 
-  Section, 
-  ContentItem, 
-  Level, 
-  Category 
+import {
+  Course,
+  CourseCreateData,
+  CourseUpdateData,
+  Module,
+  Section,
+  ContentItem,
+  Level,
+  Category
 } from './types';
 
 interface CourseState {
@@ -39,7 +39,7 @@ export const fetchCourses = createAsyncThunk(
     try {
       return await courseAPI.fetchCourses(isAdmin);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to fetch courses');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to fetch courses');
     }
   }
 );
@@ -50,7 +50,7 @@ export const fetchCourseDetails = createAsyncThunk(
     try {
       return await courseAPI.fetchCourseDetails(id);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to fetch course details');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to fetch course details');
     }
   }
 );
@@ -61,7 +61,7 @@ export const createCourse = createAsyncThunk(
     try {
       return await courseAPI.createCourse(data);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to create course');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to create course');
     }
   }
 );
@@ -72,7 +72,7 @@ export const updateCourse = createAsyncThunk(
     try {
       return await courseAPI.updateCourse(id, data);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to update course');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to update course');
     }
   }
 );
@@ -84,7 +84,7 @@ export const deleteCourse = createAsyncThunk(
       const response = await courseAPI.deleteCourse(id);
       return { id, message: response.message };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to delete course');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to delete course');
     }
   }
 );
@@ -96,7 +96,7 @@ export const publishCourse = createAsyncThunk(
       await courseAPI.publishCourse(id);
       return id;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to publish course');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to publish course');
     }
   }
 );
@@ -108,7 +108,7 @@ export const publishCourseChanges = createAsyncThunk(
       const response = await courseAPI.publishCourseChanges(id);
       return { id, message: response.message };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to publish changes');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to publish changes');
     }
   }
 );
@@ -120,7 +120,7 @@ export const unpublishCourse = createAsyncThunk(
       await courseAPI.unpublishCourse(id);
       return id;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to unpublish course');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to unpublish course');
     }
   }
 );
@@ -132,7 +132,7 @@ export const createModule = createAsyncThunk(
     try {
       return await courseAPI.createModule(courseId, data);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to create module');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to create module');
     }
   }
 );
@@ -143,7 +143,7 @@ export const updateModule = createAsyncThunk(
     try {
       return await courseAPI.updateModule(courseId, moduleId, data);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to update module');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to update module');
     }
   }
 );
@@ -155,7 +155,7 @@ export const deleteModule = createAsyncThunk(
       const res = await courseAPI.deleteModule(courseId, moduleId);
       return { moduleId, hardDeleted: res.hard_deleted };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to delete module');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to delete module');
     }
   }
 );
@@ -167,7 +167,7 @@ export const createSection = createAsyncThunk(
     try {
       return await courseAPI.createSection(moduleId, data);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to create section');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to create section');
     }
   }
 );
@@ -178,7 +178,7 @@ export const updateSection = createAsyncThunk(
     try {
       return await courseAPI.updateSection(courseId, moduleId, sectionId, data);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to update section');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to update section');
     }
   }
 );
@@ -190,7 +190,7 @@ export const deleteSection = createAsyncThunk(
       const res = await courseAPI.deleteSection(courseId, moduleId, sectionId);
       return { sectionId, hardDeleted: res.hard_deleted };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to delete section');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to delete section');
     }
   }
 );
@@ -203,7 +203,7 @@ export const createContent = createAsyncThunk(
       const result = await courseAPI.createContent(courseId, moduleId, sectionId, data);
       return { ...result, _sectionId: sectionId };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to create content');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to create content');
     }
   }
 );
@@ -215,7 +215,7 @@ export const updateContent = createAsyncThunk(
       const result = await courseAPI.updateContent(courseId, moduleId, sectionId, contentId, data);
       return { ...result, _sectionId: sectionId };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to update content');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to update content');
     }
   }
 );
@@ -227,7 +227,7 @@ export const deleteContent = createAsyncThunk(
       const res = await courseAPI.deleteContent(courseId, moduleId, sectionId, contentId);
       return { contentId, hardDeleted: res.hard_deleted };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to delete content');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to delete content');
     }
   }
 );
@@ -238,7 +238,7 @@ export const fetchLevels = createAsyncThunk(
     try {
       return await courseAPI.fetchLevels();
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to fetch levels');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to fetch levels');
     }
   }
 );
@@ -249,7 +249,18 @@ export const fetchCategories = createAsyncThunk(
     try {
       return await courseAPI.fetchCategories();
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to fetch categories');
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to fetch categories');
+    }
+  }
+);
+
+export const createCategory = createAsyncThunk(
+  'courses/createCategory',
+  async (name: string, { rejectWithValue }) => {
+    try {
+      return await courseAPI.createCategory(name);
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to create category');
     }
   }
 );
@@ -463,7 +474,11 @@ const courseSlice = createSlice({
       })
       // Metadata
       .addCase(fetchLevels.fulfilled, (state, action: PayloadAction<Level[]>) => { state.levels = action.payload; })
-      .addCase(fetchCategories.fulfilled, (state, action: PayloadAction<Category[]>) => { state.categories = action.payload; });
+      .addCase(fetchCategories.fulfilled, (state, action: PayloadAction<Category[]>) => { state.categories = action.payload; })
+      .addCase(createCategory.fulfilled, (state, action: PayloadAction<any>) => {
+        const cat = action.payload.data || action.payload;
+        state.categories.push(cat);
+      });
   },
 });
 

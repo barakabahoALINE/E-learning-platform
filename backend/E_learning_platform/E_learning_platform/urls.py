@@ -13,6 +13,7 @@ urlpatterns = [
     path('api/', include('enrollments_app.urls')),
     path('api/progress/', include('progress_app.urls')),
     path('api/assessments/', include('assessments_app.urls')),
+    path('api/certificates/', include('certificate_app.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 

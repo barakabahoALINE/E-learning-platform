@@ -9,8 +9,6 @@ import { Progress } from '../components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import {
   User,
-  Calendar,
-  Award,
   BookOpen,
   Clock,
   Edit,
@@ -18,6 +16,7 @@ import {
   Trophy,
   Download,
   Eye,
+  Calendar,
 } from 'lucide-react';
 import { MainLayout } from '../components/MainLayout';
 import { toast } from 'sonner';
@@ -26,7 +25,7 @@ import { useAppDispatch, useAppSelector } from '../../hooks/reduxHooks';
 import { selectCurrentUser } from '../../features/auth/authSelectors';
 import { updateProfileName, updateProfilePicture } from '../../features/auth/authSlice';
 import { fetchMyEnrollments } from '../../features/enrollments/enrollmentSlice';
-import { fetchCourses, fetchCategories } from '../../features/courses/courseSlice';
+import { fetchCourses, fetchCategories, fetchLevels } from '../../features/courses/courseSlice';
 import {
   fetchCompletionRateKPI,
   fetchCourseProgress,
@@ -43,18 +42,20 @@ export const ProfilePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const reduxUser = useAppSelector(selectCurrentUser);
   const { myEnrollments, loading: enrollmentsLoading } = useAppSelector((state) => state.enrollments);
-  const { courses, categories } = useAppSelector((state) => state.courses);
+  const { courses, categories, levels } = useAppSelector((state) => state.courses);
   const { courseProgress, courseSectionsProgress, learningHours, coursesKPI } = useAppSelector((state) => state.progress);
 
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(reduxUser?.full_name || '');
-  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
-  const activeTab = searchParams.get('tab') || 'courses';
+  const activeTab = ['courses', 'certificates', 'activity'].includes(searchParams.get('tab') || '')
+    ? (searchParams.get('tab') as string)
+    : 'courses';
 
   useEffect(() => {
     dispatch(fetchMyEnrollments());
     dispatch(fetchCourses(false));
     dispatch(fetchCategories());
+    dispatch(fetchLevels());
     dispatch(fetchLearningHoursKPI());
     dispatch(fetchCoursesKPI());
     dispatch(fetchCompletionRateKPI());
@@ -108,7 +109,7 @@ export const ProfilePage: React.FC = () => {
           courseName: course.title,
           thumbnail: course.thumbnail,
           instructor: course.admin || course.instructor || 'Platform Instructor',
-          level: typeof course.level === 'string' ? course.level : String(course.level || 'All Levels'),
+          level: levels.find(l => l.id === Number(course.level))?.name || String(course.level || 'All Levels'),
           category: typeof course.category === 'string'
             ? course.category
             : categories.find(category => category.id === Number(course.category))?.name,
@@ -123,9 +124,8 @@ export const ProfilePage: React.FC = () => {
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
       .sort((a, b) => new Date(b.lastAccessedAt).getTime() - new Date(a.lastAccessedAt).getTime());
-  }, [myEnrollments, courses, categories, courseProgress, courseSectionsProgress]);
+  }, [myEnrollments, courses, categories, levels, courseProgress, courseSectionsProgress]);
 
-  const filteredHistory = learningHistory.filter(item => historyFilter === 'all' || item.status === historyFilter);
   const completedCourses = learningHistory.filter(item => item.status === 'completed');
   const inProgressCourses = learningHistory.filter(item => item.status === 'in-progress');
 
@@ -266,10 +266,9 @@ export const ProfilePage: React.FC = () => {
         </Card>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="courses">My Courses</TabsTrigger>
             <TabsTrigger value="certificates">Certificates</TabsTrigger>
-            <TabsTrigger value="history">Learning History</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
 
@@ -367,100 +366,6 @@ export const ProfilePage: React.FC = () => {
                               <Download className="mr-2 h-4 w-4" />
                               Download
                             </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </TabsContent>
-
-          <TabsContent value="history" className="space-y-4 mt-6">
-            <div className="flex gap-2">
-              <Button variant={historyFilter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setHistoryFilter('all')}>
-                All Courses
-              </Button>
-              <Button variant={historyFilter === 'in-progress' ? 'default' : 'outline'} size="sm" onClick={() => setHistoryFilter('in-progress')}>
-                In Progress
-              </Button>
-              <Button variant={historyFilter === 'completed' ? 'default' : 'outline'} size="sm" onClick={() => setHistoryFilter('completed')}>
-                Completed
-              </Button>
-            </div>
-
-            {filteredHistory.length === 0 ? (
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg mb-2">No learning history found</h3>
-                  <p className="text-gray-600">Try another filter or browse courses to start learning</p>
-                  <Link to="/courses">
-                    <Button className="mt-4">Browse Courses</Button>
-                  </Link>
-                </CardContent>
-              </Card>
-            ) : (
-              filteredHistory.map(item => (
-                <Card key={item.enrollmentId}>
-                  <CardContent className="p-6">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <div className="relative">
-                        <img
-                          src={getMediaUrl(item.thumbnail)}
-                          alt={item.courseName}
-                          className="w-full sm:w-32 h-32 object-cover rounded-lg"
-                        />
-                        {item.status === 'completed' && (
-                          <div className="absolute inset-0 bg-green-600/10 rounded-lg flex items-center justify-center">
-                            <Badge className="bg-green-600">
-                              <Trophy className="w-3 h-3 mr-1" />
-                              Completed
-                            </Badge>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <h3 className="font-medium mb-1">{item.courseName}</h3>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={item.status === 'completed' ? 'secondary' : 'default'}>
-                                {item.status === 'completed' ? 'Completed' : 'In Progress'}
-                              </Badge>
-                              {item.category && <Badge variant="outline">{item.category}</Badge>}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="space-y-2 mt-4">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-gray-600">Progress</span>
-                            <span className="font-medium">{item.progress}%</span>
-                          </div>
-                          <Progress value={item.progress} />
-                          <p className="text-sm text-gray-600">
-                            {item.completedItems} of {item.totalItems} items completed
-                          </p>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-3">
-                            <div className="text-sm text-gray-600">
-                              Last accessed: {new Date(item.lastAccessedAt).toLocaleDateString()}
-                            </div>
-                            <div className="flex gap-2">
-                              {item.status === 'completed' && (
-                                <Link to={`/certificate/${item.courseId}`}>
-                                  <Button variant="outline" size="sm">
-                                    <Award className="mr-2 h-4 w-4" />
-                                    Certificate
-                                  </Button>
-                                </Link>
-                              )}
-                              <Link to={`/course/${item.courseId}`}>
-                                <Button size="sm">
-                                  {item.status === 'completed' ? 'Revisit Course' : 'Resume Learning'}
-                                </Button>
-                              </Link>
-                            </div>
                           </div>
                         </div>
                       </div>

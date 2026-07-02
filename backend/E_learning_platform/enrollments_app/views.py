@@ -1,22 +1,58 @@
+import logging
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Enrollment
-from .serializers import EnrollmentCreateSerializer, StudentEnrollmentListSerializer, EnrollmentSerializer
-from .permissions import IsAdmin,IsStudent
+from .serializers import EnrollmentCreateSerializer, StudentEnrollmentListSerializer, EnrollmentSerializer, InstructorEnrollmentSerializer
+from .permissions import CanViewEnrollment, CanAddEnrollment, CanChangeEnrollment, CanDeleteEnrollment
 from enrollments_app.models import Enrollment
 from courses_app.models import Course
 from rest_framework import generics
-from django.core.mail import send_mail
 from django.conf import settings
+from django.db.models import Q
+
+
+def _is_admin_user(user):
+    return user.is_authenticated and (
+        user.is_superuser or user.groups.filter(name="Admin").exists()
+    )
+
+def _is_unrestricted_user(user):
+    return user.is_authenticated and (
+        user.is_superuser or
+        getattr(user, "role", "") in ["admin", "viewer"] or
+        user.groups.filter(name__in=["Admin", "Viewer"]).exists()
+    )
+
+def _same_institution_queryset(queryset, user, relation="student__institution"):
+    if _is_unrestricted_user(user):
+        return queryset
+    if user.is_authenticated and getattr(user, "institution", None):
+        return queryset.filter(**{relation: user.institution})
+    return queryset
+
+
+def _same_institution_enrollment(enrollment, user):
+    if _is_unrestricted_user(user):
+        return True
+    if not user.is_authenticated:
+        return False
+    if enrollment.student.institution != user.institution:
+        return False
+    if enrollment.course.created_by and enrollment.course.created_by.institution != user.institution:
+        return False
+    return True
+from .services.email_service import send_enrollment_confirmation_email, send_enrollment_admin_email
+
+logger = logging.getLogger(__name__)
 
   
 
     
 class EnrollCourseAPIView(generics.CreateAPIView):
     serializer_class = EnrollmentCreateSerializer
-    permission_classes = [IsAuthenticated, IsStudent]
+    permission_classes = [IsAuthenticated, CanAddEnrollment]
     
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -24,24 +60,19 @@ class EnrollCourseAPIView(generics.CreateAPIView):
 
         enrollment = serializer.save()
 
-        # Send Email
-        send_mail(
-            subject="Enrollment Confirmation",
-            message=f"""
-Hello {request.user.full_name},
-
-You have successfully enrolled in:
-{enrollment.course.title}
-
-Start learning now and enjoy!
-
-Best regards,
-E-Learning Team
-""",
-            from_email=settings.EMAIL_HOST_USER,
-            recipient_list=[request.user.email],
-            fail_silently=False,
-        )
+        # Send Enrollment Confirmation Email
+        try:
+            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+            course_link = f"{frontend_url}/course/{enrollment.course.id}"
+            send_enrollment_confirmation_email(
+                request.user,
+                enrollment.course,
+                course_link
+            )
+        except Exception as e:
+            # Log email error but don't fail the enrollment
+            logger.error(f"Failed to send enrollment confirmation email: {str(e)}")
+        
         # Use detailed serializer for response
         response_serializer = StudentEnrollmentListSerializer(enrollment)
 
@@ -55,12 +86,25 @@ E-Learning Team
         )
 class MyEnrollmentsAPIView(generics.ListAPIView):
     serializer_class = StudentEnrollmentListSerializer
-    permission_classes = [IsAuthenticated, IsStudent]
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
 
     def get_queryset(self):
         return Enrollment.objects.filter(
             student=self.request.user
         ).select_related("course")
+
+    def get_recent_in_progress_course(self, queryset):
+        recent_enrollment = (
+            queryset.filter(status=Enrollment.Status.ACTIVE)
+            .order_by("-enrolled_at", "-updated_at", "-id")
+            .first()
+        )
+
+        if recent_enrollment is None:
+            return None
+
+        return self.get_serializer(recent_enrollment).data
+
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
@@ -70,11 +114,65 @@ class MyEnrollmentsAPIView(generics.ListAPIView):
                 "status": "success",
                 "message": "Enrollments retrieved successfully.",
                 "data": serializer.data,
+                "recent_in_progress_course": self.get_recent_in_progress_course(queryset),
+            }
+        )
+
+
+class InstructorCourseEnrollmentsAPIView(generics.ListAPIView):
+    """
+    Instructors view all students enrolled in courses they created.
+    Filters by course created_by = request.user.
+    """
+    serializer_class = InstructorEnrollmentSerializer
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Enrollment.objects.select_related("course", "student").filter(
+            Q(course__created_by=user) | Q(course__created_by__isnull=True)
+        )
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+
+        return Response(
+            {
+                "status": "success",
+                "message": "Course enrollments retrieved successfully.",
+                "data": serializer.data,
+            }
+        )
+
+
+class InstructorCourseEnrollmentDetailAPIView(generics.RetrieveAPIView):
+    """
+    Instructor views a specific student enrollment in their course.
+    """
+    serializer_class = EnrollmentSerializer
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
+
+    def get_queryset(self):
+        return Enrollment.objects.select_related("course", "student").filter(
+            course__created_by=self.request.user
+        )
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+
+        return Response(
+            {
+                "status": "success",
+                "message": "Enrollment retrieved successfully.",
+                "data": serializer.data,
             }
         )
 class EnrollmentDetailAPIView(generics.RetrieveAPIView):
     serializer_class = StudentEnrollmentListSerializer
-    permission_classes = [IsAuthenticated, IsStudent]
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
 
     def get_queryset(self):
         # Student can only retrieve their own enrollment
@@ -94,7 +192,7 @@ class EnrollmentDetailAPIView(generics.RetrieveAPIView):
         )
 
 class CancelEnrollmentAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsStudent]
+    permission_classes = [IsAuthenticated, CanChangeEnrollment]
 
     def patch(self, request, pk):
         try:
@@ -128,10 +226,11 @@ class CancelEnrollmentAPIView(APIView):
 
 
 class AdminListEnrollmentsView(APIView):
-        permission_classes = [IsAuthenticated, IsAdmin]
+        permission_classes = [IsAuthenticated, CanViewEnrollment]
 
         def get(self, request):
-            enrollments = Enrollment.objects.all()
+            enrollments = Enrollment.objects.select_related("student", "course", "course__created_by")
+            enrollments = _same_institution_queryset(enrollments, request.user, relation="course__created_by__institution")
             serializer = EnrollmentSerializer(enrollments, many=True)
 
             return Response({
@@ -142,14 +241,19 @@ class AdminListEnrollmentsView(APIView):
 
 class AdminEnrollmentDetailView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanViewEnrollment]
 
     def get(self, request, pk):
 
         try:
-            enrollment = Enrollment.objects.get(pk=pk)
-
+            enrollment = Enrollment.objects.select_related("course", "course__created_by").get(pk=pk)
         except Enrollment.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Enrollment not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if not _same_institution_enrollment(enrollment, request.user):
             return Response({
                 "success": False,
                 "message": "Enrollment not found"
@@ -165,14 +269,19 @@ class AdminEnrollmentDetailView(APIView):
         
 class AdminUpdateEnrollmentView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanChangeEnrollment]
 
     def patch(self, request, pk):
 
         try:
-            enrollment = Enrollment.objects.get(pk=pk)
-
+            enrollment = Enrollment.objects.select_related("course", "course__created_by").get(pk=pk)
         except Enrollment.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Enrollment not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if not _same_institution_enrollment(enrollment, request.user):
             return Response({
                 "success": False,
                 "message": "Enrollment not found"
@@ -197,14 +306,19 @@ class AdminUpdateEnrollmentView(APIView):
         
 class AdminDeleteEnrollmentView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanDeleteEnrollment]
 
     def delete(self, request, pk):
 
         try:
-            enrollment = Enrollment.objects.get(pk=pk)
-
+            enrollment = Enrollment.objects.select_related("course", "course__created_by").get(pk=pk)
         except Enrollment.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Enrollment not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if not _same_institution_enrollment(enrollment, request.user):
             return Response({
                 "success": False,
                 "message": "Enrollment not found"
@@ -219,36 +333,42 @@ class AdminDeleteEnrollmentView(APIView):
         
 class AdminCreateEnrollmentView(APIView):
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanAddEnrollment]
 
     def post(self, request):
-
         serializer = EnrollmentSerializer(data=request.data)
 
         if serializer.is_valid():
-            enrollment = serializer.save()
+            student = serializer.validated_data.get("student")
+            course = serializer.validated_data.get("course")
 
+            if not request.user.is_superuser:
+                if student.institution != request.user.institution:
+                    return Response({
+                        "success": False,
+                        "message": "Cannot enroll a student outside your institution."
+                    }, status=status.HTTP_403_FORBIDDEN)
+                if course.created_by and course.created_by.institution != request.user.institution:
+                    return Response({
+                        "success": False,
+                        "message": "Cannot enroll students in courses outside your institution."
+                    }, status=status.HTTP_403_FORBIDDEN)
+
+            enrollment = serializer.save()
             student_email = enrollment.student.email
             course_title = enrollment.course.title
-
-            send_mail(
-                subject="Course Enrollment Successful",
-                message=f"""
-Hello {enrollment.student.full_name},
-
-You have been successfully enrolled in the course:
-
-Course: {course_title}
-
-You can now log in to the platform and start learning.
-
-Best regards,
-E-Learning Platform
-""",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[student_email],
-                fail_silently=False,
-            )
+            # Send Admin Enrollment Email
+            try:
+                frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+                course_link = f"{frontend_url}/course/{enrollment.course.id}"
+                send_enrollment_admin_email(
+                    enrollment.student,
+                    enrollment.course,
+                    course_link
+                )
+            except Exception as e:
+                # Log email error but don't fail the enrollment
+                logger.error(f"Failed to send admin enrollment email: {str(e)}")
 
             return Response({
                 "success": True,

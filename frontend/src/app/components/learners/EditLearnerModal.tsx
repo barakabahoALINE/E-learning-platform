@@ -1,6 +1,6 @@
-import { X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Learner } from "../../context/DataContext";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 interface EditLearnerModalProps {
   isOpen: boolean;
@@ -26,15 +26,15 @@ export function EditLearnerModal({ isOpen, onClose, learner, onSave }: EditLearn
     }
   }, [learner]);
 
-  if (!isOpen || !learner) return null;
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name.trim() || !formData.email.trim()) {
       alert("Please fill in all required fields");
       return;
     }
+
+    if (!learner) return;
 
     // Generate new avatar initials if name changed
     const avatar = formData.name
@@ -50,26 +50,18 @@ export function EditLearnerModal({ isOpen, onClose, learner, onSave }: EditLearn
       avatar,
       accountStatus: formData.status === "active" ? "Active" : formData.status === "suspended" ? "Suspended" : "Inactive",
     });
-    
+
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.3)' }}>
-      <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">Edit Learner</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Learner</DialogTitle>
+        </DialogHeader>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Full Name *
@@ -113,7 +105,6 @@ export function EditLearnerModal({ isOpen, onClose, learner, onSave }: EditLearn
             </select>
           </div>
 
-          {/* Footer */}
           <div className="flex justify-end gap-3 pt-4">
             <button
               type="button"
@@ -130,7 +121,7 @@ export function EditLearnerModal({ isOpen, onClose, learner, onSave }: EditLearn
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

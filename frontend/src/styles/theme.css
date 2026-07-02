@@ -255,6 +255,45 @@
     border-color: var(--border) !important;
   }
 
+  .dark .border-gray-100,
+  .dark .border-slate-100 {
+    border-color: var(--border) !important;
+  }
+
+  .dark .hover\:bg-white:hover,
+  .dark .hover\:bg-gray-50:hover,
+  .dark .hover\:bg-slate-50:hover,
+  .dark .hover\:bg-gray-100:hover,
+  .dark .hover\:bg-slate-100:hover,
+  .dark .hover\:bg-gray-200:hover,
+  .dark .hover\:bg-slate-200:hover,
+  .dark .hover\:bg-blue-50:hover,
+  .dark .hover\:bg-blue-100:hover,
+  .dark .hover\:bg-purple-50:hover,
+  .dark .hover\:bg-green-50:hover,
+  .dark .hover\:bg-yellow-50:hover,
+  .dark .hover\:bg-orange-50:hover,
+  .dark .hover\:bg-indigo-50:hover,
+  .dark .hover\:bg-red-50:hover,
+  .dark .hover\:bg-red-100:hover {
+    background-color: var(--secondary) !important;
+  }
+
+  .dark .text-blue-600,
+  .dark .text-blue-500 {
+    color: var(--primary) !important;
+  }
+
+  .dark .bg-blue-600,
+  .dark .bg-blue-500 {
+    background-color: var(--primary) !important;
+  }
+
+  .dark .text-red-600,
+  .dark .text-red-500 {
+    color: var(--destructive) !important;
+  }
+
   .dark .from-blue-50,
   .dark .from-purple-50,
   .dark .from-pink-50,
@@ -332,6 +371,58 @@
 
 .rich-text-content p {
   margin-bottom: 0.5rem;
+}
+
+.rich-text-content a {
+  color: #2563eb !important;
+  text-decoration: underline !important;
+  cursor: pointer;
+}
+
+.rich-text-content a:hover {
+  color: #1d4ed8 !important;
+}
+
+.rich-text-content h1 {
+  font-size: 1.5rem !important;
+  font-weight: 700 !important;
+  margin: 0.75rem 0 0.25rem !important;
+  line-height: 1.3 !important;
+}
+
+.rich-text-content h2 {
+  font-size: 1.2rem !important;
+  font-weight: 600 !important;
+  margin: 0.6rem 0 0.2rem !important;
+  line-height: 1.35 !important;
+}
+
+.rich-text-content blockquote {
+  border-left: 3px solid #6366f1 !important;
+  background: #f5f3ff !important;
+  padding: 0.5rem 1rem !important;
+  margin: 0.5rem 0 !important;
+  border-radius: 0 6px 6px 0 !important;
+  color: #4f46e5 !important;
+  font-style: italic !important;
+}
+
+.rich-text-content pre {
+  background: #1e1e2e !important;
+  color: #cdd6f4 !important;
+  font-family: monospace !important;
+  font-size: 0.8rem !important;
+  padding: 0.75rem 1rem !important;
+  border-radius: 8px !important;
+  margin: 0.5rem 0 !important;
+  overflow-x: auto !important;
+  white-space: pre-wrap !important;
+}
+
+.rich-text-content hr {
+  border: none !important;
+  border-top: 2px solid #e5e7eb !important;
+  margin: 0.75rem 0 !important;
 }
 
 /* Custom Scrollbar */

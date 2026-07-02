@@ -141,28 +141,16 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                <div className="min-w-0">
-                  <GoogleLogin
-                    onSuccess={(credentialResponse) => {
-                      if (credentialResponse.credential) {
-                        dispatch(googleLogin(credentialResponse.credential));
-                      }
-                    }}
-                    onError={() => setIsModalOpen(true)}
-                    width="100%"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsModalOpen(true)}
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  <Github className="mr-2 h-4 w-4" />
-                  GitHub
-                </Button>
+              <div className="mt-6">
+                <GoogleLogin
+                  onSuccess={(credentialResponse) => {
+                    if (credentialResponse.credential) {
+                      dispatch(googleLogin(credentialResponse.credential));
+                    }
+                  }}
+                  onError={() => setIsModalOpen(true)}
+                  width={400}
+                />
               </div>
             </div>
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, ArrowRight, BookOpenCheck, CheckCircle, Clock, Loader2, Save, ShieldAlert, Target, Trophy } from 'lucide-react';
 import { toast } from 'sonner';
@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Label } from '../components/ui/label';
 import { Progress } from '../components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
+import { Checkbox } from '../components/ui/checkbox';
 
 type AssessmentChoice = {
     id: number;
@@ -47,7 +48,7 @@ export const FinalAssessmentPage: React.FC = () => {
     const { courseProgress } = useAppSelector((state) => state.progress);
 
     const [currentQuestion, setCurrentQuestion] = useState(0);
-    const [selectedAnswers, setSelectedAnswers] = useState<{ [key: number]: number }>({});
+    const [selectedAnswers, setSelectedAnswers] = useState<{ [key: number]: number[] }>({});
     const [showInstructions, setShowInstructions] = useState(true);
     const [showResults, setShowResults] = useState(false);
     const [startTime, setStartTime] = useState<Date | null>(null);
@@ -58,13 +59,14 @@ export const FinalAssessmentPage: React.FC = () => {
     const [backendResult, setBackendResult] = useState<any | null>(null);
     const [isAttemptLoading, setIsAttemptLoading] = useState(false);
     const [lockedMessage, setLockedMessage] = useState<string | null>(null);
+    const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
     const sessionKey = `final-assessment-session-${courseId}`;
     const progress = numericCourseId ? courseProgress[numericCourseId] : undefined;
     const assessment = course?.final_assessment;
     const questions = assessment?.questions || [];
     const question = questions[currentQuestion];
-    const answeredCount = Object.keys(selectedAnswers).length;
+    const answeredCount = Object.values(selectedAnswers).filter(answers => answers && answers.length > 0).length;
     const examDurationMinutes = Number(assessment?.duration || 30);
     const passMark = Number(assessment?.pass_mark || 60);
 
@@ -87,7 +89,15 @@ export const FinalAssessmentPage: React.FC = () => {
                 setStartTime(new Date(parsed.startTime));
                 setEndTime(parsed.endTime ? new Date(parsed.endTime) : null);
                 setCurrentQuestion(parsed.currentQuestion || 0);
-                setSelectedAnswers(parsed.selectedAnswers || {});
+
+                // Normalize selectedAnswers to hold arrays
+                const restored = parsed.selectedAnswers || {};
+                const normalized: { [key: number]: number[] } = {};
+                Object.entries(restored).forEach(([key, val]) => {
+                    normalized[Number(key)] = Array.isArray(val) ? val : [val as number];
+                });
+                setSelectedAnswers(normalized);
+
                 setTabSwitches(parsed.tabSwitches || 0);
                 setLastSavedAt(new Date());
                 toast.info('Assessment session restored.');
@@ -104,8 +114,17 @@ export const FinalAssessmentPage: React.FC = () => {
 
     const calculateScore = () => {
         const correct = questions.filter((item: any, index: number) => {
-            const correctChoice = getChoices(item).find((choice) => choice.isCorrect);
-            return selectedAnswers[index] === correctChoice?.id;
+            const questionChoices = getChoices(item);
+            const selected = selectedAnswers[index] || [];
+
+            if (item.question_type === 'multiple') {
+                const correctIds = questionChoices.filter(c => c.isCorrect).map(c => c.id);
+                if (selected.length !== correctIds.length) return false;
+                return correctIds.every(id => selected.includes(id));
+            } else {
+                const correctChoice = questionChoices.find((choice) => choice.isCorrect);
+                return correctChoice && selected.includes(correctChoice.id);
+            }
         }).length;
 
         return {
@@ -154,6 +173,25 @@ export const FinalAssessmentPage: React.FC = () => {
         setLastSavedAt(new Date());
     }, [currentQuestion, endTime, selectedAnswers, sessionKey, showInstructions, showResults, startTime, tabSwitches]);
 
+    // Countdown timer — ticks every second while the assessment is active
+    useEffect(() => {
+        if (!endTime || showInstructions || showResults) return;
+
+        const tick = () => {
+            const now = new Date();
+            const diff = Math.max(0, Math.floor((endTime.getTime() - now.getTime()) / 1000));
+            setRemainingSeconds(diff);
+            if (diff === 0) {
+                toast.warning('Time is up! Submitting your assessment...');
+                submitAssessment();
+            }
+        };
+
+        tick(); // run immediately
+        const interval = setInterval(tick, 1000);
+        return () => clearInterval(interval);
+    }, [endTime, showInstructions, showResults]);
+
     useEffect(() => {
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
             if (!showResults && !showInstructions) {
@@ -196,16 +234,32 @@ export const FinalAssessmentPage: React.FC = () => {
         }
     };
 
+    const handleSingleSelect = (choiceId: number) => {
+        setSelectedAnswers(prev => ({ ...prev, [currentQuestion]: [choiceId] }));
+    };
+
+    const handleMultipleSelect = (choiceId: number, checked: boolean) => {
+        setSelectedAnswers(prev => {
+            const existing = prev[currentQuestion] || [];
+            return {
+                ...prev,
+                [currentQuestion]: checked
+                    ? [...existing, choiceId]
+                    : existing.filter(id => Number(id) !== Number(choiceId)),
+            };
+        });
+    };
+
     const saveAnswer = async (questionIndex = currentQuestion) => {
         if (!attemptId) return;
         const targetQuestion = questions[questionIndex];
-        const answer = selectedAnswers[questionIndex];
-        if (!targetQuestion || answer === undefined) return;
+        const selected = selectedAnswers[questionIndex] || [];
+        if (!targetQuestion) return;
 
         await assessmentAPI.saveAnswer({
             attempt_id: attemptId,
             question_id: targetQuestion.id,
-            selected_choices: [answer],
+            selected_choices: selected,
         });
         setLastSavedAt(new Date());
     };
@@ -380,7 +434,6 @@ export const FinalAssessmentPage: React.FC = () => {
     }
 
     const choices = getChoices(question);
-    const selectedChoice = selectedAnswers[currentQuestion];
     const progressValue = (answeredCount / questions.length) * 100;
 
     return (
@@ -398,20 +451,22 @@ export const FinalAssessmentPage: React.FC = () => {
                             </div>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] px-4 py-2">
-                                <p className="text-xs text-muted-foreground dark:text-gray-500">Estimated Time</p>
-                                <p className="flex items-center font-semibold">
-                                    <Clock className="mr-2 h-4 w-4 text-primary" />
-                                    {examDurationMinutes} min
+                            <div className="rounded border border-border bg-muted/70 px-4 py-2">
+                                <p className="text-xs text-muted-foreground">Remaining Time</p>
+                                <p className={`flex items-center font-semibold ${remainingSeconds !== null && remainingSeconds <= 60 ? 'text-red-600' : ''}`}>
+                                    <Clock className={`mr-2 h-4 w-4 ${remainingSeconds !== null && remainingSeconds <= 60 ? 'text-red-600' : 'text-blue-700'}`} />
+                                    {remainingSeconds !== null
+                                        ? `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`
+                                        : `${examDurationMinutes}:00`}
                                 </p>
                             </div>
-                            <div className="rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] px-4 py-2">
-                                <p className="text-xs text-muted-foreground dark:text-gray-500">Start Time</p>
+                            <div className="rounded border border-border bg-muted/70 px-4 py-2">
+                                <p className="text-xs text-muted-foreground">Start Time</p>
                                 <p className="font-semibold">{startTime?.toLocaleTimeString() || '--'}</p>
                             </div>
-                            <div className="rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] px-4 py-2">
-                                <p className="text-xs text-muted-foreground dark:text-gray-500">Saved Until</p>
-                                <p className="font-semibold">Manual submit</p>
+                            <div className="rounded border border-border bg-muted/70 px-4 py-2">
+                                <p className="text-xs text-muted-foreground">Expected End</p>
+                                <p className="font-semibold">{endTime?.toLocaleTimeString() || '--'}</p>
                             </div>
                         </div>
                     </div>
@@ -435,25 +490,53 @@ export const FinalAssessmentPage: React.FC = () => {
                                 {getQuestionText(question)}
                             </div>
 
-                            <RadioGroup
-                                value={selectedChoice?.toString()}
-                                onValueChange={(value) => setSelectedAnswers({ ...selectedAnswers, [currentQuestion]: Number(value) })}
-                                className="space-y-3"
-                            >
-                                {choices.map((option, index) => (
-                                    <div
-                                        key={option.id}
-                                        className={`flex items-center space-x-3 p-4 border rounded-xl transition-colors ${selectedChoice === option.id ? 'border-primary bg-primary/10' : 'border-border bg-card dark:border-white/10 dark:bg-white/[0.02] hover:bg-accent dark:hover:bg-white/[0.05]'
-                                            }`}
-                                    >
-                                        <RadioGroupItem value={option.id.toString()} id={`option-${option.id}`} />
-                                        <Label htmlFor={`option-${option.id}`} className="flex-1 cursor-pointer text-base">
-                                            <span className="mr-3 text-muted-foreground dark:text-gray-500 font-bold">{String.fromCharCode(65 + index)}</span>
-                                            {option.text}
-                                        </Label>
-                                    </div>
-                                ))}
-                            </RadioGroup>
+                            {question?.question_type === 'multiple' ? (
+                                <div className="space-y-3">
+                                    {choices.map((option, index) => {
+                                        const checked = (selectedAnswers[currentQuestion] || []).includes(option.id);
+                                        return (
+                                            <label
+                                                key={option.id}
+                                                className={`flex items-center space-x-3 p-4 border rounded-xl transition-colors cursor-pointer ${checked ? 'border-primary bg-primary/10' : 'border-border bg-card dark:border-white/10 dark:bg-white/[0.02] hover:bg-accent dark:hover:bg-white/[0.05]'
+                                                    }`}
+                                            >
+                                                <Checkbox
+                                                    checked={checked}
+                                                    onCheckedChange={(value) => handleMultipleSelect(option.id, Boolean(value))}
+                                                />
+                                                <span className="flex-1 text-base">
+                                                    <span className="mr-3 text-muted-foreground dark:text-gray-500 font-bold">{String.fromCharCode(65 + index)}</span>
+                                                    {option.text}
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <RadioGroup
+                                    value={(selectedAnswers[currentQuestion]?.[0])?.toString() || ""}
+                                    onValueChange={(value) => handleSingleSelect(Number(value))}
+                                    className="space-y-3"
+                                >
+                                    {choices.map((option, index) => {
+                                        const isSelected = selectedAnswers[currentQuestion]?.[0] === option.id;
+                                        return (
+                                            <div
+                                                key={option.id}
+                                                onClick={() => handleSingleSelect(option.id)}
+                                                className={`flex items-center space-x-3 p-4 border rounded-xl transition-colors cursor-pointer ${isSelected ? 'border-primary bg-primary/10' : 'border-border bg-card dark:border-white/10 dark:bg-white/[0.02] hover:bg-accent dark:hover:bg-white/[0.05]'
+                                                    }`}
+                                            >
+                                                <RadioGroupItem value={option.id.toString()} id={`option-${option.id}`} />
+                                                <Label htmlFor={`option-${option.id}`} className="flex-1 cursor-pointer text-base">
+                                                    <span className="mr-3 text-muted-foreground dark:text-gray-500 font-bold">{String.fromCharCode(65 + index)}</span>
+                                                    {option.text}
+                                                </Label>
+                                            </div>
+                                        );
+                                    })}
+                                </RadioGroup>
+                            )}
 
                             <div className="flex items-center justify-between pt-6 border-t border-border dark:border-white/5">
                                 <Button
@@ -508,7 +591,7 @@ export const FinalAssessmentPage: React.FC = () => {
                                         onClick={() => setCurrentQuestion(index)}
                                         className={`h-10 rounded-lg border text-sm font-medium ${currentQuestion === index
                                             ? 'border-primary bg-primary text-primary-foreground'
-                                            : selectedAnswers[index] !== undefined
+                                            : (selectedAnswers[index] && selectedAnswers[index].length > 0)
                                                 ? 'border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-300'
                                                 : 'border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] text-muted-foreground dark:text-gray-400'
                                             }`}

@@ -14,6 +14,7 @@ export interface ContentBlock {
   id: string | number;
   type: ContentType;
   content: string;
+  link?: string;
 }
 
 export interface ContentItem {
@@ -91,6 +92,7 @@ export interface Course {
   modules: Module[];
   final_assessment?: Quiz;
   rating?: number;
+  skills?: string[];
   created_at?: string;
   updated_at?: string;
   has_unpublished_changes?: boolean;
@@ -262,6 +264,12 @@ export interface LearningHoursKPI {
   completed_sessions_minutes: number;
   active_sessions_minutes: number;
   active_sessions_count: number;
+  weekly_totals?: Array<{
+    week_start: string;
+    week_end: string;
+    minutes: number;
+    hours: number;
+  }>;
 }
 
 export interface CoursesKPI {
@@ -275,6 +283,20 @@ export interface CompletionRateKPI {
   previous_completion_rate?: number;
   change_percentage?: number;
   month_over_month_change?: number;
+}
+
+export interface LearningActivityDay {
+  day: string;
+  hours: number;
+  minutes: number;
+  date: string;
+}
+
+export interface LearningActivityKPI {
+  current_streak: number;
+  weekly_activity: LearningActivityDay[];
+  week_start: string;
+  week_end: string;
 }
 
 export type LessonContentProgress = ContentProgress;

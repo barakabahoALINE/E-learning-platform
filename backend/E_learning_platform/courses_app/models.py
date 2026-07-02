@@ -50,6 +50,10 @@ class Course(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        permissions = [
+            ("publish_course", "Can publish courses"),
+            ("view_published_course", "Can view published courses"),
+        ]
 
         indexes = [
             models.Index(fields=["title"]),

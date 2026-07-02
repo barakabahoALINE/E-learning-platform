@@ -1,13 +1,15 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from datetime import timedelta
+import datetime
 from django.db.models import Sum
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from assessments_app.models import Assessment, Attempt
-from .permissions import IsAdmin, IsEnrolled
+from .permissions import CanViewProgress, CanCompleteProgress, IsEnrolled
 from .models import ContentProgress, SectionProgress, ModuleProgress, CourseProgress, LearningSession
 from courses_app.models import Content, Section, Module, Course
 from enrollments_app.models import Enrollment
@@ -158,6 +160,9 @@ class CompleteContentAPIView(APIView):
             if completed_modules == total_modules and final_passed:
                 enrollment.status = Enrollment.Status.COMPLETED
                 enrollment.save()
+                # End any active learning sessions at completion time
+                for s in LearningSession.objects.filter(student=request.user, course_id=course_id, is_active=True):
+                    s.end_session_at(enrollment.completed_at)
                 course_completed = True
             elif enrollment.status == Enrollment.Status.COMPLETED:
                 course_completed = True
@@ -165,6 +170,8 @@ class CompleteContentAPIView(APIView):
             if total_sections > 0 and completed_sections == total_sections:
                 enrollment.status = Enrollment.Status.COMPLETED
                 enrollment.save()
+                for s in LearningSession.objects.filter(student=request.user, course_id=course_id, is_active=True):
+                    s.end_session_at(enrollment.completed_at)
                 course_completed = True
             elif enrollment.status == Enrollment.Status.COMPLETED:
                 course_completed = True
@@ -569,7 +576,7 @@ class CourseModulesProgressAPIView(APIView):
 # 7. Completed sections across all courses
 # ═══════════════════════════════════════════════════════════════
 class CompletedSectionsAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
         sps = SectionProgress.objects.filter(
@@ -632,14 +639,14 @@ class CompletedCourseModulesAPIView(APIView):
 # 10-12. Learning session views
 # ═══════════════════════════════════════════════════════════════
 class StartLearningAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def post(self, request, course_id):
         try:
             enrollment = Enrollment.objects.get(
                 student=request.user,
                 course_id=course_id,
-                status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED],
+                status=Enrollment.Status.ACTIVE,
             )
         except Enrollment.DoesNotExist:
             return Response(
@@ -705,7 +712,7 @@ class StartLearningAPIView(APIView):
 
 
 class EndLearningSessionAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def post(self, request, course_id):
         try:
@@ -724,7 +731,7 @@ class EndLearningSessionAPIView(APIView):
 
 
 class ContinueLearningAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request, course_id):
         active_session = LearningSession.objects.filter(
@@ -743,11 +750,16 @@ class ContinueLearningAPIView(APIView):
                 {"status": "failed", "message": "No learning history found.", "data": None},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # Ensure enrollment is still active before resuming
+        try:
+            enrollment = Enrollment.objects.get(student=request.user, course_id=course_id, status=Enrollment.Status.ACTIVE)
+        except Enrollment.DoesNotExist:
+            return Response({"status": "failed", "message": "Cannot resume learning; course is completed or not active.", "data": None}, status=status.HTTP_400_BAD_REQUEST)
 
         resumed_session = LearningSession.objects.create(
             student=request.user,
             course_id=course_id,
-            enrollment=last_session.enrollment,
+            enrollment=enrollment,
             started_at=timezone.now(),
             is_active=True,
         )
@@ -762,7 +774,7 @@ class ContinueLearningAPIView(APIView):
 #     GET /progress/courses/{course_id}/
 # ═══════════════════════════════════════════════════════════════
 class StudentCourseProgressAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request, course_id):
         enrollment = Enrollment.objects.filter(student=request.user, course_id=course_id).first()
@@ -827,7 +839,7 @@ class AdminStudentCourseProgressAPIView(APIView):
     Admin can view progress of any student in a course
     """
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request, student_id, course_id):
         try:
@@ -885,7 +897,7 @@ class AdminCompleteCourseAPIView(APIView):
     only if all lessons are completed
     """
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanCompleteProgress]
 
     def post(self, request, student_id, course_id):
 
@@ -932,6 +944,10 @@ class AdminCompleteCourseAPIView(APIView):
         enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()
 
+        # End any active learning sessions at completion time
+        for s in LearningSession.objects.filter(student=student, course_id=course_id, is_active=True):
+            s.end_session_at(enrollment.completed_at)
+
         return Response({
             "success": True,
             "message": "Course marked as completed successfully",
@@ -944,7 +960,7 @@ class AdminCompleteCourseAPIView(APIView):
 # 15. Complete course
 # ═══════════════════════════════════════════════════════════════
 class CompleteCourseAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCompleteProgress]
 
     def post(self, request, course_id):
         try:
@@ -977,6 +993,10 @@ class CompleteCourseAPIView(APIView):
 
         enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()
+
+        # End any active learning sessions at completion time
+        for s in LearningSession.objects.filter(student=request.user, course_id=course_id, is_active=True):
+            s.end_session_at(enrollment.completed_at)
         return Response({"success": True, "message": "Course marked as completed successfully"})
     
 
@@ -989,32 +1009,102 @@ class LearningHoursKPIAPIView(APIView):
     Return total hours learned by the student
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
+        # Recompute completed minutes with capping at enrollment completion time
+        completed_minutes = 0
+        completed_sessions = LearningSession.objects.filter(student=request.user, is_active=False)
+        for session in completed_sessions:
+            start = session.started_at
+            end = session.ended_at or timezone.now()
+            try:
+                if session.enrollment and session.enrollment.completed_at:
+                    end = min(end, session.enrollment.completed_at)
+            except Exception:
+                pass
+            duration = max(0, int((end - start).total_seconds() / 60))
+            completed_minutes += duration
 
-        # 1️⃣ Get total minutes from completed sessions
-        completed_minutes = LearningSession.objects.filter(
-            student=request.user,
-            is_active=False
-        ).aggregate(total=Sum("duration_minutes"))["total"] or 0
-
-        # 2️⃣ Add time from active sessions
-        active_sessions = LearningSession.objects.filter(
-            student=request.user,
-            is_active=True
-        )
-
+        # Active sessions: only count up to completion time if enrollment is completed
+        active_sessions = LearningSession.objects.filter(student=request.user, is_active=True)
         active_minutes = 0
-
         for session in active_sessions:
-            elapsed = (timezone.now() - session.started_at).total_seconds() / 60
-            active_minutes += int(elapsed)
+            start = session.started_at
+            end = timezone.now()
+            try:
+                if session.enrollment and session.enrollment.completed_at:
+                    end = min(end, session.enrollment.completed_at)
+            except Exception:
+                pass
+            elapsed = max(0, int((end - start).total_seconds() / 60))
+            active_minutes += elapsed
 
-        # 3️⃣ Total minutes
+        # Total minutes and hours
         total_minutes = completed_minutes + active_minutes
-
         total_hours = round(total_minutes / 60, 2)
+
+        # Weekly aggregation for the last N weeks (default 12)
+        try:
+            weeks = int(request.GET.get("weeks", 12))
+        except Exception:
+            weeks = 12
+        weeks = max(1, min(weeks, 52))
+
+        tz = timezone.get_current_timezone()
+        today = timezone.localdate()
+        days_since_sunday = (today.weekday() + 1) % 7
+        current_week_start = today - timedelta(days=days_since_sunday)
+
+        # preload sessions
+        sessions = LearningSession.objects.filter(student=request.user)
+
+        def _overlap_minutes(session, start_dt, end_dt, cap_active=False):
+            s = session.started_at.astimezone(tz)
+            e = session.ended_at.astimezone(tz) if session.ended_at else timezone.now().astimezone(tz)
+
+            # If this is an active session and we're capping active sessions
+            # for the current week, do not count time that started before
+            # the week's start (prevents carry-over from previous week).
+            if session.ended_at is None and cap_active and s < start_dt:
+                return 0
+
+            try:
+                if session.enrollment and session.enrollment.completed_at:
+                    e = min(e, session.enrollment.completed_at.astimezone(tz))
+            except Exception:
+                pass
+
+            overlap_start = max(s, start_dt)
+            overlap_end = min(e, end_dt)
+            if overlap_end <= overlap_start:
+                return 0
+            return int((overlap_end - overlap_start).total_seconds() / 60)
+
+        weekly_totals = []
+        for i in range(weeks):
+            wk_start_date = current_week_start - timedelta(weeks=i)
+            wk_end_date = wk_start_date + timedelta(days=6)
+            wk_start_dt = datetime.datetime.combine(wk_start_date, datetime.time.min)
+            wk_end_dt = datetime.datetime.combine(wk_end_date, datetime.time.max)
+            if timezone.is_naive(wk_start_dt):
+                wk_start_dt = timezone.make_aware(wk_start_dt, tz)
+            if timezone.is_naive(wk_end_dt):
+                wk_end_dt = timezone.make_aware(wk_end_dt, tz)
+
+            minutes = 0
+            for session in sessions:
+                # For the current week (i == 0) do not include active sessions
+                # that started before the week's start to avoid carry-over.
+                cap_active = (i == 0)
+                minutes += _overlap_minutes(session, wk_start_dt, wk_end_dt, cap_active=cap_active)
+
+            weekly_totals.append({
+                "week_start": wk_start_dt.date().isoformat(),
+                "week_end": wk_end_dt.date().isoformat(),
+                "minutes": minutes,
+                "hours": round(minutes / 60, 2),
+            })
 
         return Response({
             "success": True,
@@ -1024,13 +1114,75 @@ class LearningHoursKPIAPIView(APIView):
                 "total_minutes_learned": total_minutes,
                 "completed_sessions_minutes": completed_minutes,
                 "active_sessions_minutes": active_minutes,
-                "active_sessions_count": active_sessions.count()
+                "active_sessions_count": active_sessions.count(),
+                "weekly_totals": weekly_totals,
+            }
+        })
+
+
+class LearningActivityKPIAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanViewProgress]
+
+    def get(self, request):
+        today = timezone.localdate()
+        days_since_sunday = (today.weekday() + 1) % 7
+        week_start = today - timedelta(days=days_since_sunday)
+        week_dates = [week_start + timedelta(days=i) for i in range(7)]
+        week_index = {date: index for index, date in enumerate(week_dates)}
+
+        sessions = LearningSession.objects.filter(student=request.user)
+        session_dates = set()
+        daily_minutes = [0] * 7
+
+        for session in sessions:
+            # compute session end respecting enrollment completion
+            start_dt = session.started_at.astimezone(timezone.get_current_timezone())
+            end_dt = session.ended_at.astimezone(timezone.get_current_timezone()) if session.ended_at else timezone.now().astimezone(timezone.get_current_timezone())
+            try:
+                if session.enrollment and session.enrollment.completed_at:
+                    end_dt = min(end_dt, session.enrollment.completed_at.astimezone(timezone.get_current_timezone()))
+            except Exception:
+                pass
+
+            duration = max(0, int((end_dt - start_dt).total_seconds() / 60))
+            started_date = start_dt.date()
+            session_dates.add(started_date)
+            if started_date in week_index:
+                daily_minutes[week_index[started_date]] += duration
+
+        current_streak = 0
+        if session_dates:
+            last_session_date = max(session_dates)
+            day = last_session_date
+            while day in session_dates:
+                current_streak += 1
+                day -= timedelta(days=1)
+
+        weekly_activity = []
+        day_labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        for index, calendar_date in enumerate(week_dates):
+            minutes = daily_minutes[index]
+            weekly_activity.append({
+                "day": day_labels[index],
+                "hours": round(minutes / 60, 2),
+                "minutes": minutes,
+                "date": calendar_date.isoformat(),
+            })
+
+        return Response({
+            "success": True,
+            "message": "Learning activity KPI retrieved successfully",
+            "data": {
+                "current_streak": current_streak,
+                "weekly_activity": weekly_activity,
+                "week_start": week_start.isoformat(),
+                "week_end": (week_start + timedelta(days=6)).isoformat(),
             }
         })
 
 
 class CoursesKPIAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
 
@@ -1075,7 +1227,7 @@ class CompletionRateAPIView(APIView):
     Completion rate based on courses
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
 
@@ -1190,7 +1342,7 @@ class ModuleContentsAPIView(APIView):
 
 class MyCourseProgressAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewProgress]
 
     def get(self, request):
 

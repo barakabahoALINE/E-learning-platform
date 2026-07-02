@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 interface AddLearnerModalProps {
   isOpen: boolean;
@@ -21,8 +21,6 @@ export function AddLearnerModal({ isOpen, onClose, onAdd, isSaving = false }: Ad
     password: "",
   });
 
-  if (!isOpen) return null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -41,19 +39,13 @@ export function AddLearnerModal({ isOpen, onClose, onAdd, isSaving = false }: Ad
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl w-full max-w-md">
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">Add New Learner</h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add New Learner</DialogTitle>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-5 mt-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Full Name
@@ -64,6 +56,7 @@ export function AddLearnerModal({ isOpen, onClose, onAdd, isSaving = false }: Ad
               onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="e.g., John Smith"
+              required
             />
           </div>
 
@@ -77,6 +70,7 @@ export function AddLearnerModal({ isOpen, onClose, onAdd, isSaving = false }: Ad
               onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="University or organization"
+              required
             />
           </div>
 
@@ -90,6 +84,7 @@ export function AddLearnerModal({ isOpen, onClose, onAdd, isSaving = false }: Ad
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="At least 8 characters"
+              required
             />
           </div>
 
@@ -102,7 +97,8 @@ export function AddLearnerModal({ isOpen, onClose, onAdd, isSaving = false }: Ad
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="john.smith@example.com"
+              placeholder="learner@example.com"
+              required
             />
           </div>
 
@@ -117,13 +113,13 @@ export function AddLearnerModal({ isOpen, onClose, onAdd, isSaving = false }: Ad
             <button
               type="submit"
               disabled={isSaving}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
             >
               {isSaving ? "Adding..." : "Add Learner"}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

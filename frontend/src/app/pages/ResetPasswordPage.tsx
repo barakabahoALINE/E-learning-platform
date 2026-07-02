@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -13,6 +13,7 @@ import StatusModal from "../components/ui/StatusModal";
 
 export const ResetPasswordPage: React.FC = () => {
   const { uid, token } = useParams<{ uid: string; token: string }>();
+  const [searchParams] = useSearchParams();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -25,6 +26,7 @@ export const ResetPasswordPage: React.FC = () => {
   const isLoading = useAppSelector(selectAuthLoading);
   const error = useAppSelector(selectAuthError);
   const status = useAppSelector(selectAuthStatus);
+  const isSetupMode = searchParams.get("mode") === "setup";
 
   useEffect(() => {
     if (status === "succeeded" || status === "failed") {
@@ -43,7 +45,11 @@ export const ResetPasswordPage: React.FC = () => {
         resetPassword({
           uid,
           token,
-          data: { new_password: password, comfirm_new_password: confirmPassword },
+          data: {
+            new_password: password,
+            comfirm_new_password: confirmPassword,
+            mode: isSetupMode ? "setup" : "reset",
+          },
         })
       );
     }
@@ -72,15 +78,23 @@ export const ResetPasswordPage: React.FC = () => {
           <div className="flex justify-center mb-2.5">
             <img src={Logo} alt="Logo" className="w-auto h-20" />
           </div>
-          <h1 className="text-3xl mb-2">Reset Password</h1>
-          <p className="text-gray-600 mt-2">Create a new secure password for your account</p>
+          <h1 className="text-3xl mb-2">
+            {isSetupMode ? "Set Your Password" : "Reset Password"}
+          </h1>
+          <p className="text-gray-600 mt-2">
+            {isSetupMode
+              ? "Create a secure password to complete your account setup"
+              : "Create a new secure password for your account"}
+          </p>
         </div>
 
         <Card className="shadow-lg overflow-hidden">
           <CardHeader>
-            <CardTitle>Enter New Password</CardTitle>
+            <CardTitle>{isSetupMode ? "Create Your Password" : "Enter New Password"}</CardTitle>
             <CardDescription>
-              Your new password must be different from previous ones.
+              {isSetupMode
+                ? "This password will be used to log in to your account."
+                : "Your new password must be different from previous ones."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -140,10 +154,10 @@ export const ResetPasswordPage: React.FC = () => {
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Resetting...
+                    {isSetupMode ? "Setting up..." : "Resetting..."}
                   </>
                 ) : (
-                  "Reset Password"
+                  isSetupMode ? "Set Password" : "Reset Password"
                 )}
               </Button>
             </form>
@@ -159,10 +173,16 @@ export const ResetPasswordPage: React.FC = () => {
       <StatusModal
         isOpen={isModalOpen}
         type={status === "succeeded" ? "success" : "error"}
-        title={status === "succeeded" ? "Password Reset Successfully!" : "Reset Failed"}
+        title={
+          status === "succeeded"
+            ? (isSetupMode ? "Account Setup Complete!" : "Password Reset Successfully!")
+            : (isSetupMode ? "Setup Failed" : "Reset Failed")
+        }
         description={
           status === "succeeded"
-            ? "Your password has been updated. You can now log in with your new password."
+            ? (isSetupMode
+              ? "Your account is ready! You can now log in with your new password."
+              : "Your password has been updated. You can now log in with your new password.")
             : (error as string) || "Something went wrong. The link may be invalid or expired."
         }
         onClose={handleModalClose}

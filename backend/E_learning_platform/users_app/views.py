@@ -10,23 +10,135 @@ from django.utils.http import urlsafe_base64_decode,urlsafe_base64_encode
 from .tokens import email_verification_token
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated
-from .serializers import *
-from django.contrib.auth.tokens import PasswordResetTokenGenerator 
+from .serializers import (
+    AddUserSerializer,
+    CreatePasswordSerializer,
+    GroupPermissionsUpdateSerializer,
+    GroupSerializer,
+    GroupUpdateSerializer,
+    LoginSerializer,
+    LogoutSerializer,
+    PermissionSerializer,
+    ProfilePictureSerializer,
+    SignupSerializer,
+    UpdateNameSerializer,
+    UserGroupAssignSerializer,
+    UserListSerializer,
+    UserPermissionUpdateSerializer,
+    UserProfileSerializer,
+    UserRoleAssignSerializer,
+    UserUpdateSerializer,
+    validate_strong_password,
+    get_password_validation_errors,
+    get_user_auth_payload,
+)
+from .services.rbac import sync_user_role_group
+from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.encoding import force_bytes, force_str
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.core.mail import send_mail
 from rest_framework.decorators import api_view
-from django.contrib.auth.tokens import default_token_generator
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .permissions import IsAdmin
+from .password_rules import get_password_rules_display
+from .permissions import CanAssignRoles, CanModifyPermissions, CanViewUsers, CanChangeUsers, CanDeleteUsers, CanViewRoles, CanViewPermissions,CanAddUsers
+from .services.email_service import (
+    send_verification_email,
+    send_invitation_email,
+    send_password_reset_email,
+    send_password_changed_email,
+)
 import json
-from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
-from django.contrib.auth import get_user_model
-from .serializers import UserListSerializer, UserUpdateSerializer
+from django.contrib.auth.models import Group, Permission
+from django.contrib.contenttypes.models import ContentType
+from .services.rbac import DEFAULT_ROLES
+from .models import RoleMetadata
+import logging
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
+
+def check_permission_modification_allowed(request_user, target_role_name):
+    if request_user.is_superuser:
+        return True
+    
+    user_role = getattr(request_user, 'role', '').lower()
+    target_role = target_role_name.lower()
+    
+    if user_role == 'viewer':
+        return False
+        
+    if user_role == 'instructor':
+        # Instructor can only manage Student permissions
+        return target_role == 'student'
+        
+    if user_role == 'admin':
+        # Admin can manage Instructor, Viewer, Student
+        return target_role in ['instructor', 'viewer', 'student']
+        
+    return False
+
+def check_user_permission_modification_allowed(request_user, target_user):
+    if request_user.is_superuser:
+        return True
+        
+    user_role = getattr(request_user, 'role', '').lower()
+    target_role = getattr(target_user, 'role', '').lower()
+    
+    if user_role == 'viewer':
+        return False
+        
+    if user_role == 'instructor':
+        # Instructor can only manage Student
+        return target_role == 'student'
+        
+    if user_role == 'admin':
+        # Admin can manage Instructor, Viewer, Student within their own institution
+        if target_user.is_superuser:
+            return False
+        if target_role == 'admin':
+            return False
+        if getattr(target_user, 'institution', '') != getattr(request_user, 'institution', ''):
+            return False
+        return target_role in ['instructor', 'viewer', 'student']
+        
+    return False
+
+
+class StructuredResponseMixin:
+    def handle_exception(self, exc):
+        response = super().handle_exception(exc)
+        if response is None:
+            return response
+
+        if response.status_code >= status.HTTP_400_BAD_REQUEST:
+            message = None
+            if isinstance(response.data, dict):
+                if "detail" in response.data and len(response.data) == 1:
+                    message = force_str(response.data["detail"])
+                else:
+                    first_value = next(iter(response.data.values()), None)
+                    if isinstance(first_value, list):
+                        message = str(first_value[0]) if first_value else "Validation failed."
+                    elif isinstance(first_value, dict):
+                        nested = next(iter(first_value.values()), None)
+                        message = str(nested[0]) if isinstance(nested, list) and nested else str(nested)
+                    else:
+                        message = str(first_value)
+            else:
+                message = str(response.data)
+
+            if not message:
+                message = "Validation failed."
+
+            response.data = {
+                "status": "failed",
+                "message": message,
+                "data": None,
+            }
+
+        return response
+
 
 class SignupView(generics.CreateAPIView):
     serializer_class = SignupSerializer
@@ -39,14 +151,55 @@ class SignupView(generics.CreateAPIView):
             {
                 "status": "success",
                 "message": "User created successfully",
-                "user": {
+                "data": {
                     "email": user.email,
                     "full_name": user.full_name,
                     "institution": user.institution,
-                }
+                },
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_201_CREATED,
         )
+
+
+class AddUserApiView(StructuredResponseMixin, generics.CreateAPIView):
+    serializer_class = AddUserSerializer
+    permission_classes = [IsAuthenticated, CanAddUsers]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {
+                "status": "success",
+                "message": "User created successfully.",
+                "data": UserListSerializer(user).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CreatePasswordApiView(StructuredResponseMixin, APIView):
+    permission_classes = []
+
+    def post(self, request):
+        serializer = CreatePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {
+                "status": "success",
+                "message": "Password set successfully.",
+                "data": {
+                    "id": user.id,
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "role": user.role,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
 class VerifyEmailView(APIView):
 
     def get(self, request, uidb64, token):
@@ -128,8 +281,23 @@ class GoogleLoginAPIView(APIView):
                     "institution": "Google User",
                     "role": "student",
                     "is_verified": True,
+                    "is_active": True,
                 }
             )
+
+            if created:
+                sync_user_role_group(user)
+            else:
+                if not user.is_verified:
+                    user.is_verified = True
+                sync_user_role_group(user)
+                user.save(update_fields=["is_verified"])
+
+            if not user.is_active:
+                return Response({
+                    "success": False,
+                    "message": "Account is deactivated"
+                }, status=403)
 
             # GENERATE JWT
             refresh = RefreshToken.for_user(user)
@@ -140,12 +308,7 @@ class GoogleLoginAPIView(APIView):
                 "data": {
                     "access": str(refresh.access_token),
                     "refresh": str(refresh),
-                    "user": {
-                        "id": user.id,
-                        "email": user.email,
-                        "full_name": user.full_name,
-                        "role": user.role
-                    }
+                    "user": get_user_auth_payload(user),
                 }
             })
 
@@ -193,6 +356,26 @@ class LogoutView(APIView):
             "message": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
+
+class PasswordRulesView(APIView):
+    """
+    Public endpoint that returns password requirements.
+    Frontend can fetch this to display password rules during signup, password creation, and password reset.
+    """
+    permission_classes = []
+
+    def get(self, request):
+        rules = get_password_rules_display()
+        return Response(
+            {
+                "success": True,
+                "message": "Password requirements",
+                "data": rules,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 # Create your views here.
 
 
@@ -230,12 +413,7 @@ def forgot_password(request):
     reset_link = f"http://localhost:5173/reset-password/{uid}/{token}"
 
     try:
-        send_mail(
-            subject="Reset Your Password",
-            message=f"Click to this link to reset your password:\n{reset_link}",
-            from_email=None,
-            recipient_list=[email],
-        )
+        send_password_reset_email(user, reset_link)
     except Exception as e:
         return Response(
             {"error": "Failed to send email. Please try again later."},
@@ -275,25 +453,40 @@ def reset_password(request, uidb64, token):
     if not default_token_generator.check_token(user, token):
         return JsonResponse({"error": "Invalid or expired token"}, status=400)
 
+    errors = get_password_validation_errors(password1, user=user)
+    if errors:
+        return JsonResponse({"error": errors}, status=400)
+
     user.set_password(password1)
+    if request.GET.get("mode") == "setup" or data.get("mode") == "setup":
+        user.is_verified = True
+        user.is_active = True
     user.save()
 
     return JsonResponse({"message": "Password has been reset successfully"})
 
 class UserListView(generics.ListAPIView):
-    queryset = User.objects.all()
     serializer_class = UserListSerializer
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanViewUsers]
+
+    def get_queryset(self):
+        queryset = User.objects.all()
+        user = self.request.user
+        if user.is_superuser:
+            return queryset
+        if getattr(user, 'role', '') in ['admin', 'viewer'] or user.groups.filter(name__in=['Admin', 'Viewer']).exists():
+            return queryset
+        return queryset.filter(institution=user.institution)
     
 class UserUpdateView(generics.UpdateAPIView):
     queryset = User.objects.all()
     serializer_class = UserUpdateSerializer
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanChangeUsers]
     lookup_field = "id"
     
 class UserDeleteView(generics.DestroyAPIView):
     queryset = User.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, CanDeleteUsers]
     lookup_field = "id"
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -306,6 +499,309 @@ class UserDeleteView(generics.DestroyAPIView):
             },
             status=status.HTTP_200_OK
         )
+
+
+class UserRoleAssignView(generics.UpdateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserRoleAssignSerializer
+    permission_classes = [IsAuthenticated, CanAssignRoles]
+    lookup_field = "id"
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=False)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        response_serializer = UserListSerializer(instance)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+class UserRoleUpdateView(generics.UpdateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserRoleAssignSerializer
+    permission_classes = [IsAuthenticated, CanAssignRoles]
+    lookup_field = "id"
+    lookup_url_kwarg = "user_id"
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=False)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        response_serializer = UserListSerializer(instance)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+class UserPermissionsUpdateView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def patch(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not check_user_permission_modification_allowed(request.user, user):
+            return Response(
+                {"detail": "You do not have permission to modify permissions for this user."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = UserPermissionUpdateSerializer(
+            data=request.data,
+            context={"user": user},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(UserListSerializer(user).data, status=status.HTTP_200_OK)
+
+
+class UserGroupsUpdateView(APIView):
+    permission_classes = [IsAuthenticated, CanAssignRoles]
+
+    def patch(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not check_user_permission_modification_allowed(request.user, user):
+            return Response(
+                {"detail": "You do not have permission to modify roles/groups for this user."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = UserGroupAssignSerializer(
+            data=request.data,
+            context={"user": user},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(UserListSerializer(user).data, status=status.HTTP_200_OK)
+
+
+class RolePermissionUpdateView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def patch(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response(
+                {"detail": "Role not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not check_permission_modification_allowed(request.user, group.name):
+            return Response(
+                {"detail": "You do not have permission to modify permissions for this role."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = GroupPermissionsUpdateSerializer(
+            data=request.data,
+            context={"group": group},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(GroupSerializer(group).data, status=status.HTTP_200_OK)
+
+
+class ProfileAPIView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "patch", "put", "head", "options"]
+
+    def get_object(self):
+        return self.request.user
+
+
+class RoleListView(generics.ListAPIView):
+    queryset = Group.objects.all().order_by("name")
+    serializer_class = GroupSerializer
+    permission_classes = [IsAuthenticated, CanViewRoles]
+
+
+class PermissionListView(generics.ListAPIView):
+    serializer_class = PermissionSerializer
+    permission_classes = [IsAuthenticated, CanViewPermissions]
+
+    def get_queryset(self):
+        return Permission.objects.select_related("content_type").filter(
+            content_type__app_label__endswith="_app"
+        ).order_by(
+            "content_type__app_label",
+            "codename",
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        unique_permissions = {}
+        for permission in queryset:
+            key = f"{permission.content_type.app_label}.{permission.codename}"
+            if key not in unique_permissions:
+                unique_permissions[key] = permission
+        serializer = self.get_serializer(list(unique_permissions.values()), many=True)
+        return Response(serializer.data)
+
+
+class RoleCreateView(APIView):
+    """Create a new role (Group). Admins with modify permission can create roles.
+
+    Payload: { "name": "RoleName", "permissions": ["app_label.codename", ...] }
+    """
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def post(self, request):
+        name = request.data.get("name")
+        description = request.data.get("description", "")
+        perms = request.data.get("permissions", [])
+
+        if not name:
+            return Response({"detail": "Role name is required."}, status=400)
+
+        # Prevent creation of core roles by non-superusers
+        from .services.rbac import DEFAULT_ROLES
+        if name in DEFAULT_ROLES and not request.user.is_superuser:
+            return Response({"detail": "Cannot create reserved role."}, status=403)
+
+        group, created = Group.objects.get_or_create(name=name)
+        metadata, _ = RoleMetadata.objects.get_or_create(group=group)
+        metadata.description = description
+        metadata.save()
+
+        # validate and attach permissions
+        if perms:
+            serializer = GroupPermissionsUpdateSerializer(data={"permissions": perms}, context={"group": group})
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+
+        return Response(GroupSerializer(group).data, status=201 if created else 200)
+
+
+class RoleDetailView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def get(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        return Response(GroupSerializer(group).data)
+
+    def patch(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        # Only superuser can rename or modify default roles
+        from .services.rbac import DEFAULT_ROLES
+        if group.name in DEFAULT_ROLES and not request.user.is_superuser:
+            requested_name = request.data.get("name")
+            if requested_name and requested_name != group.name:
+                return Response({"detail": "Renaming reserved roles requires superuser."}, status=403)
+
+        serializer = GroupUpdateSerializer(data=request.data, context={"group": group})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(GroupSerializer(group).data)
+
+    def delete(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        from .services.rbac import DEFAULT_ROLES
+        if group.name in DEFAULT_ROLES and not request.user.is_superuser:
+            return Response({"detail": "Cannot delete reserved role."}, status=403)
+
+        group.delete()
+        return Response({"detail": "Role deleted."}, status=200)
+
+
+class RoleDeleteView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def delete(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        from .services.rbac import DEFAULT_ROLES
+        if group.name in DEFAULT_ROLES and not request.user.is_superuser:
+            return Response({"detail": "Cannot delete reserved role."}, status=403)
+
+        group.delete()
+        return Response({"detail": "Role deleted."}, status=200)
+
+
+class RolePermissionAssignView(APIView):
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    def patch(self, request, role_id):
+        try:
+            group = Group.objects.get(pk=role_id)
+        except Group.DoesNotExist:
+            return Response({"detail": "Role not found."}, status=404)
+
+        if not check_permission_modification_allowed(request.user, group.name):
+            return Response(
+                {"detail": "You do not have permission to modify permissions for this role."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = GroupPermissionsUpdateSerializer(data=request.data, context={"group": group})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(GroupSerializer(group).data, status=200)
+
+
+class PermissionCreateView(APIView):
+    """Create a new Permission entry. Admins can create non-core permissions; superusers can create any.
+
+    Payload: { "app_label": "app_label", "codename": "codename", "name": "Human Readable" }
+    """
+    permission_classes = [IsAuthenticated, CanModifyPermissions]
+
+    CORE_APPS = {"auth", "contenttypes", "sessions", "admin"}
+
+    def post(self, request):
+        app_label = request.data.get("app_label")
+        codename = request.data.get("codename")
+        name = request.data.get("name")
+
+        if not all([app_label, codename, name]):
+            return Response({"detail": "app_label, codename and name are required."}, status=400)
+
+        if app_label in self.CORE_APPS and not request.user.is_superuser:
+            return Response({"detail": "Only superusers can create core system permissions."}, status=403)
+
+        try:
+            content_type = ContentType.objects.get(app_label=app_label)
+        except ContentType.DoesNotExist:
+            return Response({"detail": f"App label '{app_label}' is not recognized."}, status=400)
+
+        permission, created = Permission.objects.get_or_create(
+            content_type=content_type,
+            codename=codename,
+            defaults={"name": name},
+        )
+
+        if not created:
+            return Response({"detail": "Permission already exists."}, status=200)
+
+        return Response(PermissionSerializer(permission).data, status=201)
         
 class UpdateProfilePictureAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -348,3 +844,64 @@ class UpdateNameAPIView(APIView):
             "status": "failed",
             "errors": serializer.errors
         }, status=400)
+
+
+class UpdatePasswordAPIView(APIView):
+    """
+    Allow authenticated users to update their password.
+
+    PATCH /api/profile/update-password/
+    Payload: { old_password, new_password, confirm_password }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _handle(self, request):
+        user = request.user
+
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+        confirm_password = request.data.get("confirm_password")
+
+        # Required fields
+        if not old_password:
+            return Response({"success": False, "message": "Old password is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not new_password:
+            return Response({"success": False, "message": "New password is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not confirm_password:
+            return Response({"success": False, "message": "Confirm password is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verify current password
+        if not user.check_password(old_password):
+            return Response({"success": False, "message": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # New/confirm match
+        if new_password != confirm_password:
+            return Response({"success": False, "message": "New password and confirm password do not match."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Reject if same as current
+        if user.check_password(new_password):
+            return Response({"success": False, "message": "New password must be different from the current password."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate strength and policy
+        errors = get_password_validation_errors(new_password, user=user)
+        if errors:
+            return Response({"success": False, "message": "Password does not meet security requirements.", "errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        # All good — set the new password
+        user.set_password(new_password)
+        user.save()
+
+        # Send notification email (do not include the password)
+        try:
+            send_password_changed_email(user)
+        except Exception:
+            logger.exception("Failed to send password change notification email for user %s", user.email)
+
+        return Response({"success": True, "message": "Password updated successfully."}, status=status.HTTP_200_OK)
+
+    def patch(self, request, *args, **kwargs):
+        return self._handle(request)
+
+    # also accept POST for clients that cannot send PATCH
+    def post(self, request, *args, **kwargs):
+        return self._handle(request)

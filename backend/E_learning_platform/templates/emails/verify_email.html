@@ -1,0 +1,45 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Verify Your Email - E-Learning Platform{% endblock %}
+
+{% block header_subtitle %}<p>Email Verification Required</p>{% endblock %}
+
+{% block content %}
+    <h2>Welcome, {{ full_name }}!</h2>
+    
+    <p>Thank you for signing up to the E-Learning Platform. We're excited to have you on board!</p>
+    
+    <p>To complete your account setup and start your learning journey, please verify your email address by clicking the button below:</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ verification_link }}" class="cta-button">Verify Email Address</a>
+    </div>
+
+    <p style="text-align: center; color: #999; font-size: 13px;">
+        Or copy and paste this link in your browser:
+    </p>
+
+    <div class="fallback-link">
+        <p>Verification Link:</p>
+        <a href="{{ verification_link }}">{{ verification_link }}</a>
+    </div>
+
+    <div class="security-notice">
+        <strong>🔒 Security Notice:</strong>
+        <p style="font-size: 11px;">This verification link will expire in 24 hours. If you did not create this account, please ignore this email. Your account will remain inactive until verified.</p>
+    </div>
+
+    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e5e5; color: #888; font-size: 13px;">
+        <p><strong>Next Steps:</strong></p>
+        <ul style="list-style: disc; margin-left: 20px; margin-top: 10px;">
+            <li>Verify your email using the button above</li>
+            <li>Complete your profile setup</li>
+            <li>Explore available courses</li>
+            <li>Start learning today!</li>
+        </ul>
+    </div>
+
+    <p style="margin-top: 25px; color: #888; font-size: 13px;">
+        If you have any questions or need assistance, please don't hesitate to contact our support team.
+    </p>
+{% endblock %}

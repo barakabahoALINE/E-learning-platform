@@ -114,7 +114,7 @@ export function AnalyticsPage() {
           return (
             <div
               key={stat.label}
-              className="bg-white rounded-xl p-6 shadow-sm border border-gray-100"
+              className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className={`p-3 rounded-lg ${stat.bgColor}`}>
@@ -135,7 +135,7 @@ export function AnalyticsPage() {
 
       {/* Charts */}
       <div className="grid grid-cols-2 gap-6 mb-8">
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">
             Course Performance
           </h3>
@@ -161,7 +161,7 @@ export function AnalyticsPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">
             Engagement Trends
           </h3>
@@ -202,7 +202,7 @@ export function AnalyticsPage() {
 
       {/* Top Learners and Completion Rate */}
       <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2 bg-white rounded-xl shadow-sm border border-gray-100">
+        <div className="col-span-2 bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
           <div className="p-6 border-b border-gray-100">
             <h3 className="text-lg font-semibold text-gray-900">Most Active Learners</h3>
           </div>
@@ -260,7 +260,7 @@ export function AnalyticsPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">
             Completion Rate
           </h3>

@@ -4,6 +4,8 @@ import courseReducer from '../features/courses/courseSlice';
 import enrollmentReducer from '../features/enrollments/enrollmentSlice';
 import progressReducer from '../features/progress/progressSlice';
 import assessmentReducer from '../features/assessments/assessmentSlice';
+import certificateReducer from '../features/certificates/certificateSlice';
+import rbacReducer from '../features/rbac/rbacSlice';
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +14,8 @@ export const store = configureStore({
     enrollments: enrollmentReducer,
     progress: progressReducer,
     assessments: assessmentReducer,
+    certificates: certificateReducer,
+    rbac: rbacReducer,
   },
 });
 

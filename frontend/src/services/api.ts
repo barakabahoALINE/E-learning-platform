@@ -90,7 +90,15 @@ api.interceptors.response.use(
         }
       }
     }
-    return Promise.reject(error);
+      // Normalize server error message for UI consumption
+      try {
+        const serverDetail = error.response?.data?.detail || error.response?.data?.message;
+        if (serverDetail) error.message = typeof serverDetail === 'string' ? serverDetail : JSON.stringify(serverDetail);
+        else if (error.response?.data) error.message = JSON.stringify(error.response.data);
+      } catch (_) {
+        // ignore
+      }
+      return Promise.reject(error);
   }
 );
 

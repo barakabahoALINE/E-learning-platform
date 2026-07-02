@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from courses_app.models import Course  # assuming courses_app has Course model
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 class Enrollment(models.Model):
 
@@ -27,6 +28,18 @@ class Enrollment(models.Model):
         choices=Status.choices,
         default=Status.ACTIVE   # usually better than pending unless you have payment logic
     )
+
+    # When a course/enrollment is completed, record the timestamp here
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        # If status is COMPLETED and completed_at is not set, set it now.
+        if self.status == self.Status.COMPLETED and not self.completed_at:
+            self.completed_at = timezone.now()
+        # If status is not COMPLETED but completed_at is set, clear it.
+        if self.status != self.Status.COMPLETED and self.completed_at:
+            self.completed_at = None
+        super().save(*args, **kwargs)
 
     enrolled_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
