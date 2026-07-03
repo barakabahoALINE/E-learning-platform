@@ -57,11 +57,57 @@ export const CertificatePage: React.FC = () => {
   const handleDownload = async () => {
     if (!certificate?.id) return toast.error('Certificate is not available yet.');
     try {
+      // Prefer direct file download (blob) from backend
+      const res = await certificateAPI.downloadCertificateFile(certificate.id);
+      if (res.redirectUrl) {
+        // backend returned a URL (e.g., presigned), fetch that and download
+        const resp = await fetch(res.redirectUrl);
+        if (!resp.ok) throw new Error('Download failed');
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `certificate-${certificate.id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success('Your certificate download has started.');
+        return;
+      }
+
+      if (res.blob) {
+        const url = window.URL.createObjectURL(res.blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.filename || `certificate-${certificate.id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success('Your certificate download has started.');
+        return;
+      }
+
+      // Fallback to previous behavior returning a URL
       const downloadUrl = await certificateAPI.downloadCertificate(certificate.id);
-      window.open(downloadUrl, '_blank');
-      toast.success('Your certificate download has started.');
+      if (downloadUrl) {
+        const resp = await fetch(downloadUrl);
+        if (!resp.ok) throw new Error('Download failed');
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `certificate-${certificate.id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success('Your certificate download has started.');
+        return;
+      }
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Unable to download certificate.');
+      toast.error(err?.response?.data?.message || err?.message || 'Unable to download certificate.');
     }
   };
 
@@ -98,7 +144,7 @@ export const CertificatePage: React.FC = () => {
 
   const lessonsCompleted = (course.modules || []).reduce((count: number, m: any) => count + (m.sections?.length ?? 0), 0) || course.modules_count || 0;
   const completionRate = certificate?.percentage !== undefined ? `${Math.round(certificate.percentage)}%` : '100%';
-  const finalScore = certificate?.score !== undefined ? `${certificate.score.toFixed(1)}%` : '';
+  const finalPercentage = certificate?.percentage !== undefined ? `${Math.round(certificate.percentage)}%` : '';
   const currentCategoryId = (() => {
     if (!course) return undefined;
     if (course.category_id !== undefined && course.category_id !== null) return Number(course.category_id);
@@ -190,7 +236,7 @@ export const CertificatePage: React.FC = () => {
                 <div className="space-y-4 text-sm text-gray-700">
                   <div className="flex items-center justify-between"><span className="text-sm text-gray-600">Completion Rate</span><Badge className="bg-green-600">{completionRate}</Badge></div>
                   <div className="flex items-center justify-between"><span className="text-sm text-gray-600">Lessons Completed</span><span className="font-medium">{lessonsCompleted}</span></div>
-                  <div className="flex items-center justify-between"><span className="text-sm text-gray-600">Final Score</span><span className="font-medium">{finalScore}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-sm text-gray-600">Final Percentage</span><span className="font-medium">{finalPercentage}</span></div>
                 </div>
               </CardContent>
             </Card>
