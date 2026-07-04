@@ -1,6 +1,9 @@
+import os
+import base64
 from datetime import datetime
 from io import BytesIO
 from django.core.files.base import ContentFile
+from django.templatetags.static import static
 from django.utils import timezone
 from django.template.loader import render_to_string
 from django.conf import settings
@@ -8,6 +11,54 @@ from django.conf import settings
 from enrollments_app.models import Enrollment
 from progress_app.models import CourseProgress
 from assessments_app.models import Attempt
+
+
+def _get_image_as_data_uri(file_path):
+    """Convert an image file to a data URI (base64-encoded)."""
+    try:
+        with open(file_path, 'rb') as f:
+            image_data = f.read()
+        b64_data = base64.b64encode(image_data).decode('utf-8')
+        # Detect MIME type from extension
+        ext = os.path.splitext(file_path)[1].lower()
+        mime_type = 'image/png' if ext == '.png' else 'image/jpeg' if ext in ['.jpg', '.jpeg'] else 'image/png'
+        return f"data:{mime_type};base64,{b64_data}"
+    except Exception:
+        return None
+
+
+def build_certificate_template_context(certificate, request=None, embed_images=False):
+    """Build the shared context used by the Django certificate template.
+    
+    Args:
+        certificate: Certificate instance
+        request: HTTP request object (optional). If provided, generates absolute URLs.
+        embed_images: If True, embeds images as base64 data URIs (for preview). Overrides request-based URLs.
+    """
+    if embed_images:
+        # For preview HTML (iframe with srcDoc), embed images as data URIs
+        logo_path = os.path.join(settings.BASE_DIR, 'certificate_app', 'static', 'assets', 'nisr_logo.png')
+        signature_path = os.path.join(settings.BASE_DIR, 'certificate_app', 'templates', 'assets', 'Signature_transparent.png')
+        logo_url = _get_image_as_data_uri(logo_path) or ''
+        signature_url = _get_image_as_data_uri(signature_path) or ''
+    elif request is not None:
+        logo_url = request.build_absolute_uri(static("assets/nisr_logo.png"))
+        signature_url = request.build_absolute_uri(static("assets/Signature_transparent.png"))
+    else:
+        logo_path = os.path.join(settings.BASE_DIR, 'certificate_app', 'static', 'assets', 'nisr_logo.png')
+        signature_path = os.path.join(settings.BASE_DIR, 'certificate_app', 'templates', 'assets', 'Signature_transparent.png')
+        logo_url = f"file:///{logo_path.replace(chr(92), '/')}"
+        signature_url = f"file:///{signature_path.replace(chr(92), '/')}"
+
+    return {
+        "learner_name": certificate.student.full_name,
+        "course_name": certificate.course.title,
+        "certificate_id": certificate.certificate_number,
+        "issue_date": certificate.issued_at.strftime("%B %d, %Y") if getattr(certificate, "issued_at", None) else timezone.now().strftime("%B %d, %Y"),
+        "logo_url": logo_url,
+        "director_signature_url": signature_url,
+        "manager_signature_url": signature_url,
+    }
 
 
 def course_completed_by_student(student, course_id):
@@ -126,22 +177,7 @@ def generate_certificate_file(certificate, force=False):
         except Exception:
             pass
 
-    # Prepare context for template
-    import os
-    logo_path = os.path.join(settings.BASE_DIR, 'certificate_app', 'static', 'assets', 'nisr_logo.png')
-    signature_path = os.path.join(settings.BASE_DIR, 'certificate_app', 'templates', 'assets', 'Signature_transparent.png')
-    logo_url = f"file:///{logo_path.replace(chr(92), '/')}"
-    signature_url = f"file:///{signature_path.replace(chr(92), '/')}"
-    
-    context = {
-        "learner_name": certificate.student.full_name,
-        "course_name": certificate.course.title,
-        "certificate_id": certificate.certificate_number,
-        "issue_date": certificate.issued_at.strftime("%B %d, %Y") if getattr(certificate, "issued_at", None) else timezone.now().strftime("%B %d, %Y"),
-        "logo_url": logo_url,
-        "director_signature_url": signature_url,
-        "manager_signature_url": signature_url,
-    }
+    context = build_certificate_template_context(certificate)
 
     html_string = render_to_string("certificate_app/certificate.html", context)
     base_url = getattr(settings, "BASE_DIR", None) or None

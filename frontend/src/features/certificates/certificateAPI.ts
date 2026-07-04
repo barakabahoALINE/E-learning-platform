@@ -7,6 +7,11 @@ const certificateAPI = {
     return response.data.data;
   },
 
+  getCertificate: async (certificateId: number | string): Promise<Certificate> => {
+    const response = await api.get(`certificates/${certificateId}/`);
+    return response.data.data;
+  },
+
   submitFeedback: async (courseId: number | string, payload: FeedbackCreateData): Promise<Certificate> => {
     const response = await api.post(`certificates/feedback/${courseId}/`, payload);
     return response.data.data;

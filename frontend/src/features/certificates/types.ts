@@ -12,6 +12,7 @@ export interface Certificate {
   downloaded_at?: string | null;
   shared_via?: string | null;
   shared_at?: string | null;
+  preview_html?: string | null;
 }
 
 export interface CertificateClaimResponse {
