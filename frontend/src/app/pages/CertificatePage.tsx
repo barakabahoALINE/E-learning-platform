@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -24,6 +24,8 @@ export const CertificatePage: React.FC = () => {
   const { loading, error, eligible, certificateExists, certificate } = useAppSelector(
     (s) => s.certificates.claim
   );
+  const [previewHtml, setPreviewHtml] = useState<string>('');
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const courseFromList = courses.find((c) => String(c.id) === courseId) || null;
   const course = (currentCourse && currentCourse.id === numericCourseId) ? currentCourse : courseFromList;
@@ -45,6 +47,28 @@ export const CertificatePage: React.FC = () => {
       navigate(`/course-feedback/${courseId}`);
     }
   }, [certificateExists, eligible, courseId, navigate]);
+
+  useEffect(() => {
+    const loadPreview = async () => {
+      if (!certificate?.id) {
+        setPreviewHtml('');
+        return;
+      }
+
+      setPreviewLoading(true);
+      try {
+        const certificateDetails = await certificateAPI.getCertificate(certificate.id);
+        setPreviewHtml(certificateDetails.preview_html || '');
+      } catch (err) {
+        console.error('Unable to load certificate preview', err);
+        setPreviewHtml('');
+      } finally {
+        setPreviewLoading(false);
+      }
+    };
+
+    loadPreview();
+  }, [certificate?.id]);
 
   useEffect(() => {
     return () => {
@@ -199,23 +223,32 @@ export const CertificatePage: React.FC = () => {
           <div className="lg:col-span-2">
             <Card className="shadow-2xl">
               <CardContent className="p-0">
-                <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 p-8">
-                  <div className="bg-white rounded-lg p-12 text-center relative overflow-hidden">
-                    <div className="relative z-10">
-                      <Award className="w-16 h-16 text-yellow-500 mx-auto mb-6" />
-                      <h2 className="text-3xl mb-2">Certificate of Completion</h2>
-                      <p className="text-gray-600 mb-8">This certifies that</p>
-                      <h3 className="text-4xl mb-8 font-serif">{user?.full_name || user?.email || 'Learner'}</h3>
-                      <p className="text-gray-600 mb-4">has successfully completed</p>
-                      <h4 className="text-2xl mb-8">{certificate?.course_title || course.title}</h4>
-                      <div className="flex items-center justify-center space-x-12 mb-8">
-                        <div>
-                          <p className="text-sm text-gray-600 mb-1">Date</p>
-                          <p className="font-medium">{new Date(certificate?.issued_at || Date.now()).toLocaleDateString()}</p>
-                        </div>
-                      </div>
+                {/*
+                  Render the back-end certificate HTML preview directly.
+                  Remove any extra padding/background from the wrapper so the certificate
+                  fills the card completely without visible outer spacing.
+                */}
+                <div className="p-0 bg-transparent overflow-hidden">
+                  {previewLoading ? (
+                    <div className="flex aspect-[842/595] w-full items-center justify-center rounded-none bg-transparent">
+                      <p className="text-sm text-slate-600">Loading certificate preview...</p>
                     </div>
-                  </div>
+                  ) : previewHtml ? (
+                    <div className="aspect-[842/595] w-full">
+                      <iframe
+                        title="Certificate preview"
+                        srcDoc={previewHtml}
+                        className="h-full w-full rounded-none border-none bg-transparent"
+                        sandbox="allow-same-origin"
+                        scrolling="no"
+                        style={{ overflow: 'hidden' }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[560px] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white">
+                      <p className="text-sm text-slate-600">The certificate preview is not available yet.</p>
+                    </div>
+                  )}
                 </div>
                 <div className="p-6 bg-gray-50 border-t flex flex-wrap gap-3 justify-center">
                   <Button onClick={handleDownload} className="flex items-center">

@@ -139,7 +139,10 @@ class CertificateDetailAPIView(APIView):
 
     def get(self, request, certificate_id):
         certificate = self.get_object(certificate_id)
-        serializer = CertificateSerializer(certificate, context={"request": request})
+        serializer = CertificateSerializer(
+            certificate,
+            context={"request": request, "include_preview_html": True},
+        )
         return Response({"success": True, "data": serializer.data})
 
 
