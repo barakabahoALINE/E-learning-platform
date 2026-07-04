@@ -135,7 +135,6 @@ export const FinalAssessmentPage: React.FC = () => {
     };
 
     const submitAssessment = async () => {
-        setShowResults(true);
         const score = calculateScore();
 
         if (!attemptId) return;
@@ -148,13 +147,29 @@ export const FinalAssessmentPage: React.FC = () => {
                 ...response.data,
                 pass_mark: response.data?.pass_mark ?? passMark,
             });
+            setShowResults(true);
             localStorage.removeItem(sessionKey);
             dispatch(fetchCourseProgress(numericCourseId));
             toast.success('Final assessment submitted.');
         } catch (error: any) {
             const message = error.response?.data?.message || 'Final assessment submission failed.';
-            setLockedMessage(message);
-            toast.error(message);
+            if (attemptId && message.toLowerCase().includes('time expired')) {
+                try {
+                    const resultResponse = await assessmentAPI.fetchResult(attemptId);
+                    setBackendResult({
+                        ...resultResponse.data,
+                        pass_mark: resultResponse.data?.pass_mark ?? passMark,
+                    });
+                    setShowResults(true);
+                } catch (resultError: any) {
+                    const resultMessage = resultError.response?.data?.message || 'Unable to fetch assessment result.';
+                    setLockedMessage(resultMessage);
+                    toast.error(resultMessage);
+                }
+            } else {
+                setLockedMessage(message);
+                toast.error(message);
+            }
         } finally {
             setIsAttemptLoading(false);
         }
@@ -255,6 +270,7 @@ export const FinalAssessmentPage: React.FC = () => {
         const targetQuestion = questions[questionIndex];
         const selected = selectedAnswers[questionIndex] || [];
         if (!targetQuestion) return;
+        if (!selected.length) return;
 
         await assessmentAPI.saveAnswer({
             attempt_id: attemptId,
@@ -410,11 +426,13 @@ export const FinalAssessmentPage: React.FC = () => {
                                     className="h-12 rounded-xl border-border dark:border-white/10 text-muted-foreground dark:text-gray-300 hover:text-foreground dark:hover:text-white hover:bg-accent dark:hover:bg-white/5"
                                     onClick={() => {
                                         localStorage.removeItem(sessionKey);
+                                        setAttemptId(null);
                                         setCurrentQuestion(0);
                                         setSelectedAnswers({});
                                         setShowResults(false);
                                         setShowInstructions(true);
                                         setTabSwitches(0);
+                                        setLockedMessage(null);
                                     }}
                                 >
                                     Retake Assessment

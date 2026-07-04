@@ -540,12 +540,17 @@ class SaveAnswerAPIView(APIView):
         # SINGLE
         if question.question_type == "single":
 
+            # Allow clearing the selected answer if no choice is submitted.
             if not selected_choices:
-
+                answer.selected_choice = None
+                answer.selected_choices.clear()
+                answer.text_answer = None
+                answer.is_correct = False
+                answer.save()
                 return Response({
-                    "success": False,
-                    "message": "No choice selected"
-                }, status=400)
+                    "success": True,
+                    "message": "Answer cleared"
+                })
 
             choice_id = selected_choices[0]
 
@@ -664,11 +669,18 @@ class SubmitAttemptAPIView(APIView):
             }, status=403)
 
         if state == "submitted":
+            # If the attempt was auto-submitted by timeout, return the calculated result
+            # rather than a hard error so the frontend can show the feedback page.
+            result = _calculate_attempt_score(
+                attempt,
+                request.user
+            )
+
             return Response({
-                "success": False,
-                "message": "Time expired",
-                "data": None
-            }, status=403)
+                "success": True,
+                "message": result["message"],
+                "data": result["data"]
+            }, status=200)
 
         total = (
             attempt.assessment.questions.count()
