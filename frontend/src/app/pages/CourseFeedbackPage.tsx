@@ -14,6 +14,7 @@ import {
   submitCertificateFeedback,
 } from '../../features/certificates/certificateSlice';
 import { toast } from 'sonner';
+import StatusModal from '../components/ui/StatusModal';
 import { FeedbackCreateData } from '../../features/certificates/types';
 
 export const CourseFeedbackPage: React.FC = () => {
@@ -28,6 +29,7 @@ export const CourseFeedbackPage: React.FC = () => {
   const [platformUsability, setPlatformUsability] = useState(0);
   const [textFeedback, setTextFeedback] = useState('');
   const [hoveredRating, setHoveredRating] = useState<{ [key: string]: number }>({});
+  const [showMandatoryModal, setShowMandatoryModal] = useState(true);
 
   const { courses, currentCourse, isLoading: courseLoading } = useAppSelector((state) => state.courses);
   const progress = useAppSelector((state) => state.progress.courseProgress[numericCourseId]);
@@ -53,7 +55,7 @@ export const CourseFeedbackPage: React.FC = () => {
 
   useEffect(() => {
     if (certificateClaim.certificateExists) {
-      navigate(`/certificate/${courseId}`);
+      navigate(`/certificate/${courseId}`, { replace: true });
     }
   }, [certificateClaim.certificateExists, courseId, navigate]);
 
@@ -236,6 +238,16 @@ export const CourseFeedbackPage: React.FC = () => {
           Your feedback will be kept confidential and used only for improving course quality.
         </p>
       </div>
+      <StatusModal
+        isOpen={showMandatoryModal}
+        type="info"
+        title="Course Feedback Required"
+        description="Please note that it is mandatory to rate and provide feedback on this course before you can claim and download your certificate of completion."
+        onClose={() => setShowMandatoryModal(false)}
+        confirmLabel="Start Feedback"
+        showCloseButton={false}
+        closeOnOutsideClick={false}
+      />
     </div>
   );
 };

@@ -34,6 +34,43 @@ import {
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { ContentBlockRenderer } from "../components/course/ContentBlockRenderer";
 import { cn } from "../components/ui/utils";
+import type { ContentBlock, ContentItem } from "../../features/courses/types";
+
+const parseContentBlocks = (item: ContentItem): ContentBlock[] => {
+  let blocks: ContentBlock[] = [];
+  if (item.contents && item.contents.length > 0) {
+    blocks = item.contents;
+  } else {
+    const legacyText = (item as any).text_content;
+    const legacyVideo = (item as any).video_url;
+    const legacyFile = (item as any).file;
+
+    if (legacyText) {
+      try {
+        const parsed = typeof legacyText === "string" ? JSON.parse(legacyText) : legacyText;
+        blocks = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) {
+        console.error("Failed to parse legacy content blocks", e);
+        blocks = [{
+          id: "fallback",
+          type: (item as any).content_type || "text",
+          content: legacyText,
+        }];
+      }
+    } else if (legacyVideo || legacyFile) {
+      blocks = [{
+        id: "fallback",
+        type: legacyVideo ? "video" : "file",
+        content: legacyVideo || legacyFile || "",
+      }];
+    }
+  }
+
+  return Array.isArray(blocks) ? blocks : [];
+};
+
+const getVideoWatchKey = (contentItemId: string | number, blockId: string | number) =>
+  `${contentItemId}:${blockId}`;
 
 export const LessonPage: React.FC = () => {
   const { courseId, moduleId } = useParams();
@@ -43,6 +80,8 @@ export const LessonPage: React.FC = () => {
   const mainRef = useRef<HTMLElement | null>(null);
   const completionRequestsRef = useRef<Set<string>>(new Set());
   const userCompletionIntentRef = useRef(false);
+  const watchedVideoBlockKeysRef = useRef<Set<string>>(new Set());
+  const contentEndReachedItemIdsRef = useRef<Set<string>>(new Set());
   const [showSidebar, setShowSidebar] = useState(window.innerWidth >= 1024);
 
   // Track expanded items
@@ -120,6 +159,34 @@ export const LessonPage: React.FC = () => {
     return meta;
   }, [currentModule]);
 
+  const contentBlocksByItemId = useMemo(() => {
+    const blocksById = new Map<string, ContentBlock[]>();
+    currentModule?.sections.forEach((section) => {
+      section.contents.forEach((item) => {
+        blocksById.set(String(item.id), parseContentBlocks(item));
+      });
+    });
+    return blocksById;
+  }, [currentModule]);
+
+  const videoBlockIdsByItemId = useMemo(() => {
+    const videoIdsByItemId = new Map<string, Array<string | number>>();
+    contentBlocksByItemId.forEach((blocks, itemId) => {
+      const videoBlockIds = blocks
+        .filter((block) => block.type === "video" && Boolean(block.content?.trim()))
+        .map((block) => block.id);
+
+      if (videoBlockIds.length > 0) {
+        videoIdsByItemId.set(itemId, videoBlockIds);
+      }
+    });
+    return videoIdsByItemId;
+  }, [contentBlocksByItemId]);
+
+  const itemRequiresVideoCompletion = useCallback((contentItemId: string | number) => {
+    return (videoBlockIdsByItemId.get(String(contentItemId))?.length ?? 0) > 0;
+  }, [videoBlockIdsByItemId]);
+
   const allCompletedContentIds = useMemo(() => {
     const completed = new Set<string | number>();
     Object.values(moduleContentsProgress).forEach((modProgress) => {
@@ -157,6 +224,8 @@ export const LessonPage: React.FC = () => {
   useEffect(() => {
     hasInitializedActiveItem.current = false;
     userCompletionIntentRef.current = false;
+    watchedVideoBlockKeysRef.current.clear();
+    contentEndReachedItemIdsRef.current.clear();
     setActiveItemId(null);
     mainRef.current?.scrollTo({ top: 0, behavior: "auto" });
   }, [numericModuleId]);
@@ -231,15 +300,11 @@ export const LessonPage: React.FC = () => {
     scrollRoot.addEventListener("wheel", markIntent, { passive: true });
     scrollRoot.addEventListener("touchmove", markIntent, { passive: true });
     scrollRoot.addEventListener("keydown", markIntent);
-    scrollRoot.addEventListener("mousedown", markIntent, { passive: true });
-    scrollRoot.addEventListener("pointerdown", markIntent, { passive: true });
 
     return () => {
       scrollRoot.removeEventListener("wheel", markIntent);
       scrollRoot.removeEventListener("touchmove", markIntent);
       scrollRoot.removeEventListener("keydown", markIntent);
-      scrollRoot.removeEventListener("mousedown", markIntent);
-      scrollRoot.removeEventListener("pointerdown", markIntent);
     };
   }, []);
 
@@ -278,6 +343,53 @@ export const LessonPage: React.FC = () => {
       });
     });
   }, [completedItemIds, contentMetaById, currentModule, dispatch, numericCourseId]);
+
+  const hasWatchedRequiredVideos = useCallback((contentItemId: string | number) => {
+    const requiredVideoBlockIds = videoBlockIdsByItemId.get(String(contentItemId));
+    if (!requiredVideoBlockIds?.length) return false;
+
+    return requiredVideoBlockIds.every((requiredBlockId) =>
+      watchedVideoBlockKeysRef.current.has(getVideoWatchKey(contentItemId, requiredBlockId))
+    );
+  }, [videoBlockIdsByItemId]);
+
+  const tryCompleteVideoContent = useCallback((contentItemId: string | number) => {
+    if (!itemRequiresVideoCompletion(contentItemId)) return false;
+    if (!contentEndReachedItemIdsRef.current.has(String(contentItemId))) return false;
+    if (!hasWatchedRequiredVideos(contentItemId)) return false;
+
+    completeActiveContent(contentItemId);
+    return true;
+  }, [completeActiveContent, hasWatchedRequiredVideos, itemRequiresVideoCompletion]);
+
+  const markContentEndReached = useCallback((contentItemId: string | number) => {
+    contentEndReachedItemIdsRef.current.add(String(contentItemId));
+
+    if (itemRequiresVideoCompletion(contentItemId)) {
+      tryCompleteVideoContent(contentItemId);
+      return;
+    }
+
+    completeActiveContent(contentItemId);
+  }, [completeActiveContent, itemRequiresVideoCompletion, tryCompleteVideoContent]);
+
+  const handleVideoWatchedToEnd = useCallback((contentItemId: string | number, blockId: string | number) => {
+    const requiredVideoBlockIds = videoBlockIdsByItemId.get(String(contentItemId));
+    if (!requiredVideoBlockIds?.length) return;
+
+    watchedVideoBlockKeysRef.current.add(getVideoWatchKey(contentItemId, blockId));
+    tryCompleteVideoContent(contentItemId);
+  }, [tryCompleteVideoContent, videoBlockIdsByItemId]);
+
+  const markContentEndReachedRef = useRef(markContentEndReached);
+  useEffect(() => {
+    markContentEndReachedRef.current = markContentEndReached;
+  }, [markContentEndReached]);
+
+  const itemRequiresVideoCompletionRef = useRef(itemRequiresVideoCompletion);
+  useEffect(() => {
+    itemRequiresVideoCompletionRef.current = itemRequiresVideoCompletion;
+  }, [itemRequiresVideoCompletion]);
 
   // Active item tracking effect
   useEffect(() => {
@@ -318,42 +430,59 @@ export const LessonPage: React.FC = () => {
     };
   }, [currentModule]);
 
-  // Completion tracking effect. Only the active content item's own end marker can complete it.
+  // Completion tracking effect. A content item completes when its own end marker is reached.
   useEffect(() => {
-    if (!activeItemId || !contentMetaById.has(String(activeItemId))) return;
+    if (!currentModule) return;
 
     let observer: IntersectionObserver | null = null;
     let shortContentTimer: number | undefined;
     const timeoutId = setTimeout(() => {
       const scrollRoot = mainRef.current;
-      const itemElement = document.getElementById(`item-${activeItemId}`);
-      const sentinel = document.getElementById(`item-${activeItemId}-end`);
-      if (!scrollRoot || !itemElement || !sentinel) return;
+      if (!scrollRoot) return;
 
-      const rootIsScrollable = scrollRoot.scrollHeight > scrollRoot.clientHeight + 4;
-      const itemFitsInView = itemElement.getBoundingClientRect().height <= scrollRoot.clientHeight * 0.85;
+      if (activeItemId && contentMetaById.has(String(activeItemId))) {
+        const activeItemElement = document.getElementById(`item-${activeItemId}`);
+        const activeSentinel = document.getElementById(`item-${activeItemId}-end`);
+        if (activeItemElement && activeSentinel) {
+          const rootIsScrollable = scrollRoot.scrollHeight > scrollRoot.clientHeight + 4;
+          const itemFitsInView = activeItemElement.getBoundingClientRect().height <= scrollRoot.clientHeight * 0.85;
+          const requiresVideo = itemRequiresVideoCompletionRef.current(activeItemId);
+          const shouldAutoMarkEndReached = !rootIsScrollable || (!requiresVideo && itemFitsInView);
 
-      if (!rootIsScrollable || itemFitsInView) {
-        shortContentTimer = window.setTimeout(() => {
-          if (String(activeItemId) === sentinel.dataset.contentId) {
-            completeActiveContent(activeItemId);
+          if (shouldAutoMarkEndReached) {
+            shortContentTimer = window.setTimeout(() => {
+              if (String(activeItemId) === activeSentinel.dataset.contentId) {
+                markContentEndReachedRef.current(activeItemId);
+              }
+            }, 1500);
           }
-        }, 1500);
+        }
       }
 
       observer = new IntersectionObserver((entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting || String(activeItemId) !== sentinel.dataset.contentId) return;
-        if (!userCompletionIntentRef.current) return;
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          if (!userCompletionIntentRef.current) return;
 
-        completeActiveContent(activeItemId);
+          const contentId = (entry.target as HTMLElement).dataset.contentId;
+          if (!contentId || !contentMetaById.has(String(contentId))) return;
+
+          markContentEndReachedRef.current(contentId);
+        });
       }, {
         root: mainRef.current,
         rootMargin: '0px 0px -12% 0px',
         threshold: 1,
       });
 
-      observer.observe(sentinel);
+      currentModule.sections.forEach((section) => {
+        section.contents.forEach((item) => {
+          const sentinel = document.getElementById(`item-${item.id}-end`);
+          if (sentinel) {
+            observer?.observe(sentinel);
+          }
+        });
+      });
     }, 250);
 
     return () => {
@@ -361,7 +490,7 @@ export const LessonPage: React.FC = () => {
       if (shortContentTimer) window.clearTimeout(shortContentTimer);
       observer?.disconnect();
     };
-  }, [activeItemId, completeActiveContent, contentMetaById]);
+  }, [activeItemId, contentMetaById, currentModule]);
 
   const nextModule = useMemo(() => {
     if (!course || !currentModule) return null;
@@ -475,15 +604,18 @@ export const LessonPage: React.FC = () => {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-4 flex-1">
             <Link to="/dashboard" className="flex items-center space-x-2 border-r border-gray-300 pr-4">
-              <img src={Logo} alt="Logo" className="h-10 w-auto" />
+              <img src={Logo} alt="Logo" className="h-14 w-auto" />
             </Link>
             <div className="flex-1 px-6">
-              <h1 className="text-md dark:text-white font-medium">{course.title}</h1>
-              <p className="text-sm text-muted-foreground dark:text-gray-400">{currentModule.title}</p>
-              <div className="mt-3 flex-1">
+              <h1 className="text-sm dark:text-white font-medium">{course.title}</h1>
+              <p className="text-xs text-muted-foreground dark:text-gray-400">{currentModule.title} {" > "} {currentModule.sections.map((section) => section.title).join(", ")}</p>
+              <div className="flex-1">
                 <div className="flex items-center justify-between text-sm text-muted-foreground dark:text-gray-400 mb-1">
-                  <span>Course Progress</span>
-                  <span>{Math.round(currentProgressPercentage)}%</span>
+                  <div></div>
+                  <div className="flex gap-4">
+                    <span>Course Progress</span>
+                    <span>{Math.round(currentProgressPercentage)}%</span>
+                  </div>
                 </div>
                 <Progress value={currentProgressPercentage} className="h-1.5" />
               </div>
@@ -529,25 +661,7 @@ export const LessonPage: React.FC = () => {
 
                   <div className="space-y-16 pl-0">
                     {section.contents.map((item) => {
-                      let blocks: any[] = [];
-                      if (item.contents && item.contents.length > 0) {
-                        blocks = item.contents;
-                      } else {
-                        const legacyText = (item as any).text_content;
-                        if (legacyText) {
-                          try {
-                            blocks = typeof legacyText === 'string' ? JSON.parse(legacyText) : legacyText;
-                          } catch (e) {
-                            console.error("Failed to parse legacy content blocks", e);
-                            blocks = [{
-                              id: 'fallback',
-                              type: (item as any).content_type || 'text',
-                              content: legacyText
-                            }];
-                          }
-                        }
-                      }
-                      if (!Array.isArray(blocks)) blocks = [];
+                      const blocks = contentBlocksByItemId.get(String(item.id)) || [];
 
                       return (
                         <div key={item.id} id={`item-${item.id}`} >
@@ -555,7 +669,10 @@ export const LessonPage: React.FC = () => {
                             <h4 className="text-xl font-bold text-foreground dark:text-white tracking-tight">{item.title}</h4>
                           </div>
 
-                          <ContentBlockRenderer blocks={blocks} />
+                          <ContentBlockRenderer
+                            blocks={blocks}
+                            onVideoWatchedToEnd={(blockId) => handleVideoWatchedToEnd(item.id, blockId)}
+                          />
                           <div
                             id={`item-${item.id}-end`}
                             data-content-id={String(item.id)}

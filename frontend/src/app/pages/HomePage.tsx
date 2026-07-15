@@ -3,22 +3,16 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { Input } from "../components/ui/input";
 import {
   BookOpen,
   Users,
   Award,
-  TrendingUp,
   Clock,
   Star,
-  CheckCircle,
   PlayCircle,
   ArrowRight,
-  Sparkles,
   Target,
-  Zap,
   Globe,
-  Search,
   Code,
   Palette,
   BarChart,

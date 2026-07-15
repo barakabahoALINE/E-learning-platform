@@ -28,10 +28,11 @@ import { LessonModal } from "./course-builder/LessonModal";
 import { AssessmentModal } from "./course-builder/AssessmentModal";
 import { CoursePreviewModal } from "./course-builder/CoursePreviewModal";
 import { FinalAssessmentSettingsModal } from "./course-builder/FinalAssessmentSettingsModal";
+import { AssessmentLibraryPickerModal } from "./course-builder/AssessmentLibraryPickerModal";
 
-import { 
-  fetchCourseDetails, 
-  updateCourse, 
+import {
+  fetchCourseDetails,
+  updateCourse,
   publishCourse,
   publishCourseChanges,
   createModule,
@@ -46,9 +47,10 @@ import {
   unpublishCourse
 } from "../../features/courses/courseSlice";
 import { createAssessment, addQuestion, updateQuestion, deleteQuestionAction, deleteAssessmentAction, updateAssessmentSettings } from "../../features/assessments/assessmentSlice";
-import {  
-  ContentItem, 
-  QuizQuestion 
+import { cloneAssessmentIntoCourse, type AssessmentLibraryItem } from "../../features/assessments/assessmentLibraryAdapter";
+import {
+  ContentItem,
+  QuizQuestion
 } from "../../features/courses/types";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 
@@ -56,7 +58,7 @@ export function CourseBuilderPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const dispatch = useAppDispatch();
-  
+
   const course = useAppSelector((state) => state.courses.currentCourse);
   const isLoading = useAppSelector((state) => state.courses.isLoading);
 
@@ -79,7 +81,7 @@ export function CourseBuilderPage() {
     setExpandedModules(savedModules);
     setExpandedSections(savedSections);
   };
-  
+
   const [showContentItemModal, setShowContentItemModal] = useState(false);
   const [editingContentItem, setEditingContentItem] = useState<{
     moduleId: string | number;
@@ -88,7 +90,7 @@ export function CourseBuilderPage() {
   } | null>(null);
 
   const [showAssessmentModal, setShowAssessmentModal] = useState<{
-    type: 'module' | 'final'; 
+    type: 'module' | 'final';
     moduleId?: string | number;
     question?: QuizQuestion;
   } | null>(null);
@@ -100,6 +102,10 @@ export function CourseBuilderPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ type: string, payload: any } | null>(null);
   const [deleteQuestionTarget, setDeleteQuestionTarget] = useState<{ type: 'final' | 'module', questionId: any, moduleId?: string | number } | null>(null);
   const [showFinalAssessmentSettings, setShowFinalAssessmentSettings] = useState<'create' | 'edit' | null>(null);
+  const [showAssessmentLibraryPicker, setShowAssessmentLibraryPicker] = useState<{
+    type: 'module' | 'final';
+    moduleId?: string | number;
+  } | null>(null);
   const hasInitializedExpansion = useRef(false);
 
   useEffect(() => {
@@ -158,9 +164,9 @@ export function CourseBuilderPage() {
   const handleAddModule = async () => {
     try {
       const nextOrder = (course.modules?.length || 0) > 0 ? Math.max(...(course.modules || []).map(m => m.order)) + 1 : 1;
-      const res = await dispatch(createModule({ 
-        courseId: course.id, 
-        data: { title: "New Module", order: nextOrder, sections: [], has_unpublished_changes: true } 
+      const res = await dispatch(createModule({
+        courseId: course.id,
+        data: { title: "New Module", order: nextOrder, sections: [], has_unpublished_changes: true }
       })).unwrap();
       const next = new Set(expandedModules);
       next.add(res.data.id);
@@ -188,26 +194,34 @@ export function CourseBuilderPage() {
     setDeleteTarget({ type: 'module', payload: { moduleId } });
   };
 
+  const createModuleQuiz = async (moduleId: string | number) => {
+    const module = course.modules?.find(m => m.id === moduleId);
+    if (!module) return;
+
+    try {
+      await dispatch(createAssessment({
+        course: course.id,
+        module: moduleId,
+        title: `Quiz: ${module.title}`,
+        is_final: false,
+        assessment_type: "QUIZ",
+        pass_mark: 60,
+        max_attempts: 3,
+        duration: 30
+      })).unwrap();
+      toast.success("Quiz enabled successfully for this module!");
+      setShowAssessmentLibraryPicker(null);
+      refetchCourse(course.id);
+    } catch (e: any) {
+      toast.error(e || "Failed to enable quiz");
+    }
+  };
+
   const toggleModuleQuiz = async (moduleId: string | number) => {
     const module = course.modules?.find(m => m.id === moduleId);
     if (module) {
       if (!module.quiz) {
-        try {
-          await dispatch(createAssessment({
-            course: course.id,
-            module: moduleId,
-            title: `Quiz: ${module.title}`,
-            is_final: false,
-            assessment_type: "QUIZ",
-            pass_mark: 60,
-            max_attempts: 3,
-            duration: 30
-          })).unwrap();
-          toast.success("Quiz enabled successfully for this module!");
-          refetchCourse(course.id);
-        } catch (e: any) {
-          toast.error(e || "Failed to enable quiz");
-        }
+        setShowAssessmentLibraryPicker({ type: 'module', moduleId });
       } else {
         try {
           await dispatch(deleteAssessmentAction(module.quiz.id)).unwrap();
@@ -220,14 +234,45 @@ export function CourseBuilderPage() {
     }
   };
 
+  const handleUseAssessmentFromLibrary = async (item: AssessmentLibraryItem) => {
+    if (!showAssessmentLibraryPicker) return;
+
+    try {
+      if (showAssessmentLibraryPicker.type === 'module') {
+        const moduleId = showAssessmentLibraryPicker.moduleId;
+        const module = course.modules?.find(m => String(m.id) === String(moduleId));
+        await cloneAssessmentIntoCourse(item, {
+          courseId: course.id,
+          moduleId,
+          assessmentType: "QUIZ",
+          title: item.title || `Quiz: ${module?.title || "Module"}`
+        });
+        toast.success("Quiz copied into this module");
+      } else {
+        await cloneAssessmentIntoCourse(item, {
+          courseId: course.id,
+          moduleId: null,
+          assessmentType: "FINAL",
+          title: item.title || "Final Assessment"
+        });
+        toast.success("Final assessment copied into this course");
+      }
+
+      setShowAssessmentLibraryPicker(null);
+      refetchCourse(course.id);
+    } catch (e: any) {
+      toast.error(e?.message || e || "Failed to copy assessment");
+    }
+  };
+
   const handleAddSection = async (moduleId: string | number) => {
     const module = course.modules?.find(m => m.id === moduleId);
     if (module) {
       const nextOrder = module.sections.length > 0 ? Math.max(...module.sections.map(s => s.order)) + 1 : 1;
       try {
-        await dispatch(createSection({ 
-          moduleId, 
-          data: { title: "New Section", order: nextOrder, contents: [], has_unpublished_changes: true } 
+        await dispatch(createSection({
+          moduleId,
+          data: { title: "New Section", order: nextOrder, contents: [], has_unpublished_changes: true }
         })).unwrap();
         toast.success("Section added successfully");
       } catch (e: any) {
@@ -276,20 +321,20 @@ export function CourseBuilderPage() {
 
     try {
       if (contentItem) {
-        await dispatch(updateContent({ 
-          courseId: course.id, 
-          moduleId, 
-          sectionId, 
-          contentId: contentItem.id, 
-          data: contentData 
+        await dispatch(updateContent({
+          courseId: course.id,
+          moduleId,
+          sectionId,
+          contentId: contentItem.id,
+          data: contentData
         })).unwrap();
         toast.success("Content updated successfully");
       } else {
-        await dispatch(createContent({ 
-          courseId: course.id, 
-          moduleId, 
-          sectionId, 
-          data: contentData 
+        await dispatch(createContent({
+          courseId: course.id,
+          moduleId,
+          sectionId,
+          data: contentData
         })).unwrap();
         toast.success("Content added successfully");
       }
@@ -370,7 +415,7 @@ export function CourseBuilderPage() {
         const questionData = {
           assessment: assessmentId,
           question_text: data.question,
-          question_type: (data.question_type || "single") as any, 
+          question_type: (data.question_type || "single") as any,
           marks: data.marks || 1,
           choices: data.choices || data.options.map((opt, idx) => ({
             text: opt,
@@ -383,7 +428,7 @@ export function CourseBuilderPage() {
         } else {
           await dispatch(addQuestion(questionData)).unwrap();
         }
-        
+
         dispatch(fetchCourseDetails(course.id));
         toast.success('Question saved successfully');
       }
@@ -467,18 +512,18 @@ export function CourseBuilderPage() {
       } else {
         if (type === 'final') {
           const newQuestions = course.final_assessment?.questions?.filter(q => q.id !== questionId) || [];
-          dispatch(updateCourse({ 
-            id: course.id, 
-            data: { final_assessment: { ...(course.final_assessment || { id: '', title: '', questions: [] }), questions: newQuestions } } 
+          dispatch(updateCourse({
+            id: course.id,
+            data: { final_assessment: { ...(course.final_assessment || { id: '', title: '', questions: [] }), questions: newQuestions } }
           }));
         } else if (moduleId) {
           const module = course.modules?.find(m => m.id === moduleId);
           if (module && module.quiz) {
             const newQuestions = module.quiz.questions.filter(q => q.id !== questionId);
-            dispatch(updateModule({ 
-              courseId: course.id, 
-              moduleId, 
-              data: { quiz: { ...module.quiz, questions: newQuestions } } 
+            dispatch(updateModule({
+              courseId: course.id,
+              moduleId,
+              data: { quiz: { ...module.quiz, questions: newQuestions } }
             }));
           }
         }
@@ -557,7 +602,7 @@ export function CourseBuilderPage() {
               <Eye className="w-5 h-5 text-gray-600" />
               <span className="text-gray-700 font-medium">Preview</span>
             </button>
-            
+
             {course.is_published && (
               <button
                 disabled={isUnpublishing}
@@ -576,15 +621,14 @@ export function CourseBuilderPage() {
             <button
               onClick={handlePublish}
               disabled={!canPublish}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl transition-all font-semibold shadow-lg cursor-pointer ${
-                canPublish 
-                  ? "bg-primary text-white hover:bg-primary/90" 
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl transition-all font-semibold shadow-lg cursor-pointer ${canPublish
+                  ? "bg-primary text-white hover:bg-primary/90"
                   : "bg-gray-100 text-gray-400 cursor-not-allowed shadow-none"
-              }`}
+                }`}
             >
               <CheckCircle2 className="w-5 h-5" />
-              {course.is_published 
-                ? (course.has_unpublished_changes ? "Update Live Course" : "Published") 
+              {course.is_published
+                ? (course.has_unpublished_changes ? "Update Live Course" : "Published")
                 : "Publish Course"}
             </button>
           </div>
@@ -645,8 +689,8 @@ export function CourseBuilderPage() {
 
         {!course.modules || course.modules.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border-2 border-dashed border-gray-100">
-             <BookOpen className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-             <p className="text-sm text-gray-400 italic">No modules added yet.</p>
+            <BookOpen className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+            <p className="text-sm text-gray-400 italic">No modules added yet.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -654,64 +698,62 @@ export function CourseBuilderPage() {
               <div key={module.id} className={`bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300 ${module.pending_delete ? 'opacity-65 border-red-200 bg-red-50/5' : ''}`}>
                 {/* Module Header */}
                 <div className="p-4 flex items-center gap-4">
-                  <button 
+                  <button
                     onClick={() => toggleModule(module.id)}
                     className="p-1 hover:bg-gray-100 rounded transition-colors cursor-pointer"
                   >
                     {expandedModules.has(module.id) ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                   </button>
-                    <div className="flex-1 flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${module.pending_delete ? 'bg-red-50 text-red-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                        <BookOpen className="w-4 h-4" />
-                      </div>
-                    
-                      <div className={`flex-1 flex items-center gap-2 ${module.pending_delete ? 'line-through text-gray-400' : ''}`}>
-                        <EditableTitle 
-                          initialTitle={module.title}
-                          onSave={(val) => handleUpdateModuleTitle(module.id, val)}
-                          prefix={`Module ${mIndex + 1}:`}
-                          className={module.pending_delete ? 'line-through text-gray-400 cursor-not-allowed pointer-events-none w-full flex-1 bg-transparent border border-transparent rounded-md outline-none px-1 py-1' : undefined}
-                        />
-                        {module.pending_delete ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 whitespace-nowrap">
-                            Pending Delete
-                          </span>
-                        ) : course.is_published && module.has_unpublished_changes ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
-                            Modified
-                          </span>
-                        ) : null}
-                      </div>
+                  <div className="flex-1 flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${module.pending_delete ? 'bg-red-50 text-red-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                      <BookOpen className="w-4 h-4" />
                     </div>
+
+                    <div className={`flex-1 flex items-center gap-2 ${module.pending_delete ? 'line-through text-gray-400' : ''}`}>
+                      <EditableTitle
+                        initialTitle={module.title}
+                        onSave={(val) => handleUpdateModuleTitle(module.id, val)}
+                        prefix={`Module ${mIndex + 1}:`}
+                        className={module.pending_delete ? 'line-through text-gray-400 cursor-not-allowed pointer-events-none w-full flex-1 bg-transparent border border-transparent rounded-md outline-none px-1 py-1' : undefined}
+                      />
+                      {module.pending_delete ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 whitespace-nowrap">
+                          Pending Delete
+                        </span>
+                      ) : course.is_published && module.has_unpublished_changes ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
+                          Modified
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-gray-500">Quiz</span>
                       <button
                         onClick={() => toggleModuleQuiz(module.id)}
                         disabled={!!module.pending_delete}
-                        className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all cursor-pointer ${
-                          module.quiz ? "bg-blue-600" : "bg-gray-200"
-                        } ${module.pending_delete ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all cursor-pointer ${module.quiz ? "bg-blue-600" : "bg-gray-200"
+                          } ${module.pending_delete ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <span
-                          className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                            module.quiz ? "translate-x-6" : "translate-x-1"
-                          }`}
+                          className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${module.quiz ? "translate-x-6" : "translate-x-1"
+                            }`}
                         />
                       </button>
                     </div>
-                    <button 
-                      onClick={() => handleAddSection(module.id)} 
+                    <button
+                      onClick={() => handleAddSection(module.id)}
                       disabled={!!module.pending_delete}
-                      className="p-2 text-gray-400 hover:text-indigo-600 rounded-lg disabled:opacity-30 disabled:hover:text-gray-400" 
+                      className="p-2 text-gray-400 hover:text-indigo-600 rounded-lg disabled:opacity-30 disabled:hover:text-gray-400"
                       title="Add Section"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
-                    <button 
-                      onClick={() => handleDeleteModule(module.id)} 
+                    <button
+                      onClick={() => handleDeleteModule(module.id)}
                       disabled={!!module.pending_delete}
-                      className="p-2 text-gray-400 hover:text-red-500 rounded-lg disabled:opacity-30 disabled:hover:text-gray-400" 
+                      className="p-2 text-gray-400 hover:text-red-500 rounded-lg disabled:opacity-30 disabled:hover:text-gray-400"
                       title="Delete Module"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -733,7 +775,7 @@ export function CourseBuilderPage() {
                             {expandedSections.has(section.id) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                           </button>
                           <div className={`flex items-center flex-1 w-full gap-2 ${section.pending_delete ? 'line-through text-gray-400' : ''}`}>
-                            <EditableTitle 
+                            <EditableTitle
                               initialTitle={section.title}
                               onSave={(val) => handleUpdateSectionTitle(module.id, section.id, val)}
                               prefix={`Section ${sIndex + 1}:`}
@@ -750,22 +792,22 @@ export function CourseBuilderPage() {
                             ) : null}
                           </div>
                           <div className="flex items-center gap-1">
-                             <button 
-                               onClick={() => openContentItemModal(module.id, section.id)} 
-                               disabled={!!module.pending_delete || !!section.pending_delete}
-                               className="p-1.5 text-gray-400 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-gray-400"
-                               title="Add Content"
-                             >
-                               <Plus className="w-4 h-4" />
-                             </button>
-                             <button 
-                               onClick={() => handleDeleteSection(module.id, section.id)} 
-                               disabled={!!module.pending_delete || !!section.pending_delete}
-                               className="p-1.5 text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-400"
-                               title="Delete Section"
-                             >
-                               <Trash2 className="w-4 h-4" />
-                             </button>
+                            <button
+                              onClick={() => openContentItemModal(module.id, section.id)}
+                              disabled={!!module.pending_delete || !!section.pending_delete}
+                              className="p-1.5 text-gray-400 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-gray-400"
+                              title="Add Content"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSection(module.id, section.id)}
+                              disabled={!!module.pending_delete || !!section.pending_delete}
+                              className="p-1.5 text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-400"
+                              title="Delete Section"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
 
@@ -778,7 +820,7 @@ export function CourseBuilderPage() {
                             ) : section.contents.map((item) => (
                               <div key={item.id} className={`group flex flex-col p-2 hover:bg-gray-50 rounded-lg transition-all duration-300 ${item.pending_delete ? 'opacity-65 bg-red-50/5' : ''}`}>
                                 <div className="flex items-center justify-between">
-                                  <div 
+                                  <div
                                     className="flex items-center gap-3 cursor-pointer"
                                     onClick={() => toggleContentItem(item.id)}
                                     title="Click to toggle content preview"
@@ -796,25 +838,25 @@ export function CourseBuilderPage() {
                                     ) : null}
                                   </div>
                                   <div className="flex items-center gap-1">
-                                    <button 
-                                      onClick={() => toggleContentItem(item.id)} 
+                                    <button
+                                      onClick={() => toggleContentItem(item.id)}
                                       className={`p-1.5 rounded transition-all ${expandedContentItems.has(item.id) ? 'text-indigo-600' : 'text-gray-400 hover:text-indigo-600'}`}
                                       title={expandedContentItems.has(item.id) ? "Hide Content" : "View Content"}
                                     >
                                       {expandedContentItems.has(item.id) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                     </button>
-                                    <button 
-                                      onClick={() => openContentItemModal(module.id, section.id, item)} 
+                                    <button
+                                      onClick={() => openContentItemModal(module.id, section.id, item)}
                                       disabled={!!module.pending_delete || !!section.pending_delete || !!item.pending_delete}
-                                      className="p-1.5 text-gray-400 hover:text-indigo-600 rounded transition-all disabled:opacity-30 disabled:hover:text-gray-400" 
+                                      className="p-1.5 text-gray-400 hover:text-indigo-600 rounded transition-all disabled:opacity-30 disabled:hover:text-gray-400"
                                       title="Edit Content"
                                     >
                                       <Edit2 className="w-4 h-4" />
                                     </button>
-                                    <button 
-                                      onClick={() => handleDeleteContentItem(module.id, section.id, item.id)} 
+                                    <button
+                                      onClick={() => handleDeleteContentItem(module.id, section.id, item.id)}
                                       disabled={!!module.pending_delete || !!section.pending_delete || !!item.pending_delete}
-                                      className="p-1.5 text-gray-400 hover:text-red-500 rounded transition-all disabled:opacity-30 disabled:hover:text-gray-400" 
+                                      className="p-1.5 text-gray-400 hover:text-red-500 rounded transition-all disabled:opacity-30 disabled:hover:text-gray-400"
                                       title="Delete Content"
                                     >
                                       <Trash2 className="w-4 h-4" />
@@ -830,7 +872,7 @@ export function CourseBuilderPage() {
                                         const legacyText = (item as any).text_content;
                                         const legacyVideo = (item as any).video_url;
                                         const legacyFile = (item as any).file;
-                                        
+
                                         if (legacyText && (legacyText.startsWith('[') || legacyText.startsWith('{'))) {
                                           try {
                                             const parsed = JSON.parse(legacyText);
@@ -898,7 +940,7 @@ export function CourseBuilderPage() {
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                               <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center">
-                                <CircleCheckBig className="w-4 h-4 text-amber-600"/>
+                                <CircleCheckBig className="w-4 h-4 text-amber-600" />
                               </div>
                               <div>
                                 <div className="flex items-center gap-2">
@@ -934,14 +976,14 @@ export function CourseBuilderPage() {
                                     <span className="text-xs text-gray-700 truncate">{q.question_text || q.question}</span>
                                   </div>
                                   <div className="flex items-center gap-1 transition-all">
-                                    <button 
+                                    <button
                                       onClick={() => setShowAssessmentModal({ type: 'module', moduleId: module.id, question: q })}
                                       className="p-1.5 text-gray-400 hover:text-blue-500"
                                       title="Edit Question"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
                                     </button>
-                                    <button 
+                                    <button
                                       onClick={() => deleteQuestion('module', q.id, module.id)}
                                       className="p-1.5 text-gray-400 hover:text-red-500"
                                       title="Delete Question"
@@ -1018,9 +1060,18 @@ export function CourseBuilderPage() {
               <Plus className="w-5 h-5" />
               {(course.final_assessment?.questions?.length || 0) === 0 ? "Create Assessment" : "Add Question"}
             </button>
+            {!course.final_assessment && (
+              <button
+                onClick={() => setShowAssessmentLibraryPicker({ type: 'final' })}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+              >
+                <CircleCheckBig className="w-5 h-5" />
+                Use Existing
+              </button>
+            )}
           </div>
         </div>
- 
+
         {(!course.final_assessment || (course.final_assessment?.questions?.length || 0) === 0) ? (
           <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
             <CheckCircle2 className="w-12 h-12 text-gray-400 mx-auto mb-3" />
@@ -1037,14 +1088,14 @@ export function CourseBuilderPage() {
               <div key={q.id || idx} className="group flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-white border border-transparent hover:border-amber-100 transition-all">
                 <span className="text-sm text-gray-700 truncate pr-4">{idx + 1}. {q.question_text || q.question}</span>
                 <div className="flex items-center gap-1 transition-all">
-                  <button 
+                  <button
                     onClick={() => setShowAssessmentModal({ type: 'final', question: q })}
                     className="p-1.5 text-gray-400 hover:text-blue-500"
                     title="Edit Question"
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
-                  <button 
+                  <button
                     onClick={() => deleteQuestion('final', q.id)}
                     className="p-1.5 text-gray-400 hover:text-red-500"
                     title="Delete Question"
@@ -1069,18 +1120,18 @@ export function CourseBuilderPage() {
             blocks: (() => {
               const item = editingContentItem.contentItem as any;
               if (item.contents?.length > 0) return item.contents.map((b: any) => ({ id: b.id, type: b.type, content: b.content, link: b.link }));
-              
+
               const text = item.text_content;
               if (text && (text.startsWith('[') || text.startsWith('{'))) {
                 try {
                   const parsed = JSON.parse(text);
                   return Array.isArray(parsed) ? parsed : [parsed];
-                } catch (e) {}
+                } catch (e) { }
               }
-              
-              return [{ 
-                id: 'main', 
-                type: item.content_type || 'text', 
+
+              return [{
+                id: 'main',
+                type: item.content_type || 'text',
                 content: text || item.video_url || item.file || ''
               }];
             })()
@@ -1089,6 +1140,22 @@ export function CourseBuilderPage() {
           totalLessons={0}
           onClose={() => { setShowContentItemModal(false); setEditingContentItem(null); }}
           onSave={saveContentItem}
+        />
+      )}
+
+      {showAssessmentLibraryPicker && (
+        <AssessmentLibraryPickerModal
+          type={showAssessmentLibraryPicker.type === 'module' ? "QUIZ" : "FINAL"}
+          onClose={() => setShowAssessmentLibraryPicker(null)}
+          onCreateNew={() => {
+            if (showAssessmentLibraryPicker.type === 'module' && showAssessmentLibraryPicker.moduleId) {
+              createModuleQuiz(showAssessmentLibraryPicker.moduleId);
+            } else {
+              setShowAssessmentLibraryPicker(null);
+              setShowFinalAssessmentSettings('create');
+            }
+          }}
+          onUseExisting={handleUseAssessmentFromLibrary}
         />
       )}
 
@@ -1154,14 +1221,14 @@ export function CourseBuilderPage() {
   );
 }
 
-function EditableTitle({ 
-  initialTitle, 
-  onSave, 
-  prefix, 
-  className 
-}: { 
-  initialTitle: string; 
-  onSave: (val: string) => void; 
+function EditableTitle({
+  initialTitle,
+  onSave,
+  prefix,
+  className
+}: {
+  initialTitle: string;
+  onSave: (val: string) => void;
   prefix?: string;
   className?: string;
 }) {
@@ -1178,8 +1245,8 @@ function EditableTitle({
   return (
     <div className="flex items-center flex-1 w-full">
       {prefix && <span className="font-semibold pr-1 whitespace-nowrap">{prefix}</span>}
-      <input 
-        type="text" 
+      <input
+        type="text"
         value={title}
         onChange={handleChange}
         onBlur={() => { if (title !== initialTitle) onSave(title); }}

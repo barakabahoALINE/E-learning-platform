@@ -28,6 +28,8 @@ export const SignupPage: React.FC = () => {
   const [institution, setInstitution] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
@@ -67,6 +69,7 @@ export const SignupPage: React.FC = () => {
       setEmail("");
       setInstitution("");
       setPassword("");
+      setConfirmPassword("");
       setAcceptTerms(false);
       setHasActuallyReadTerms(false);
     }
@@ -187,9 +190,55 @@ export const SignupPage: React.FC = () => {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500">
-                  Must be at least 8 characters
-                </p>
+                {(() => {
+                  const checks = [
+                    { label: "At least 8 characters", valid: password.length >= 8 },
+                    { label: "Uppercase letter", valid: /[A-Z]/.test(password) },
+                    { label: "Lowercase letter", valid: /[a-z]/.test(password) },
+                    { label: "Number", valid: /[0-9]/.test(password) },
+                    { label: "Special character", valid: /[!@#$%^&*(),.?":{}|<>]/.test(password) },
+                  ];
+                  const allValid = checks.every((c) => c.valid);
+                  return (
+                    <>
+                      {password && !allValid && (
+                        <ul className="list-disc list-inside ml-4 text-xs space-y-1">
+                          {checks.map((c, i) => (
+                            <li key={i} className={c.valid ? "text-green-500" : "text-red-500"}>
+                              {c.label}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  );
+                })()}
+                {/* Confirm Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Input
+                      id="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="pl-10 pr-10"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  {confirmPassword && password !== confirmPassword && (
+                    <p className="text-xs text-red-500">Passwords do not match</p>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-start space-x-2 bg-gray-50/50">
@@ -231,7 +280,7 @@ export const SignupPage: React.FC = () => {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full h-11" disabled={!acceptTerms || !hasActuallyReadTerms || isLoading}>
+              <Button type="submit" className="w-full h-11" disabled={!acceptTerms || !hasActuallyReadTerms || isLoading || password !== confirmPassword || !(password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password) && /[!@#$%^&*(),.?":{}|<>]/.test(password))}>
                 {isLoading ? "Creating account..." : "Create account"}
               </Button>
             </form>

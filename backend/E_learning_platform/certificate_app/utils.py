@@ -7,6 +7,8 @@ from django.templatetags.static import static
 from django.utils import timezone
 from django.template.loader import render_to_string
 from django.conf import settings
+from weasyprint import HTML, CSS
+from xhtml2pdf import pisa
 
 from enrollments_app.models import Enrollment
 from progress_app.models import CourseProgress
@@ -78,10 +80,53 @@ def course_completed_by_student(student, course_id):
     course_progress = CourseProgress.objects.filter(
         student=student,
         course_id=course_id,
-        completed=True,
     ).first()
 
     if not course_progress:
+        return False, enrollment, None
+
+    if not course_progress.completed:
+        from courses_app.models import Module
+        from progress_app.models import ModuleProgress
+        from assessments_app.models import Assessment
+
+        total = Module.objects.filter(course_id=course_id, is_published=True).count()
+        done = ModuleProgress.objects.filter(
+            student=student,
+            module__course_id=course_id,
+            module__is_published=True,
+            completed=True,
+        ).count()
+
+        final_assessment = Assessment.objects.filter(
+            course_id=course_id,
+            assessment_type="FINAL",
+            is_published=True
+        ).first()
+
+        final_passed = False
+        if final_assessment:
+            final_passed = Attempt.objects.filter(
+                student=student,
+                assessment=final_assessment,
+                is_submitted=True,
+                is_passed=True
+            ).exists()
+
+        now_complete = (done == total)
+        if final_assessment:
+            now_complete = now_complete and final_passed
+
+        if now_complete:
+            course_progress.completed = True
+            course_progress.completed_at = timezone.now()
+            course_progress.save()
+
+            if enrollment.status != Enrollment.Status.COMPLETED:
+                enrollment.status = Enrollment.Status.COMPLETED
+                enrollment.save()
+
+    if not course_progress.completed:
         return False, enrollment, None
 
     final_attempt = Attempt.objects.filter(
@@ -182,12 +227,10 @@ def generate_certificate_file(certificate, force=False):
     html_string = render_to_string("certificate_app/certificate.html", context)
     base_url = getattr(settings, "BASE_DIR", None) or None
 
-    try:
-        from weasyprint import HTML, CSS
+    try:      
         pdf_bytes = HTML(string=html_string, base_url=base_url).write_pdf()
     except Exception:
         try:
-            from xhtml2pdf import pisa
             pdf_io = BytesIO()
             pisa.CreatePDF(html_string, dest=pdf_io)
             pdf_bytes = pdf_io.getvalue()

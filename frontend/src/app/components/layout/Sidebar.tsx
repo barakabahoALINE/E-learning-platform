@@ -9,6 +9,7 @@ import {
   UserCog,
   KeyRound,
   FileText,
+  ClipboardCheck,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -22,6 +23,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
   { icon: Users, label: "Learners", path: "/admin/learners", permission: "users_app.view_user" },
   { icon: BookOpen, label: "Courses", path: "/admin/courses", permission: "courses_app.view_course" },
+  { icon: ClipboardCheck, label: "Assessment", path: "/admin/assessments", permission: "assessments_app.view_assessment" },
   { icon: BarChart3, label: "Analytics", path: "/admin/analytics", permission: "users_app.view_analytics" },
   { icon: Shield, label: "Security", path: "/admin/security", permission: "users_app.view_user" },
   { icon: Settings, label: "Settings", path: "/admin/settings", permission: "users_app.change_platform_settings" },

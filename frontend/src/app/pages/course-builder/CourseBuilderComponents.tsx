@@ -1,4 +1,4 @@
-import { Download, File as FileIcon, Image as ImageIcon, PlayCircle, Video } from "lucide-react";
+import { Download, File as FileIcon, Video } from "lucide-react";
 import type { ContentBlock } from "../../../features/courses/types";
 
 const getImageUrl = (url: string | null) => {
@@ -25,30 +25,19 @@ export const MediaPreview = ({ block, hideLinkOnVideo = false }: { block: Conten
   if (block.type === 'video') {
     if (!block.content) return <p className="text-sm text-gray-400 italic">No video selected.</p>;
 
-    const isDirectFile = block.content.startsWith('blob:') || block.content.startsWith('data:') || block.content.includes('/media/');
-    const isYouTube = block.content.includes('youtube.com') || block.content.includes('youtu.be');
+    const isDirectFile = block.content.startsWith('blob:') || block.content.startsWith('data:video/') || block.content.includes('/media/');
 
     return (
       <div className="space-y-2">
         {isDirectFile ? (
           <video src={getImageUrl(block.content)} controls className="w-full rounded-xl max-h-52 bg-black" />
-        ) : isYouTube ? (
-          <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-gray-100">
-            <iframe
-              src={block.content.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
-              className="absolute inset-0 w-full h-full"
-              allowFullScreen
-            />
-          </div>
-        ) : !hideLinkOnVideo ? (
-          <div className="flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-4 py-3">
-            <Video className="w-4 h-4 text-purple-500 flex-shrink-0" />
-            <span className="text-sm text-purple-700 truncate">{block.content}</span>
-          </div>
         ) : (
-          <div className="flex items-center gap-3 bg-purple-50 border border-purple-100 rounded-xl px-4 py-3">
-            <PlayCircle className="w-5 h-5 text-purple-500 flex-shrink-0" />
-            <span className="text-sm text-purple-700 break-all">{block.content}</span>
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <Video className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-800">Video links are no longer supported.</p>
+              {!hideLinkOnVideo && <p className="text-xs text-amber-700 truncate mt-1">{block.content}</p>}
+            </div>
           </div>
         )}
       </div>

@@ -13,6 +13,7 @@ import { Label } from '../components/ui/label';
 import { Progress } from '../components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Checkbox } from '../components/ui/checkbox';
+import StatusModal from '../components/ui/StatusModal';
 
 type AssessmentChoice = {
     id: number;
@@ -58,6 +59,7 @@ export const FinalAssessmentPage: React.FC = () => {
     const [attemptId, setAttemptId] = useState<number | null>(null);
     const [backendResult, setBackendResult] = useState<any | null>(null);
     const [isAttemptLoading, setIsAttemptLoading] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [lockedMessage, setLockedMessage] = useState<string | null>(null);
     const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
@@ -439,7 +441,7 @@ export const FinalAssessmentPage: React.FC = () => {
                                 </Button>
                             )}
                             {passed && (
-                                <Button className="h-12 rounded-xl" onClick={() => navigate(`/certificate/${courseId}`)}>
+                                <Button className="h-12 rounded-xl" onClick={() => setShowFeedbackModal(true)}>
                                     Claim Certificate
                                     <ArrowRight className="ml-2 h-4 w-4" />
                                 </Button>
@@ -447,6 +449,18 @@ export const FinalAssessmentPage: React.FC = () => {
                         </div>
                     </CardContent>
                 </Card>
+                <StatusModal
+                    isOpen={showFeedbackModal}
+                    type="info"
+                    title="Feedback Required"
+                    description="To get and download your certificate, it is mandatory to rate and provide feedback on this course first."
+                    onClose={() => setShowFeedbackModal(false)}
+                    onConfirm={() => {
+                        setShowFeedbackModal(false);
+                        navigate(`/certificate/${courseId}`);
+                    }}
+                    confirmLabel="Proceed to Feedback"
+                />
             </div>
         );
     }

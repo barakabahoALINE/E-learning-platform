@@ -184,13 +184,14 @@ def _refresh_section_progress(student, section, enrollment):
     After a ContentProgress is saved, recompute whether the parent Section
     is now fully completed and save SectionProgress accordingly.
     """
-    total = Content.objects.filter(section=section).count()
+    total = Content.objects.filter(section=section, is_published=True).count()
     if total == 0:
         return
 
     done = ContentProgress.objects.filter(
         student=student,
         content__section=section,
+        content__is_published=True,
         completed=True,
     ).count()
 
@@ -218,13 +219,14 @@ def _refresh_module_progress(student, module, enrollment):
     After a SectionProgress is saved, recompute whether the parent Module
     is now fully completed and save ModuleProgress accordingly.
     """
-    total = Section.objects.filter(module=module).count()
+    total = Section.objects.filter(module=module, is_published=True).count()
     if total == 0:
         return
 
     done = SectionProgress.objects.filter(
         student=student,
         section__module=module,
+        section__is_published=True,
         completed=True,
     ).count()
 
@@ -260,13 +262,14 @@ def _refresh_course_progress(student, course, enrollment):
     After a ModuleProgress is saved, recompute whether the parent Course
     is now fully completed and save CourseProgress accordingly.
     """
-    total = Module.objects.filter(course=course).count()
+    total = Module.objects.filter(course=course, is_published=True).count()
 
     from assessments_app.models import Assessment, Attempt
 
     final_assessment = Assessment.objects.filter(
         course=course,
-        assessment_type="FINAL"
+        assessment_type="FINAL",
+        is_published=True
     ).first()
 
     final_passed = False
@@ -286,6 +289,7 @@ def _refresh_course_progress(student, course, enrollment):
     done = ModuleProgress.objects.filter(
         student=student,
         module__course=course,
+        module__is_published=True,
         completed=True,
     ).count()
 

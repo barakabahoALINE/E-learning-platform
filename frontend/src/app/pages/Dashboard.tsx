@@ -123,30 +123,36 @@ export function DashboardPage() {
 
   const monthlyEnrollmentData = React.useMemo(() => {
     const monthFormatter = new Intl.DateTimeFormat("en-US", { month: "short" });
-    const months = Array.from({ length: 6 }, (_, index) => {
-      const date = new Date();
-      date.setMonth(date.getMonth() - (5 - index));
-      return {
-        date,
-        month: monthFormatter.format(date),
-        users: 0,
-      };
-    });
+    const now = new Date();
 
-    activeEnrollments.forEach((enrollment) => {
-      const enrolledDate = new Date(enrollment.enrolled_at);
-      const bucket = months.find(item =>
-        item.date.getFullYear() === enrolledDate.getFullYear() &&
-        item.date.getMonth() === enrolledDate.getMonth()
-      );
+    const monthMap = new Map<string, { month: string; users: number; date: Date }>();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - i);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      monthMap.set(key, {
+        month: monthFormatter.format(d),
+        users: 0,
+        date: d,
+      });
+    }
+
+    activeEnrollments.forEach(({ enrolled_at }) => {
+      const e = new Date(enrolled_at);
+      const key = `${e.getFullYear()}-${e.getMonth()}`;
+      const bucket = monthMap.get(key);
       if (bucket) bucket.users += 1;
     });
 
     let cumulative = 0;
-    return months.map(item => {
-      cumulative += item.users;
-      return { month: item.month, users: cumulative };
-    });
+    const result = Array.from(monthMap.values())
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .map(({ month, users }) => {
+        cumulative += users;
+        return { month, users: cumulative };
+      });
+
+    return result;
   }, [activeEnrollments]);
 
   const courseCategoryData = React.useMemo(() => {
@@ -263,7 +269,7 @@ export function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                 <XAxis dataKey="month" stroke="#9CA3AF" />
                 <YAxis stroke="#9CA3AF" allowDecimals={false} />
-                <Tooltip />
+                <Tooltip formatter={(value, name) => [value, "Enrollees"]} />
                 <Line type="monotone" dataKey="users" stroke="#3B82F6" strokeWidth={2} dot={{ fill: "#3B82F6", r: 4 }} />
               </LineChart>
             </ResponsiveContainer>

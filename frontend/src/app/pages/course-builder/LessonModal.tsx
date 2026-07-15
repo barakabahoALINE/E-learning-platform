@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown, ArrowUp, BookOpen,
   File as FileIcon, Image as ImageIcon,
-  Link as LinkIcon, Trash2, Type, Upload, Video, X,
+  Trash2, Type, Upload, Video, X,
 } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
 import type { ContentBlock, QuizQuestion } from "../../../features/courses/types";
@@ -43,6 +43,11 @@ export function LessonModal({
     if (!url) return "";
     if (url.startsWith("http") || url.startsWith("data:") || url.startsWith("blob:")) return url;
     return `http://localhost:8000${url.startsWith("/") ? "" : "/"}${url}`;
+  };
+
+  const isUploadedVideoContent = (url: string | null) => {
+    if (!url) return false;
+    return url.startsWith("blob:") || url.startsWith("data:video/") || url.includes("/media/");
   };
 
   useEffect(() => {
@@ -125,6 +130,10 @@ export function LessonModal({
     }
     if (blocks.some(isBlockEmpty)) {
       alert("Please fill in all content blocks");
+      return;
+    }
+    if (blocks.some(block => block.type === "video" && !isUploadedVideoContent(block.content))) {
+      alert("Please upload a video file instead of using a video link.");
       return;
     }
     onSave({ id: lesson?.id, title, blocks });
@@ -230,27 +239,44 @@ export function LessonModal({
 
                       {/* VIDEO */}
                       {block.type === "video" && (
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           {uploadingBlocks[block.id] ? (
                             <div className="w-full flex flex-col items-center justify-center gap-3 py-12 bg-purple-50 rounded-xl border border-purple-100">
                               <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
                               <span className="text-xs font-semibold text-purple-600 animate-pulse">Uploading Video...</span>
                             </div>
-                          ) : block.content && (block.content.startsWith("blob:") || block.content.startsWith("data:") || block.content.includes("/media/")) ? (
-                            <video src={getMediaUrl(block.content)} controls className="w-full rounded-lg max-h-48 bg-black shadow-inner" />
-                          ) : block.content ? (
-                            <div className="bg-gray-100 rounded-lg p-3 flex items-center gap-2">
-                              <Video className="w-4 h-4 text-purple-500 flex-shrink-0" />
-                              <span className="text-xs text-gray-600 truncate">{block.content}</span>
+                          ) : block.content && isUploadedVideoContent(block.content) ? (
+                            <div className="relative group/video">
+                              <video src={getMediaUrl(block.content)} controls className="w-full rounded-lg max-h-48 bg-black shadow-inner" />
+                              <button
+                                onClick={() => updateBlock(block.id, "")}
+                                className="absolute top-2 right-2 p-1.5 bg-red-600 text-white rounded-full hover:bg-red-700 shadow-lg cursor-pointer"
+                                title="Remove Video"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
                             </div>
-                          ) : null}
-                          <input
-                            type="text"
-                            value={block.content.startsWith("blob:") || block.content.startsWith("data:") ? "" : block.content}
-                            onChange={e => updateBlock(block.id, e.target.value)}
-                            className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                            placeholder="Paste a Video URL (YouTube, Vimeo…)"
-                          />
+                          ) : block.content ? (
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                              <Video className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold text-amber-800">Video links are no longer supported.</p>
+                                <p className="text-xs text-amber-700 truncate mt-1">{block.content}</p>
+                              </div>
+                              <button
+                                onClick={() => updateBlock(block.id, "")}
+                                className="p-1 text-amber-700 hover:text-red-600 hover:bg-white rounded cursor-pointer"
+                                title="Remove Link"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 border-2 border-dashed border-purple-100 rounded-xl bg-purple-50/50">
+                              <Video className="w-10 h-10 text-purple-200 mx-auto mb-2 opacity-70" />
+                              <p className="text-xs text-purple-500 italic">No video uploaded yet</p>
+                            </div>
+                          )}
                           <input
                             type="file" accept="video/*" className="hidden"
                             ref={el => { fileInputRefs.current[block.id + "_video"] = el; }}
@@ -260,7 +286,7 @@ export function LessonModal({
                             onClick={() => fileInputRefs.current[block.id + "_video"]?.click()}
                             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-purple-200 text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 hover:border-purple-400 text-sm font-medium transition-all cursor-pointer"
                           >
-                            <Upload className="w-4 h-4" /> Upload Video File
+                            <Upload className="w-4 h-4" /> {block.content ? "Replace Video File" : "Upload Video File"}
                           </button>
                         </div>
                       )}

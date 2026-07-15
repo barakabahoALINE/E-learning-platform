@@ -34,6 +34,7 @@ import { CourseBuilderPage } from './pages/CourseBuilder';
 import { AnalyticsPage } from './pages/Analytics';
 import { SecurityPage } from './pages/Security';
 import { SettingsPage as AdminSettingsPage } from './pages/Settings';
+import { AssessmentsPage } from './pages/Assessments';
 import { HomePage } from './pages/HomePage';
 import { RBACDashboardPage } from './pages/RBACDashboard';
 import { UsersManagementPage } from './pages/UsersManagement';
@@ -158,6 +159,11 @@ function AppRoutes() {
           <Route
             path="courses/builder/:id"
             element={<PermissionRoute permission="courses_app.change_course"><CourseBuilderPage /></PermissionRoute>}
+          />
+
+          <Route
+            path="assessments"
+            element={<PermissionRoute permission="assessments_app.view_assessment"><AssessmentsPage /></PermissionRoute>}
           />
 
           {/* Analytics */}
