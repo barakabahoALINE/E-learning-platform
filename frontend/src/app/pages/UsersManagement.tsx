@@ -879,9 +879,7 @@ export function UsersManagementPage() {
 
           <Tabs value={addMode} onValueChange={(v) => setAddMode(v as "search" | "manual")}>
             <TabsList className="w-full">
-              <TabsTrigger value="search" className="flex-1 gap-2">
-                <Search className="w-3.5 h-3.5" /> Existing User
-              </TabsTrigger>
+              
               <TabsTrigger value="manual" className="flex-1 gap-2">
                 <UserPlus className="w-3.5 h-3.5" /> Manual Entry
               </TabsTrigger>

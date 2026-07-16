@@ -7,7 +7,7 @@ import random
 class CreateAssessmentSerializer(serializers.ModelSerializer):
     is_final = serializers.BooleanField(required=False, write_only=True)
 
-    max_attempts = serializers.IntegerField(required=False, default=3, min_value=0)
+    max_attempts = serializers.IntegerField(required=False, default=1, min_value=0)
     duration = serializers.IntegerField(required=False, default=30, min_value=0)
 
     class Meta:
@@ -42,7 +42,7 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         if data.get('pass_mark') is None:
             data['pass_mark'] = 70
         if data.get('max_attempts') is None:
-            data['max_attempts'] = 3
+            data['max_attempts'] = 1
         if data.get('duration') is None:
             data['duration'] = 30
 

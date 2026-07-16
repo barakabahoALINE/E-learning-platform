@@ -56,6 +56,11 @@ def _is_unrestricted_user(user):
         user.groups.filter(name__in=["Admin", "Viewer"]).exists()
     )
 
+
+def _is_student_or_viewer_user(user):
+    return user.is_authenticated and getattr(user, "role", "").lower() in ["student", "viewer"]
+
+
 def _same_institution_queryset(queryset, user, relation="created_by__institution"):
     if _is_unrestricted_user(user):
         return queryset
@@ -77,7 +82,7 @@ def _same_institution_queryset(queryset, user, relation="created_by__institution
 
 class CourseListAPIView(generics.ListAPIView):
     serializer_class = CourseListSerializer
-    permission_classes = [IsAuthenticated, CanViewPublishedCourse]
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         queryset = Course.objects.select_related("category", "level", "created_by").annotate(
@@ -597,6 +602,9 @@ class ModuleListAPIView(generics.ListAPIView):
         if user.is_authenticated and _is_admin_user(user):
             return queryset
 
+        if user.is_authenticated and _is_student_or_viewer_user(user):
+            return queryset.filter(is_published=True)
+
         return queryset.filter(is_published=True)
  
 
@@ -750,6 +758,9 @@ class SectionListAPIView(generics.ListAPIView):
         if user.is_authenticated and _is_admin_user(user):
             return queryset
 
+        if user.is_authenticated and _is_student_or_viewer_user(user):
+            return queryset.filter(is_published=True)
+
         return queryset.filter(is_published=True)
 
 
@@ -852,6 +863,10 @@ class ContentListAPIView(generics.ListAPIView):
 
         if user.is_authenticated and _is_admin_user(user):
             return queryset
+
+        if user.is_authenticated and _is_student_or_viewer_user(user):
+            return queryset.filter(is_published=True)
+
         return queryset.filter(is_published=True)
 
 

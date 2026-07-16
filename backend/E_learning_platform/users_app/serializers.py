@@ -100,15 +100,26 @@ def get_user_auth_payload(user):
 
 class SignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
-        fields = ['email', 'full_name', 'institution', 'password']
+        fields = ['email', 'full_name', 'institution', 'password', 'confirm_password']
 
     def validate_password(self, value):
         return validate_strong_password(value)
 
+    def validate(self, attrs):
+        password = attrs.get('password')
+        confirm_password = attrs.get('confirm_password')
+
+        if password != confirm_password:
+            raise serializers.ValidationError({'confirm_password': 'Passwords do not match.'})
+
+        return attrs
+
     def create(self, validated_data):
+        validated_data.pop('confirm_password', None)
         user = User.objects.create_user(
             email=validated_data['email'],
             full_name=validated_data['full_name'],

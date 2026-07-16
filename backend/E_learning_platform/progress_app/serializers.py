@@ -49,13 +49,13 @@ class SectionProgressSerializer(serializers.ModelSerializer):
         fields = ["id", "section", "section_title", "completed", "completed_at", "progress_percentage"]
 
     def get_progress_percentage(self, obj):
-        total = obj.section.contents.count()
+        total = obj.section.contents.filter(is_published=True).count()
         if total == 0:
             return 0
         done = ContentProgress.objects.filter(
             student=obj.student,
-            enrollment=obj.enrollment,
             content__section=obj.section,
+            content__is_published=True,
             completed=True,
         ).count()
         return int((done / total) * 100)
@@ -78,12 +78,20 @@ class ModuleProgressSerializer(serializers.ModelSerializer):
         ]
 
     def get_progress_percentage(self, obj):
-        total = Section.objects.filter(module=obj.module).count()
+        total = Content.objects.filter(
+            section__module=obj.module,
+            section__module__is_published=True,
+            section__is_published=True,
+            is_published=True,
+        ).count()
         if total == 0:
             return 0
-        done = SectionProgress.objects.filter(
+        done = ContentProgress.objects.filter(
             student=obj.student,
-            section__module=obj.module,
+            content__section__module=obj.module,
+            content__section__module__is_published=True,
+            content__section__is_published=True,
+            content__is_published=True,
             completed=True,
         ).count()
         return int((done / total) * 100)
