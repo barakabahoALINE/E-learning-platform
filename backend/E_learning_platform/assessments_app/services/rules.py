@@ -6,7 +6,7 @@ from assessments_app.models import Assessment, Attempt
 from courses_app.models import Module
 
 
-COOLDOWN_HOURS = 0.08 
+COOLDOWN_HOURS = 0.0333
 
 class RuleError(Exception):
 
@@ -58,35 +58,28 @@ def check_attempt_limit(user, assessment):
     if not submitted_attempts.exists():
         return True
 
-    window_start = timezone.now() - timedelta(hours=COOLDOWN_HOURS)
+    total_attempts = submitted_attempts.count()
 
-    recent_attempts = submitted_attempts.filter(
-        submitted_at__gte=window_start
-    )
+    if total_attempts < assessment.max_attempts:
+        return True
 
-    if recent_attempts.count() >= assessment.max_attempts:
-        last_attempt = recent_attempts.first()
-
-        cooldown_end = (
-            last_attempt.submitted_at +
-            timedelta(hours=COOLDOWN_HOURS)
-        )
+    if total_attempts == assessment.max_attempts:
+        last_attempt = submitted_attempts.first()
+        cooldown_end = last_attempt.submitted_at + timedelta(hours=COOLDOWN_HOURS)
 
         if timezone.now() < cooldown_end:
-
             remaining = cooldown_end - timezone.now()
-
             hours = int(remaining.total_seconds() // 3600)
-
-            minutes = int(
-                (remaining.total_seconds() % 3600) // 60
-            )
-
+            minutes = int((remaining.total_seconds() % 3600) // 60)
             raise RuleError(
                 f"Next attempt allowed in {hours}h {minutes}m."
             )
 
-    return True
+        return True
+
+    raise RuleError(
+        "Final assessment limit reached. No further attempts allowed."
+    )
 
 
 # HANDLE ATTEMPT STATE

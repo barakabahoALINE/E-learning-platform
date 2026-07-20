@@ -100,7 +100,7 @@ export function DashboardPage() {
         const totalCompleted = progressResults.reduce((sum, result) => {
           if (result.status !== "fulfilled") return sum;
           const data = result.value.data.data || result.value.data;
-          return sum + (data.completed_modules || data.completed_sections || 0);
+          return sum + (data.completed_contents || data.completed_items || data.completed_modules || data.completed_sections || 0);
         }, 0);
 
         setCompletedItems(totalCompleted);

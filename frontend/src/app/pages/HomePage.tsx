@@ -27,7 +27,7 @@ import {
 } from "../../features/courses/courseSlice";
 import { logout } from "../../features/auth/authSlice";
 import Logo from "../assets/R.png";
-import HomePhoto from "../assets/Homepage photo.png";
+import HomePhoto from "../assets/Homepage.png";
 import { getMediaUrl } from "../utils/media";
 import api from "../../services/api";
 

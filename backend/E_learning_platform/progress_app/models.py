@@ -35,7 +35,7 @@ class ContentProgress(models.Model):
     # ── cascade up when a content is marked complete ─────────────────
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        if self.completed and self.enrollment:
+        if self.enrollment:
             _refresh_section_progress(self.student, self.content.section, self.enrollment)
 
 # SECTION PROGRESS
@@ -61,7 +61,7 @@ class SectionProgress(models.Model):
     # ── cascade up when a section is marked complete ──────────────────
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        if self.completed:
+        if self.enrollment:
             _refresh_module_progress(self.student, self.section.module, self.enrollment)
 
 # MODULE PROGRESS
@@ -87,7 +87,7 @@ class ModuleProgress(models.Model):
     # ── cascade up when a module is marked complete ──────────────────
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        if self.completed:
+        if self.enrollment:
             _refresh_course_progress(self.student, self.module.course, self.enrollment)
 
 # COURSE PROGRESS
@@ -259,50 +259,77 @@ def _refresh_module_progress(student, module, enrollment):
 
 def _refresh_course_progress(student, course, enrollment):
     """
-    After a ModuleProgress is saved, recompute whether the parent Course
-    is now fully completed and save CourseProgress accordingly.
+    Recompute the parent Course progress based on content completion, quiz completion,
+    and final assessment completion. Includes quizzes and final assessment as items.
     """
-    total = Module.objects.filter(course=course, is_published=True).count()
-
     from assessments_app.models import Assessment, Attempt
 
+    # Count published content items
+    total_content = Content.objects.filter(
+        section__module__course=course,
+        section__module__is_published=True,
+        section__is_published=True,
+        is_published=True,
+    ).count()
+
+    # Count published quiz assessments (module quizzes)
+    total_quizzes = Assessment.objects.filter(
+        course=course,
+        assessment_type="QUIZ",
+        is_published=True,
+    ).count()
+
+    # Check if final assessment exists
     final_assessment = Assessment.objects.filter(
         course=course,
         assessment_type="FINAL",
-        is_published=True
+        is_published=True,
     ).first()
 
+    has_final = 1 if final_assessment else 0
+
+    # Total items = content + quizzes + final assessment
+    total = total_content + total_quizzes + has_final
+
+    # Count completed content items
+    done_content = ContentProgress.objects.filter(
+        student=student,
+        content__section__module__course=course,
+        content__section__module__is_published=True,
+        content__section__is_published=True,
+        content__is_published=True,
+        completed=True,
+    ).count()
+
+    # Count passed quizzes
+    done_quizzes = Assessment.objects.filter(
+        course=course,
+        assessment_type="QUIZ",
+        is_published=True,
+    ).values_list("id", flat=True)
+    
+    from assessments_app.services.rules import has_passed_module_quiz
+    passed_quiz_count = 0
+    for assessment_id in done_quizzes:
+        # Create a temporary module object to check if quiz is passed
+        assessment = Assessment.objects.get(id=assessment_id)
+        if assessment.module and has_passed_module_quiz(student, assessment.module):
+            passed_quiz_count += 1
+
+    # Check if final assessment is passed
     final_passed = False
     if final_assessment:
         final_passed = Attempt.objects.filter(
             student=student,
             assessment=final_assessment,
             is_submitted=True,
-            is_passed=True
+            is_passed=True,
         ).exists()
 
-    if total == 0 and final_assessment and not final_passed:
-        return
-    if total == 0 and not final_assessment:
-        return
+    # Total completed items
+    done = done_content + passed_quiz_count + (1 if final_passed else 0)
 
-    done = ModuleProgress.objects.filter(
-        student=student,
-        module__course=course,
-        module__is_published=True,
-        completed=True,
-    ).count()
-
-    # Calculate progress percentage
-    if final_assessment:
-        if total == 0:
-            pct = 100.0 if final_passed else 0.0
-        else:
-            module_share = round((done / total) * 90)
-            pct = float(module_share + (10 if final_passed else 0))
-            pct = min(pct, 100.0)
-    else:
-        pct = float(round((done / total) * 100)) if total else 0.0
+    pct = float(round((done / total) * 100)) if total else 0.0
 
     course_prog, created = CourseProgress.objects.get_or_create(
         student=student,
@@ -313,9 +340,8 @@ def _refresh_course_progress(student, course, enrollment):
     if not created:
         course_prog.progress_percentage = pct
 
-    now_complete = done == total
-    if final_assessment:
-        now_complete = now_complete and final_passed
+    # Course is complete when all items (content + quizzes + final) are completed
+    now_complete = total == 0 or done == total
 
     if now_complete and not course_prog.completed:
         course_prog.completed = True
@@ -323,13 +349,11 @@ def _refresh_course_progress(student, course, enrollment):
         enrollment.status = Enrollment.Status.COMPLETED
         enrollment.save()
     elif not now_complete and course_prog.completed:
-        # edge case: a module or final assessment was un-completed
         course_prog.completed = False
         course_prog.completed_at = None
 
     course_prog.save()
 
-    # If the enrollment was just marked completed, end any active learning sessions
     if course_prog.completed and enrollment.completed_at:
         for session in LearningSession.objects.filter(student=student, course=course, is_active=True):
             session.end_session_at(enrollment.completed_at)

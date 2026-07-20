@@ -16,6 +16,7 @@ export interface SignupData {
   email: string;
   institution: string;
   password?: string;
+  confirm_password?: string;
 }
 
 export interface LoginCredentials {

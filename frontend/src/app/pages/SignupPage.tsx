@@ -57,7 +57,7 @@ export const SignupPage: React.FC = () => {
     e.preventDefault();
     if (acceptTerms && hasActuallyReadTerms) {
       setIsGoogleAuth(false);
-      dispatch(signup({ full_name: name, email, institution, password }));
+      dispatch(signup({ full_name: name, email, institution, password, confirm_password: confirmPassword }));
     }
   };
 

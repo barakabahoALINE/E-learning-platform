@@ -1,4 +1,5 @@
 import logging
+from threading import Thread
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -33,6 +34,16 @@ def _same_institution_queryset(queryset, user, relation="student__institution"):
     return queryset
 
 
+def _send_enrollment_email_async(user, course, course_link):
+    def _runner():
+        try:
+            send_enrollment_confirmation_email(user, course, course_link)
+        except Exception as exc:
+            logger.error(f"Failed to send enrollment confirmation email: {str(exc)}")
+
+    Thread(target=_runner, daemon=True).start()
+
+
 def _same_institution_enrollment(enrollment, user):
     if _is_unrestricted_user(user):
         return True
@@ -60,18 +71,13 @@ class EnrollCourseAPIView(generics.CreateAPIView):
 
         enrollment = serializer.save()
 
-        # Send Enrollment Confirmation Email
+        # Send Enrollment Confirmation Email asynchronously so the enrollment request remains fast.
         try:
             frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
             course_link = f"{frontend_url}/course/{enrollment.course.id}"
-            send_enrollment_confirmation_email(
-                request.user,
-                enrollment.course,
-                course_link
-            )
+            _send_enrollment_email_async(request.user, enrollment.course, course_link)
         except Exception as e:
-            # Log email error but don't fail the enrollment
-            logger.error(f"Failed to send enrollment confirmation email: {str(e)}")
+            logger.error(f"Failed to queue enrollment confirmation email: {str(e)}")
         
         # Use detailed serializer for response
         response_serializer = StudentEnrollmentListSerializer(enrollment)

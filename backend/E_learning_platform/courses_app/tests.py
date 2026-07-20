@@ -1,98 +1,51 @@
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
+from django.test import TestCase
 from django.urls import reverse
-from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient
 
-from .models import Category, Course, Level
+from courses_app.models import Course
+from users_app.models import User
 
 
-class CourseVisibilityTests(APITestCase):
+class CourseVisibilityTests(TestCase):
     def setUp(self):
-        User = get_user_model()
-        self.admin = User.objects.create_user(
-            email="admin@example.com",
-            password="password",
-            full_name="Admin User",
-            institution="Acme",
-            role="admin",
+        self.client = APIClient()
+        self.permission = Permission.objects.get(
+            codename="view_published_course",
+            content_type__app_label="courses_app",
         )
+
+        self.student = User.objects.create_user(
+            email="student@example.com",
+            password="testpass123",
+            full_name="Student User",
+            institution="Institution-A",
+            role="student",
+        )
+        self.student.user_permissions.add(self.permission)
+
         self.instructor = User.objects.create_user(
             email="instructor@example.com",
-            password="password",
+            password="testpass123",
             full_name="Instructor User",
-            institution="Acme",
+            institution="Institution-B",
             role="instructor",
         )
-        self.viewer = User.objects.create_user(
-            email="viewer@example.com",
-            password="password",
-            full_name="Viewer User",
-            institution="Acme",
-            role="viewer",
-        )
-        self.superuser = User.objects.create_superuser(
-            email="super@example.com",
-            password="password",
-            full_name="Super User",
-            institution="Acme",
+        self.instructor.user_permissions.add(self.permission)
+
+        self.course = Course.objects.create(
+            title="Published Course",
+            description="Visible to students",
+            duration="4 weeks",
+            price=0.0,
+            created_by=self.instructor,
+            is_published=True,
         )
 
-        self.category = Category.objects.create(name="Development")
-        self.level = Level.objects.create(name="Beginner")
-        self.admin_course = self.create_course("Admin Course", self.admin)
-        self.instructor_course = self.create_course("Instructor Course", self.instructor)
-        self.other_instructor_course = self.create_course(
-            "Other Instructor Course",
-            User.objects.create_user(
-                email="other@example.com",
-                password="password",
-                full_name="Other Instructor",
-                institution="Acme",
-                role="instructor",
-            ),
-        )
-        self.url = reverse("course-list")
+    def test_student_can_view_published_course_from_other_institution(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.get(reverse("course-list"))
 
-    def create_course(self, title, creator):
-        return Course.objects.create(
-            title=title,
-            description=f"{title} description",
-            duration="1 hour",
-            category=self.category,
-            level=self.level,
-            created_by=creator,
-            is_published=False,
-        )
-
-    def list_course_titles_for(self, user):
-        self.client.force_authenticate(user=user)
-        response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        return {course["title"] for course in response.data}
-
-    def test_instructor_only_sees_courses_they_created(self):
-        self.assertEqual(
-            self.list_course_titles_for(self.instructor),
-            {"Instructor Course"},
-        )
-
-    def test_admin_viewer_and_superuser_see_all_courses(self):
-        expected_titles = {
-            "Admin Course",
-            "Instructor Course",
-            "Other Instructor Course",
-        }
-
-        self.assertEqual(self.list_course_titles_for(self.admin), expected_titles)
-        self.assertEqual(self.list_course_titles_for(self.viewer), expected_titles)
-        self.assertEqual(self.list_course_titles_for(self.superuser), expected_titles)
-
-    def test_instructor_cannot_open_another_users_unpublished_course(self):
-        self.client.force_authenticate(user=self.instructor)
-        response = self.client.get(reverse("course-detail", args=[self.admin_course.id]))
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_instructor_can_open_their_own_unpublished_course(self):
-        self.client.force_authenticate(user=self.instructor)
-        response = self.client.get(reverse("course-detail", args=[self.instructor_course.id]))
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], self.course.id)

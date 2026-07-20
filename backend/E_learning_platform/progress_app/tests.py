@@ -2,9 +2,9 @@ from django.test import TestCase
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
-from courses_app.models import Course
+from courses_app.models import Course, Module, Section, Content
 from enrollments_app.models import Enrollment
-from .models import LearningSession
+from .models import LearningSession, ContentProgress, CourseProgress
 import datetime
 from unittest.mock import patch
 
@@ -110,4 +110,67 @@ class WeeklyKPIBehaviorTests(TestCase):
 		self.assertTrue(len(weekly) >= 2)
 		self.assertAlmostEqual(weekly[0].get('hours'), 1.0)  # 1 hour this week
 		self.assertAlmostEqual(weekly[1].get('hours'), 1.0)  # 1 hour previous week
+
+	def test_course_progress_includes_quizzes_and_final_assessment(self):
+		"""Test that course progress includes content, quizzes, and final assessment as items."""
+		from assessments_app.models import Assessment, Attempt
+		
+		course = Course.objects.create(title='Content Progress Course', description='d', duration='1h', price=0, is_published=True)
+		module = Module.objects.create(course=course, title='Module 1', order=1, is_published=True)
+		section = Section.objects.create(module=module, title='Section 1', order=1, is_published=True)
+		content_one = Content.objects.create(section=section, title='Content 1', content_type='text', order=1, is_published=True)
+		content_two = Content.objects.create(section=section, title='Content 2', content_type='video', order=2, is_published=True)
+		
+		# Create a quiz assessment for the module
+		quiz = Assessment.objects.create(
+			course=course,
+			module=module,
+			title='Module Quiz',
+			assessment_type='QUIZ',
+			is_published=True,
+			pass_mark=60,
+		)
+		
+		# Create a final assessment for the course
+		final_assessment = Assessment.objects.create(
+			course=course,
+			title='Final Assessment',
+			assessment_type='FINAL',
+			is_published=True,
+			pass_mark=60,
+		)
+		
+		# Initially: 4 total items (2 content + 1 quiz + 1 final)
+		# 0 completed => 0%
+		course_progress = CourseProgress.objects.filter(student=self.user, course=course).first()
+		if not course_progress:
+			# Trigger creation by marking content
+			ContentProgress.objects.create(
+				student=self.user,
+				content=content_one,
+				enrollment=self.enrollment,
+				completed=False,
+			)
+		
+		# Now, with 1 content item completed out of 4 total items: 25%
+		ContentProgress.objects.filter(student=self.user, content=content_one).update(completed=True)
+		from progress_app.models import _refresh_course_progress
+		_refresh_course_progress(self.user, course, self.enrollment)
+		
+		course_progress = CourseProgress.objects.get(student=self.user, course=course)
+		self.assertEqual(course_progress.progress_percentage, 25.0)
+		
+		# Mark second content as completed: 2/4 = 50%
+		ContentProgress.objects.create(
+			student=self.user,
+			content=content_two,
+			enrollment=self.enrollment,
+			completed=True,
+		)
+		_refresh_course_progress(self.user, course, self.enrollment)
+		
+		course_progress = CourseProgress.objects.get(student=self.user, course=course)
+		self.assertEqual(course_progress.progress_percentage, 50.0)
+		self.assertFalse(course_progress.completed)  # Not completed yet - quiz and final still pending
+
 

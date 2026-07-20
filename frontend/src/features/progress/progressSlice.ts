@@ -268,6 +268,7 @@ const progressSlice = createSlice({
         state.courseProgress[courseId] = {
           ...courseProgress,
           completion_percentage: courseProgress.progress_percentage ?? courseProgress.completion_percentage ?? 0,
+          completed_items: data.content_progress?.completed ? 1 : 0,
         };
 
         const sectionContents = state.sectionContentProgress[sectionId] || state.lessonContentProgress[sectionId] || [];
