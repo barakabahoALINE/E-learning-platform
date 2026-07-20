@@ -102,7 +102,8 @@ class CourseListAPIView(generics.ListAPIView):
                 return queryset.filter(
                     models.Q(created_by__institution=user.institution) |
                     models.Q(created_by__isnull=True) |
-                    models.Q(created_by__institution__isnull=True)
+                    models.Q(created_by__institution__isnull=True) |
+                    models.Q(is_published=True)
                 ).distinct()
 
             return queryset.filter(is_published=True).distinct()
