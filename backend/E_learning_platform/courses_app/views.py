@@ -172,6 +172,203 @@ class CourseUpdateAPIView(generics.UpdateAPIView):
         queryset = super().get_queryset()
         return _same_institution_queryset(queryset, self.request.user)
 
+    def _sync_builder_structure(self, course, request_data):
+        modules_data_str = request_data.get("modules")
+        final_assessment_str = request_data.get("finalAssessment")
+        is_published_course = course.is_published
+
+        if final_assessment_str is not None:
+            try:
+                course.final_assessment = (
+                    json.loads(final_assessment_str)
+                    if isinstance(final_assessment_str, str)
+                    else final_assessment_str
+                )
+                course.save(update_fields=["final_assessment"])
+            except Exception:
+                pass
+
+        if modules_data_str is None:
+            return
+
+        if isinstance(modules_data_str, str):
+            try:
+                modules_data = json.loads(modules_data_str)
+            except Exception:
+                modules_data = []
+        else:
+            modules_data = modules_data_str
+
+        provided_module_ids = [str(m.get("id")) for m in modules_data if m.get("id")]
+        modules_to_remove = Module.objects.filter(course=course).exclude(id__in=provided_module_ids)
+        if is_published_course:
+            for module in modules_to_remove:
+                module.pending_delete = True
+                module.has_unpublished_changes = True
+                module.save()
+        else:
+            modules_to_remove.delete()
+
+        for module_data in modules_data:
+            module_id = module_data.get("id")
+            module = (
+                Module.objects.filter(id=module_id, course=course).first()
+                if module_id
+                else None
+            )
+
+            if not module:
+                module_kwargs = {
+                    "course": course,
+                    "title": module_data.get("title", ""),
+                    "description": module_data.get("description", ""),
+                    "order": module_data.get("order", 0),
+                    "quiz_enabled": module_data.get("quizEnabled", False),
+                }
+                if is_published_course:
+                    module_kwargs.update({
+                        "draft_title": module_kwargs["title"],
+                        "draft_description": module_kwargs["description"],
+                        "draft_order": module_kwargs["order"],
+                        "has_unpublished_changes": True,
+                        "is_published": False,
+                    })
+                module = Module.objects.create(**module_kwargs)
+            else:
+                if is_published_course:
+                    if module_data.get("title") is not None:
+                        module.draft_title = module_data.get("title")
+                    if module_data.get("description") is not None:
+                        module.draft_description = module_data.get("description")
+                    if module_data.get("order") is not None:
+                        module.draft_order = module_data.get("order")
+                    module.has_unpublished_changes = True
+                    module.quiz_enabled = module_data.get("quizEnabled", module.quiz_enabled)
+                    module.save()
+                else:
+                    module.title = module_data.get("title", module.title)
+                    module.description = module_data.get("description", module.description)
+                    module.order = module_data.get("order", module.order)
+                    module.quiz_enabled = module_data.get("quizEnabled", module.quiz_enabled)
+                    module.save()
+
+            sections_data = module_data.get("sections", [])
+            provided_section_ids = [str(s.get("id")) for s in sections_data if s.get("id")]
+            sections_to_remove = Section.objects.filter(module=module).exclude(id__in=provided_section_ids)
+            if is_published_course:
+                for section in sections_to_remove:
+                    section.pending_delete = True
+                    section.has_unpublished_changes = True
+                    section.save()
+            else:
+                sections_to_remove.delete()
+
+            for section_data in sections_data:
+                section_id = section_data.get("id")
+                section = (
+                    Section.objects.filter(id=section_id, module=module).first()
+                    if section_id
+                    else None
+                )
+
+                if not section:
+                    section_kwargs = {
+                        "module": module,
+                        "title": section_data.get("title", ""),
+                        "order": section_data.get("order", 0),
+                    }
+                    if is_published_course:
+                        section_kwargs.update({
+                            "draft_title": section_kwargs["title"],
+                            "draft_order": section_kwargs["order"],
+                            "has_unpublished_changes": True,
+                            "is_published": False,
+                        })
+                    section = Section.objects.create(**section_kwargs)
+                else:
+                    if is_published_course:
+                        if section_data.get("title") is not None:
+                            section.draft_title = section_data.get("title")
+                        if section_data.get("order") is not None:
+                            section.draft_order = section_data.get("order")
+                        section.has_unpublished_changes = True
+                        section.save()
+                    else:
+                        section.title = section_data.get("title", section.title)
+                        section.order = section_data.get("order", section.order)
+                        section.save()
+
+                contents_data = section_data.get("contents", [])
+                provided_content_ids = [str(c.get("id")) for c in contents_data if c.get("id")]
+                contents_to_remove = Content.objects.filter(section=section).exclude(id__in=provided_content_ids)
+                if is_published_course:
+                    for content in contents_to_remove:
+                        content.pending_delete = True
+                        content.has_unpublished_changes = True
+                        content.save()
+                else:
+                    contents_to_remove.delete()
+
+                for content_data in contents_data:
+                    content_id = content_data.get("id")
+                    content = (
+                        Content.objects.filter(id=content_id, section=section).first()
+                        if content_id
+                        else None
+                    )
+
+                    if not content:
+                        content_kwargs = {
+                            "section": section,
+                            "title": content_data.get("title", ""),
+                            "content_type": content_data.get("content_type", "text"),
+                            "description": content_data.get("description", ""),
+                            "video_url": content_data.get("video_url", ""),
+                            "text_content": content_data.get("text_content", ""),
+                            "file": content_data.get("file", None),
+                            "order": content_data.get("order", 0),
+                        }
+                        if is_published_course:
+                            content_kwargs.update({
+                                "draft_title": content_kwargs["title"],
+                                "draft_content_type": content_kwargs["content_type"],
+                                "draft_description": content_kwargs["description"],
+                                "draft_video_url": content_kwargs["video_url"],
+                                "draft_text_content": content_kwargs["text_content"],
+                                "draft_file": content_kwargs["file"],
+                                "draft_order": content_kwargs["order"],
+                                "has_unpublished_changes": True,
+                                "is_published": False,
+                            })
+                        Content.objects.create(**content_kwargs)
+                    else:
+                        if is_published_course:
+                            if content_data.get("title") is not None:
+                                content.draft_title = content_data.get("title")
+                            if content_data.get("content_type") is not None:
+                                content.draft_content_type = content_data.get("content_type")
+                            if content_data.get("description") is not None:
+                                content.draft_description = content_data.get("description")
+                            if content_data.get("video_url") is not None:
+                                content.draft_video_url = content_data.get("video_url")
+                            if content_data.get("text_content") is not None:
+                                content.draft_text_content = content_data.get("text_content")
+                            if content_data.get("file") is not None:
+                                content.draft_file = content_data.get("file")
+                            if content_data.get("order") is not None:
+                                content.draft_order = content_data.get("order")
+                            content.has_unpublished_changes = True
+                            content.save()
+                        else:
+                            content.title = content_data.get("title", content.title)
+                            content.content_type = content_data.get("content_type", content.content_type)
+                            content.description = content_data.get("description", content.description)
+                            content.video_url = content_data.get("video_url", content.video_url)
+                            content.text_content = content_data.get("text_content", content.text_content)
+                            content.file = content_data.get("file", content.file)
+                            content.order = content_data.get("order", content.order)
+                            content.save()
+
     def update(self, request, *args, **kwargs):
 
         instance = self.get_object()
@@ -184,7 +381,6 @@ class CourseUpdateAPIView(generics.UpdateAPIView):
 
         serializer.is_valid(raise_exception=True)
 
-        # STORE AS DRAFT CHANGES
         data = serializer.validated_data
 
         if "title" in data:
@@ -208,14 +404,14 @@ class CourseUpdateAPIView(generics.UpdateAPIView):
         if "price" in data:
             instance.draft_price = data["price"]
 
-        # MARK AS HAVING UNPUBLISHED CHANGES
         instance.has_unpublished_changes = True
-
         instance.save()
+
+        self._sync_builder_structure(instance, request.data)
 
         return Response({
             "success": True,
-            "message": "Course changes saved as draft successfully",
+            "message": "Course changes saved successfully",
             "data": serializer.data
         }, status=status.HTTP_200_OK)
 
@@ -417,6 +613,7 @@ class CoursePublishAPIView(generics.GenericAPIView):
         # =========================
         # PUBLISH COURSE
         # =========================
+        course.pending_delete = False
         course.has_unpublished_changes = False
         course.is_published = True
         course.save()
@@ -498,6 +695,8 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
         # =========================
         # UNPUBLISH COURSE
         # =========================
+        course.pending_delete = False
+        course.has_unpublished_changes = False
         course.is_published = False
         course.save()
 
@@ -507,6 +706,8 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
         assessments = course.assessments.all()
 
         for assessment in assessments:
+            assessment.pending_delete = False
+            assessment.has_unpublished_changes = False
             assessment.is_published = False
             assessment.save()
 
@@ -517,6 +718,8 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
 
         for module in modules:
 
+            module.pending_delete = False
+            module.has_unpublished_changes = False
             module.is_published = False
             module.save()
 
@@ -527,6 +730,8 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
 
             for section in sections:
 
+                section.pending_delete = False
+                section.has_unpublished_changes = False
                 section.is_published = False
                 section.save()
 
@@ -537,6 +742,8 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
 
                 for content in contents:
 
+                    content.pending_delete = False
+                    content.has_unpublished_changes = False
                     content.is_published = False
                     content.save()
 

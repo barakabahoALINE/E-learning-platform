@@ -59,6 +59,8 @@ export interface Assessment {
   descriptions?: string;
   instructions?: string;
   questions?: Question[];
+  tab_switch_enabled?: boolean;
+  tab_switch_limit?: number;
 }
 
 export interface AssessmentCreateData {
@@ -72,6 +74,8 @@ export interface AssessmentCreateData {
   duration?: number;
   descriptions?: string;
   instructions?: string;
+  tab_switch_enabled?: boolean;
+  tab_switch_limit?: number;
 }
 
 export interface QuestionCreateData {

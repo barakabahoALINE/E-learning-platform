@@ -5,9 +5,11 @@ import {
   Clock,
   Edit2,
   FileQuestion,
+  Info,
   Plus,
   RefreshCw,
   Search,
+  ShieldCheck,
   Trash2,
   X,
 } from "lucide-react";
@@ -29,6 +31,8 @@ interface CreateTemplateForm {
   pass_mark: string;
   max_attempts: string;
   duration: string;
+  tab_switch_enabled?: boolean;
+  tab_switch_limit?: string;
 }
 
 const makeLocalQuestionId = () => `local-question-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -39,6 +43,8 @@ const emptyForm = (type: AssessmentType): CreateTemplateForm => ({
   pass_mark: type === "FINAL" ? "60" : "70",
   max_attempts: "3",
   duration: type === "FINAL" ? "60" : "30",
+  tab_switch_enabled: false,
+  tab_switch_limit: "0",
 });
 
 export function AssessmentsPage() {
@@ -93,6 +99,8 @@ export function AssessmentsPage() {
       pass_mark: Number(createForm.pass_mark) || 60,
       max_attempts: Number(createForm.max_attempts) || 3,
       duration: Number(createForm.duration) || 30,
+      tab_switch_enabled: Boolean(createForm.tab_switch_enabled),
+      tab_switch_limit: Number(createForm.tab_switch_limit) || 0,
     });
 
     setCreateForm(null);
@@ -300,61 +308,138 @@ export function AssessmentsPage() {
       )}
 
       {createForm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-gray-900/30 backdrop-blur-xs" onClick={() => setCreateForm(null)} />
-          <div className="relative bg-white rounded-xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">New {createForm.assessment_type === "QUIZ" ? "Quiz" : "Final Assessment"}</h3>
-              <button onClick={() => setCreateForm(null)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
+        <div className="fixed inset-0 bg-gray-900/30 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Title</label>
+                <h2 className="text-base font-semibold text-gray-900">
+                  Create {createForm.assessment_type === "QUIZ" ? "Quiz" : "Final Assessment"}
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Set the rules for how students will take this assessment
+                </p>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <span className="text-sm">Tab switch</span>
+                  <button
+                    type="button"
+                    onClick={() => setCreateForm({ ...createForm, tab_switch_enabled: !createForm.tab_switch_enabled })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${createForm.tab_switch_enabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${createForm.tab_switch_enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                </label>
+                <button
+                  onClick={() => setCreateForm(null)}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Title</label>
                 <input
                   value={createForm.title}
                   onChange={(event) => setCreateForm({ ...createForm, title: event.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., Final Assessment"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-3">
+
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+                  <Info className="w-4 h-4 text-blue-500" />
+                  Pass Mark (%)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={createForm.pass_mark}
+                  onChange={(event) => setCreateForm({ ...createForm, pass_mark: event.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., 60"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Minimum percentage score required to pass.</p>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+                  <RefreshCw className="w-4 h-4 text-indigo-500" />
+                  Maximum Attempts
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={createForm.max_attempts}
+                  onChange={(event) => setCreateForm({ ...createForm, max_attempts: event.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., 3"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Number of times a student can attempt this assessment.</p>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+                  <Clock className="w-4 h-4 text-blue-500" />
+                  Duration (minutes)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={createForm.duration}
+                  onChange={(event) => setCreateForm({ ...createForm, duration: event.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., 60"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Time limit students have to complete the assessment.</p>
+              </div>
+
+              {createForm.tab_switch_enabled && (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Pass %</label>
+                  <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-500" />
+                    tabswitch
+                  </label>
                   <input
-                    value={createForm.pass_mark}
-                    onChange={(event) => setCreateForm({ ...createForm, pass_mark: event.target.value })}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    type="number"
+                    min={0}
+                    value={createForm.tab_switch_limit}
+                    onChange={(event) => setCreateForm({ ...createForm, tab_switch_limit: event.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g., 3"
                   />
+                  <p className="text-[11px] text-gray-400 mt-1">Maximum number of allowed tab switches during the assessment.</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Attempts</label>
-                  <input
-                    value={createForm.max_attempts}
-                    onChange={(event) => setCreateForm({ ...createForm, max_attempts: event.target.value })}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Minutes</label>
-                  <input
-                    value={createForm.duration}
-                    onChange={(event) => setCreateForm({ ...createForm, duration: event.target.value })}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                  <Clock className="w-3 h-3" /> {createForm.duration} min
+                </span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  <RefreshCw className="w-3 h-3" /> {createForm.max_attempts} attempt{createForm.max_attempts !== "1" ? "s" : ""}
+                </span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
+                  <Info className="w-3 h-3" /> Pass: {createForm.pass_mark}%
+                </span>
               </div>
             </div>
-            <div className="p-5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
+
+            <div className="p-5 border-t border-gray-100 flex items-center justify-end gap-3">
               <button
                 onClick={() => setCreateForm(null)}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-white"
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateTemplate}
-                className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Create
               </button>

@@ -12,6 +12,8 @@ export interface AssessmentLibraryItem {
   pass_mark?: number;
   max_attempts?: number;
   duration?: number;
+  tab_switch_enabled?: boolean;
+  tab_switch_limit?: number;
   descriptions?: string;
   instructions?: string;
   questions: QuizQuestion[];
@@ -29,6 +31,8 @@ export interface LocalAssessmentTemplate {
   pass_mark: number;
   max_attempts: number;
   duration: number;
+  tab_switch_enabled?: boolean;
+  tab_switch_limit?: number;
   descriptions?: string;
   instructions?: string;
   questions: QuizQuestion[];
@@ -42,6 +46,8 @@ interface CreateTemplateData {
   pass_mark?: number;
   max_attempts?: number;
   duration?: number;
+  tab_switch_enabled?: boolean;
+  tab_switch_limit?: number;
   descriptions?: string;
   instructions?: string;
 }
@@ -98,6 +104,8 @@ export const createLocalAssessmentTemplate = (data: CreateTemplateData): LocalAs
     pass_mark: data.pass_mark ?? (data.assessment_type === "FINAL" ? 60 : 70),
     max_attempts: data.max_attempts ?? 3,
     duration: data.duration ?? (data.assessment_type === "FINAL" ? 60 : 30),
+    tab_switch_enabled: data.tab_switch_enabled ?? false,
+    tab_switch_limit: data.tab_switch_limit ?? 0,
     descriptions: data.descriptions,
     instructions: data.instructions,
     questions: [],

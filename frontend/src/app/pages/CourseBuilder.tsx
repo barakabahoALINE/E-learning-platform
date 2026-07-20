@@ -443,7 +443,7 @@ export function CourseBuilderPage() {
    * Called from FinalAssessmentSettingsModal when creating the final assessment for the first time.
    * Creates the assessment with the chosen settings, then opens the question editor.
    */
-  const handleCreateFinalAssessmentWithSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number }) => {
+  const handleCreateFinalAssessmentWithSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number; tab_switch_enabled?: boolean; tab_switch_limit?: number }) => {
     try {
       await dispatch(createAssessment({
         course: course.id,
@@ -453,6 +453,8 @@ export function CourseBuilderPage() {
         pass_mark: settings.pass_mark,
         max_attempts: settings.max_attempts,
         duration: settings.duration,
+        tab_switch_enabled: settings.tab_switch_enabled,
+        tab_switch_limit: settings.tab_switch_limit,
       })).unwrap();
       dispatch(fetchCourseDetails(course.id));
       toast.success("Final assessment created successfully!");
@@ -469,7 +471,7 @@ export function CourseBuilderPage() {
   /**
    * Called from FinalAssessmentSettingsModal when editing an existing final assessment's settings.
    */
-  const handleUpdateFinalAssessmentSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number }) => {
+  const handleUpdateFinalAssessmentSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number; tab_switch_enabled?: boolean; tab_switch_limit?: number }) => {
     const assessmentId = course.final_assessment?.id;
     if (!assessmentId) return;
     try {
@@ -1181,6 +1183,8 @@ export function CourseBuilderPage() {
             duration: course.final_assessment?.duration,
             max_attempts: course.final_assessment?.max_attempts,
             pass_mark: course.final_assessment?.pass_mark,
+            tab_switch_enabled: course.final_assessment?.tab_switch_enabled,
+            tab_switch_limit: course.final_assessment?.tab_switch_limit,
           }}
           onClose={() => setShowFinalAssessmentSettings(null)}
           onConfirm={handleUpdateFinalAssessmentSettings}
