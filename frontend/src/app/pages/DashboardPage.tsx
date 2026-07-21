@@ -20,28 +20,49 @@ import {
   Zap,
   RotateCcw,
   CheckCircle,
+  MessageSquare,
+  Heart,
+  ArrowRight,
+  X,
 } from "lucide-react";
+import AskDiscussionModal from "../components/AskDiscussionModal";
 import { MainLayout } from "../components/MainLayout";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { fetchMyEnrollments } from "../../features/enrollments/enrollmentSlice";
-import { fetchCourses, fetchCategories } from "../../features/courses/courseSlice";
+import {
+  fetchCourses,
+  fetchCategories,
+} from "../../features/courses/courseSlice";
 import { getMediaUrl } from "../utils/media";
 import {
   fetchCourseProgress,
-  fetchLearningHoursKPI, fetchLearningActivityKPI, fetchCoursesKPI,
+  fetchLearningHoursKPI,
+  fetchLearningActivityKPI,
+  fetchCoursesKPI,
   fetchCompletionRateKPI,
   continueLearning,
   fetchCourseSectionsProgress,
 } from "../../features/progress/progressSlice";
+import { normalizeCourseId, useCommunity } from "../data/community-data";
+import { useLikeState } from "../data/like-data";
 
 export const DashboardPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const reduxUser = useAppSelector(selectCurrentUser);
+  const { discussions, addDiscussion } = useCommunity();
+  const { getSummary } = useLikeState(reduxUser?.id);
   const { myEnrollments } = useAppSelector((state) => state.enrollments);
   const { courses, categories } = useAppSelector((state) => state.courses);
-  const { courseProgress, courseSectionsProgress, learningHours, learningActivity, coursesKPI, completionRateKPI } = useAppSelector((state) => state.progress);
+  const {
+    courseProgress,
+    courseSectionsProgress,
+    learningHours,
+    learningActivity,
+    coursesKPI,
+    completionRateKPI,
+  } = useAppSelector((state) => state.progress);
 
   const [isReturningUser, setIsReturningUser] = React.useState(false);
 
@@ -62,27 +83,29 @@ export const DashboardPage: React.FC = () => {
       if (visited) {
         setIsReturningUser(true);
       } else {
-        localStorage.setItem(key, 'true');
+        localStorage.setItem(key, "true");
         setIsReturningUser(false);
       }
     }
   }, [reduxUser?.id]);
 
   React.useEffect(() => {
-    myEnrollments.forEach(enrollment => {
+    myEnrollments.forEach((enrollment) => {
       dispatch(fetchCourseProgress(Number(enrollment.course)));
       dispatch(fetchCourseSectionsProgress(Number(enrollment.course)));
     });
   }, [dispatch, myEnrollments]);
 
-  const user = reduxUser ? {
-    ...reduxUser,
-    name: reduxUser.full_name,
-    achievements: [],
-  } : null;
+  const user = reduxUser
+    ? {
+        ...reduxUser,
+        name: reduxUser.full_name,
+        achievements: [],
+      }
+    : null;
 
   const getCourseDetails = (courseId: number) => {
-    return courses.find(c => c.id === courseId);
+    return courses.find((c) => c.id === courseId);
   };
 
   const getProgress = (courseId: number) => {
@@ -91,12 +114,21 @@ export const DashboardPage: React.FC = () => {
 
   const getItemProgress = (courseId: number) => {
     const sections = courseSectionsProgress[courseId] || [];
-    const total = sections.reduce((sum, section) => sum + (section.total_contents || 0), 0);
-    const completed = sections.reduce((sum, section) => sum + (section.completed_contents || 0), 0);
+    const total = sections.reduce(
+      (sum, section) => sum + (section.total_contents || 0),
+      0,
+    );
+    const completed = sections.reduce(
+      (sum, section) => sum + (section.completed_contents || 0),
+      0,
+    );
     return { total, completed };
   };
 
-  const totalHours = learningHours?.weekly_totals?.[0]?.hours ?? learningHours?.total_hours_learned ?? 0;
+  const totalHours =
+    learningHours?.weekly_totals?.[0]?.hours ??
+    learningHours?.total_hours_learned ??
+    0;
   const currentStreak = learningActivity?.current_streak || 0;
   const weeklyProgress = learningActivity?.weekly_activity || [
     { day: "Sun", hours: 0, minutes: 0, date: "" },
@@ -107,38 +139,115 @@ export const DashboardPage: React.FC = () => {
     { day: "Fri", hours: 0, minutes: 0, date: "" },
     { day: "Sat", hours: 0, minutes: 0, date: "" },
   ];
-  const activeEnrollments = myEnrollments.filter(enrollment => enrollment.status !== "cancelled");
+  const activeEnrollments = myEnrollments.filter(
+    (enrollment) => enrollment.status !== "cancelled",
+  );
   const learningHistory = activeEnrollments
     .map((enrollment) => {
       const course = getCourseDetails(enrollment.course);
       if (!course) return null;
       const progress = getProgress(enrollment.course);
-      const percent = Math.round(progress?.completion_percentage || progress?.progress_percentage || 0);
+      const percent = Math.round(
+        progress?.completion_percentage || progress?.progress_percentage || 0,
+      );
       return {
         id: enrollment.id,
         courseId: enrollment.course,
         courseName: course.title,
         thumbnail: course.thumbnail,
-        category: typeof course.category === "string" ? course.category : categories.find(c => c.id === Number(course.category))?.name,
-        status: enrollment.status === "completed" || progress?.course_completed || percent >= 100 ? "completed" : "in-progress",
+        category:
+          typeof course.category === "string"
+            ? course.category
+            : categories.find((c) => c.id === Number(course.category))?.name,
+        status:
+          enrollment.status === "completed" ||
+          progress?.course_completed ||
+          percent >= 100
+            ? "completed"
+            : "in-progress",
         progress: percent,
         lastAccessedAt: progress?.completed_at || enrollment.enrolled_at,
       };
     })
     .filter(Boolean)
-    .sort((a, b) => new Date(b!.lastAccessedAt).getTime() - new Date(a!.lastAccessedAt).getTime());
+    .sort(
+      (a, b) =>
+        new Date(b!.lastAccessedAt).getTime() -
+        new Date(a!.lastAccessedAt).getTime(),
+    );
 
-  const inProgressEnrollments = activeEnrollments.filter(enrollment => {
+  const inProgressEnrollments = activeEnrollments.filter((enrollment) => {
     const progress = getProgress(enrollment.course);
-    const percent = Math.round(progress?.completion_percentage || progress?.progress_percentage || 0);
-    const isCompleted = enrollment.status === "completed" || progress?.course_completed || percent >= 100;
+    const percent = Math.round(
+      progress?.completion_percentage || progress?.progress_percentage || 0,
+    );
+    const isCompleted =
+      enrollment.status === "completed" ||
+      progress?.course_completed ||
+      percent >= 100;
     return !isCompleted;
   });
 
   const enrolledCount = activeEnrollments.length;
-  const completedCount = learningHistory.filter(item => item!.status === "completed").length;
-  const completionRate = enrolledCount > 0 ? Math.round((completedCount / enrolledCount) * 100) : 0;
-  const completionRateChange = completionRateKPI?.change_percentage ?? completionRateKPI?.month_over_month_change;
+  const completedCount = learningHistory.filter(
+    (item) => item!.status === "completed",
+  ).length;
+  const completionRate =
+    enrolledCount > 0 ? Math.round((completedCount / enrolledCount) * 100) : 0;
+  const completionRateChange =
+    completionRateKPI?.change_percentage ??
+    completionRateKPI?.month_over_month_change;
+
+  const enrolledCourses = learningHistory.filter((item) => item !== null);
+  const enrolledCourseIds = new Set(
+    enrolledCourses.map((course) =>
+      normalizeCourseId(String(course?.courseId ?? "")),
+    ),
+  );
+  const communityPreviews = discussions
+    .filter((discussion) =>
+      enrolledCourseIds.has(normalizeCourseId(discussion.courseId)),
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )
+    .slice(0, 3);
+
+  const formatRelativeTime = (value: string) => {
+    const diff = Date.now() - new Date(value).getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
+
+  // Ask modal state
+  const [showAskModal, setShowAskModal] = React.useState(false);
+
+  const enrolledCoursesSimple = enrolledCourses.map((c) => ({
+    id: String(c!.courseId),
+    title: c!.courseName,
+  }));
+
+  const currentUserId = reduxUser ? String(reduxUser.id) : "";
+  const currentUserName = reduxUser
+    ? reduxUser.full_name || reduxUser.email?.split("@")[0] || "User"
+    : "User";
+
+  const handlePostDiscussion = (
+    courseId: string,
+    courseTitle: string,
+    title: string,
+    description: string,
+  ) => {
+    const newId = addDiscussion(courseId, courseTitle, title, description);
+    setShowAskModal(false);
+    navigate(`/community/${newId}`);
+    return newId;
+  };
 
   return (
     <MainLayout>
@@ -148,7 +257,8 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div>
               <h1 className="text-3xl mb-2">
-                {isReturningUser ? 'Welcome back' : 'Welcome'}, {user?.name?.split(" ")[0] || "User"}!
+                {isReturningUser ? "Welcome back" : "Welcome"},{" "}
+                {user?.name?.split(" ")[0] || "User"}!
               </h1>
               <p className="text-blue-100 mb-4">
                 You've learned {totalHours} hours this week. Keep up the great
@@ -234,8 +344,8 @@ export const DashboardPage: React.FC = () => {
                   <p className="text-xs text-green-600 mt-1 flex items-center">
                     <TrendingUp className="w-3 h-3 mr-1" />
                     {completionRateChange !== undefined
-                      ? `${completionRateChange >= 0 ? '+' : ''}${Math.round(completionRateChange)}% vs last month`
-                      : 'Based on completed courses'}
+                      ? `${completionRateChange >= 0 ? "+" : ""}${Math.round(completionRateChange)}% vs last month`
+                      : "Based on completed courses"}
                   </p>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
@@ -275,7 +385,9 @@ export const DashboardPage: React.FC = () => {
               inProgressEnrollments.slice(0, 3).map((enrollment) => {
                 const courseDetail = getCourseDetails(enrollment.course);
                 const progress = getProgress(enrollment.course);
-                const completionPercentage = Math.round(progress?.completion_percentage || 0);
+                const completionPercentage = Math.round(
+                  progress?.completion_percentage || 0,
+                );
                 const itemProgress = getItemProgress(enrollment.course);
 
                 if (!courseDetail) return null;
@@ -298,32 +410,54 @@ export const DashboardPage: React.FC = () => {
                           <div className="flex items-start justify-between mb-2">
                             <div>
                               <Badge variant="secondary" className="mb-2">
-                                {typeof courseDetail.category === "string" ? courseDetail.category : categories.find(c => c.id === Number(courseDetail.category))?.name || "Category"}
+                                {typeof courseDetail.category === "string"
+                                  ? courseDetail.category
+                                  : categories.find(
+                                      (c) =>
+                                        c.id === Number(courseDetail.category),
+                                    )?.name || "Category"}
                               </Badge>
-                              <h3 className="font-bold text-lg mb-1">{courseDetail.title}</h3>
+                              <h3 className="font-bold text-lg mb-1">
+                                {courseDetail.title}
+                              </h3>
                               <p className="text-sm text-gray-600">
-                                {courseDetail.admin || courseDetail.instructor || "Platform Instructor"}
+                                {courseDetail.admin ||
+                                  courseDetail.instructor ||
+                                  "Platform Instructor"}
                               </p>
                             </div>
                           </div>
                           <div className="space-y-3 mt-4">
                             <div className="flex items-center justify-between text-sm">
-                              <span className="text-gray-500 font-medium">Progress</span>
-                              <span className="font-bold text-primary">{completionPercentage}%</span>
+                              <span className="text-gray-500 font-medium">
+                                Progress
+                              </span>
+                              <span className="font-bold text-primary">
+                                {completionPercentage}%
+                              </span>
                             </div>
-                            <Progress value={completionPercentage} className="h-2" />
+                            <Progress
+                              value={completionPercentage}
+                              className="h-2"
+                            />
                             <div className="flex items-center justify-between pt-2">
                               <span className="text-sm text-gray-500 font-medium">
-                                {itemProgress.completed} of {itemProgress.total} items completed
+                                {itemProgress.completed} of {itemProgress.total}{" "}
+                                items completed
                               </span>
                               <Button
                                 className="bg-primary hover:bg-primary/90"
                                 size="sm"
                                 onClick={async () => {
                                   try {
-                                    await dispatch(continueLearning(Number(courseDetail.id))).unwrap();
+                                    await dispatch(
+                                      continueLearning(Number(courseDetail.id)),
+                                    ).unwrap();
                                   } catch (error) {
-                                    console.error("Failed to continue session:", error);
+                                    console.error(
+                                      "Failed to continue session:",
+                                      error,
+                                    );
                                   }
                                   navigate(`/course/${courseDetail.id}`);
                                 }}
@@ -354,56 +488,83 @@ export const DashboardPage: React.FC = () => {
               <CardContent className="space-y-4">
                 {learningHistory.length > 0 ? (
                   <>
-                    {learningHistory
-                      .slice(0, 2)
-                      .map(item => (
-                        <div key={item!.courseId} className="flex items-start space-x-3">
-                          <div className="relative flex-shrink-0">
-                            <img
-                              src={getMediaUrl(item!.thumbnail)}
-                              alt={item!.courseName}
-                              className="w-12 h-12 rounded object-cover"
-                            />
-                            {item!.status === 'completed' && (
-                              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                                <CheckCircle className="w-3 h-3 text-white" />
-                              </div>
-                            )}
+                    {learningHistory.slice(0, 2).map((item) => (
+                      <div
+                        key={item!.courseId}
+                        className="flex items-start space-x-3"
+                      >
+                        <div className="relative flex-shrink-0">
+                          <img
+                            src={getMediaUrl(item!.thumbnail)}
+                            alt={item!.courseName}
+                            className="w-12 h-12 rounded object-cover"
+                          />
+                          {item!.status === "completed" && (
+                            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-3 h-3 text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {item!.courseName}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge
+                              variant={
+                                item!.status === "completed"
+                                  ? "secondary"
+                                  : "default"
+                              }
+                              className="text-xs"
+                            >
+                              {item!.status === "completed"
+                                ? "Completed"
+                                : "In Progress"}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {item!.progress}%
+                            </span>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">{item!.courseName}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge variant={item!.status === 'completed' ? 'secondary' : 'default'} className="text-xs">
-                                {item!.status === 'completed' ? 'Completed' : 'In Progress'}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">{item!.progress}%</span>
-                            </div>
-                            <Progress value={item!.progress} className="h-1.5 mt-2" />
-                            <div className="flex items-center justify-between mt-2">
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(item!.lastAccessedAt).toLocaleDateString()}
-                              </span>
-                              <Link to={`/course/${item!.courseId}`}>
-                                <Button variant="ghost" size="sm" className="h-6 text-xs">
-                                  {item!.status === 'completed' ? (
-                                    <>
-                                      <RotateCcw className="w-3 h-3 mr-1" />
-                                      Revisit
-                                    </>
-                                  ) : (
-                                    <>
-                                      <PlayCircle className="w-3 h-3 mr-1" />
-                                      Resume
-                                    </>
-                                  )}
-                                </Button>
-                              </Link>
-                            </div>
+                          <Progress
+                            value={item!.progress}
+                            className="h-1.5 mt-2"
+                          />
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(
+                                item!.lastAccessedAt,
+                              ).toLocaleDateString()}
+                            </span>
+                            <Link to={`/course/${item!.courseId}`}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-xs"
+                              >
+                                {item!.status === "completed" ? (
+                                  <>
+                                    <RotateCcw className="w-3 h-3 mr-1" />
+                                    Revisit
+                                  </>
+                                ) : (
+                                  <>
+                                    <PlayCircle className="w-3 h-3 mr-1" />
+                                    Resume
+                                  </>
+                                )}
+                              </Button>
+                            </Link>
                           </div>
                         </div>
-                      ))}
+                      </div>
+                    ))}
                     <Link to="/profile?tab=history" className="block">
-                      <Button variant="outline" size="sm" className="w-full mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2"
+                      >
                         View Full History
                       </Button>
                     </Link>
@@ -411,7 +572,9 @@ export const DashboardPage: React.FC = () => {
                 ) : (
                   <div className="text-center py-4">
                     <Target className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">Your learning history will appear here</p>
+                    <p className="text-sm text-muted-foreground">
+                      Your learning history will appear here
+                    </p>
                   </div>
                 )}
               </CardContent>
@@ -430,7 +593,9 @@ export const DashboardPage: React.FC = () => {
                       <div key={day.day}>
                         <div className="flex items-center justify-between text-sm mb-1">
                           <span className="text-gray-600">{day.day}</span>
-                          <span className="font-medium">{day.hours.toFixed(1)}h</span>
+                          <span className="font-medium">
+                            {day.hours.toFixed(1)}h
+                          </span>
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                           <div
@@ -446,6 +611,129 @@ export const DashboardPage: React.FC = () => {
             </Card>
           </div>
         </div>
+
+        <Card className="border-gray-200 dark:border-gray-700">
+          <CardHeader className="pb-0">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-blue-600" />
+                Learning Community
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/community")}
+                className="text-blue-600 hover:text-blue-700 gap-1 text-sm"
+              >
+                View Community <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4 pb-4">
+            {showAskModal && (
+              <AskDiscussionModal
+                enrolledCourses={enrolledCoursesSimple}
+                defaultCourseId={enrolledCoursesSimple[0]?.id}
+                onPost={handlePostDiscussion}
+                onClose={() => setShowAskModal(false)}
+              />
+            )}
+            {enrolledCourses.length === 0 ? (
+              <div className="text-center py-8 space-y-2">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Start learning to join discussions.
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-500">
+                  Enroll in a course to ask questions and interact with other
+                  learners.
+                </p>
+                <Link to="/courses">
+                  <Button
+                    size="sm"
+                    className="mt-3 bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    Browse Courses
+                  </Button>
+                </Link>
+              </div>
+            ) : communityPreviews.length === 0 ? (
+              <div className="py-10 flex flex-col items-center justify-center">
+                <div className="max-w-xl text-center">
+                  <p className="text-base text-gray-700 dark:text-gray-300">
+                    No discussions yet in your courses.
+                  </p>
+                  <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+                    Be the first to ask a question — start a discussion for your
+                    classmates and instructors to engage with.
+                  </p>
+                  <div className="mt-6">
+                    <Button
+                      className="bg-white text-black shadow-sm px-5 py-2 rounded-full"
+                      onClick={() => setShowAskModal(true)}
+                    >
+                      Start a Discussion
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {communityPreviews.map((discussion) => {
+                  const discussionLike = getSummary(
+                    "discussion",
+                    discussion.id,
+                  );
+                  return (
+                    <button
+                      key={discussion.id}
+                      onClick={() => navigate(`/community/${discussion.id}`)}
+                      className="w-full text-left rounded-2xl border border-gray-200/80 dark:border-gray-800/80 bg-white dark:bg-slate-950 p-4 transition hover:shadow-sm hover:border-blue-200/70 dark:hover:border-blue-500/40"
+                    >
+                      <div className="min-w-0">
+                        <span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-600 dark:text-blue-300 mb-2">
+                          {discussion.courseTitle}
+                        </span>
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 transition-colors line-clamp-1 mb-2">
+                          {discussion.title}
+                        </h3>
+                        <p className="text-sm leading-6 text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">
+                          {discussion.description}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-gray-500 dark:text-gray-400">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{discussion.authorName}</span>
+                          <span aria-hidden="true">•</span>
+                          <span>
+                            {formatRelativeTime(discussion.createdAt)}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
+                          <div className="inline-flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4" />
+                            <span>{discussion.replyCount}</span>
+                          </div>
+                          <div className="inline-flex items-center gap-2">
+                            <Heart
+                              className="w-4 h-4"
+                              fill={
+                                discussionLike.likedByCurrentUser
+                                  ? "currentColor"
+                                  : "none"
+                              }
+                            />
+                            <span>{discussionLike.likeCount}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </MainLayout>
   );
