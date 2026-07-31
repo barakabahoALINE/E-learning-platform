@@ -43,6 +43,7 @@ export interface QuizQuestion {
   marks?: number;
   options: string[];
   choices?: any[];
+  matching_pairs?: Array<{ left: string; right: string }>;
   correctAnswer: number;
 }
 

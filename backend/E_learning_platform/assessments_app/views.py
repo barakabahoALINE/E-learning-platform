@@ -1,3 +1,4 @@
+import json
 from urllib import request
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -499,6 +500,11 @@ class SaveAnswerAPIView(APIView):
             []
         )
 
+        matching_pairs = request.data.get(
+            "matching_pairs",
+            []
+        )
+
         text_answer = request.data.get(
             "text_answer"
         )
@@ -612,6 +618,34 @@ class SaveAnswerAPIView(APIView):
             answer.is_correct = (
                 correct_ids == selected_ids
             )
+
+        # MATCHING
+        elif question.question_type == "matching":
+            if not matching_pairs or not isinstance(matching_pairs, list):
+                return Response({
+                    "success": False,
+                    "message": "Matching pairs are required"
+                }, status=400)
+
+            answer.selected_choice = None
+            answer.selected_choices.clear()
+
+            correct_pairs = question.matching_pairs or []
+            normalized_correct = [
+                {"left": str(p.get("left", "")).strip(), "right": str(p.get("right", "")).strip()}
+                for p in correct_pairs
+            ]
+            normalized_selected = [
+                {"left": str(p.get("left", "")).strip(), "right": str(p.get("right", "")).strip()}
+                for p in matching_pairs
+            ]
+
+            answer.is_correct = (
+                len(normalized_correct) == len(normalized_selected)
+                and all(pair in normalized_selected for pair in normalized_correct)
+            )
+
+            answer.text_answer = json.dumps(normalized_selected)
 
         # TEXT
         else:
@@ -838,6 +872,32 @@ def _calculate_attempt_score(attempt, user):
 
                 is_correct = (
                     selected_ids == correct_ids
+                )
+
+        # MATCHING
+        elif question.question_type == "matching":
+
+            answer = answers.first()
+
+            if answer and answer.text_answer is not None:
+                try:
+                    selected_pairs = json.loads(answer.text_answer)
+                except Exception:
+                    selected_pairs = []
+
+                correct_pairs = question.matching_pairs or []
+                normalized_correct = [
+                    {"left": str(p.get("left", "")).strip(), "right": str(p.get("right", "")).strip()}
+                    for p in correct_pairs
+                ]
+                normalized_selected = [
+                    {"left": str(p.get("left", "")).strip(), "right": str(p.get("right", "")).strip()}
+                    for p in selected_pairs
+                ]
+
+                is_correct = (
+                    len(normalized_correct) == len(normalized_selected)
+                    and all(pair in normalized_selected for pair in normalized_correct)
                 )
 
         # TEXT
