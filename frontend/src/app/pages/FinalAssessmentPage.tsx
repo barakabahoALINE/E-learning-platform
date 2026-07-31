@@ -212,6 +212,27 @@ export const FinalAssessmentPage: React.FC = () => {
     useEffect(() => {
         if (!assessment || !assessment.tab_switch_enabled) return;
 
+        const showTabSwitchWarning = (count: number) => {
+            const limit = Number(assessment.tab_switch_limit ?? 0);
+            const remaining = Math.max(0, limit - count);
+            const message = remaining === 1
+                ? 'You have 1 tab switch remaining before automatic submission.'
+                : `You have ${remaining} tab switches remaining before automatic submission.`;
+            const style = remaining === 1
+                ? {
+                    backgroundColor: '#fee2e2',
+                    border: '1px solid #f87171',
+                    color: '#991b1b',
+                }
+                : {
+                    backgroundColor: '#fef3c7',
+                    border: '1px solid #f59e0b',
+                    color: '#78350f',
+                };
+
+            toast.warning(message, { style });
+        };
+
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
             if (!showResults && !showInstructions) {
                 event.preventDefault();
@@ -257,14 +278,14 @@ export const FinalAssessmentPage: React.FC = () => {
                             return;
                         }
 
-                        toast.warning('Tab switch detected. Repeated switches may be reviewed for assessment integrity.');
+                        showTabSwitchWarning(typeof count === 'number' ? count : tabSwitches + 1);
                     } catch (err: any) {
                         console.error('Tab switch event error', err);
                         // keep local increment; consider retrying later
                     }
                 } else {
                     // No attemptId yet; we still increment locally and rely on server sync later
-                    toast.warning('Tab switch detected. Repeated switches may be reviewed for assessment integrity.');
+                    showTabSwitchWarning(tabSwitches + 1);
                 }
             }
         };
@@ -276,7 +297,7 @@ export const FinalAssessmentPage: React.FC = () => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [showInstructions, showResults, attemptId, assessment, numericCourseId, passMark, sessionKey, dispatch]);
+    }, [showInstructions, showResults, attemptId, assessment, numericCourseId, passMark, sessionKey, dispatch, tabSwitches]);
 
     const startAssessment = async () => {
         if (!assessment?.id) return;
@@ -389,7 +410,7 @@ export const FinalAssessmentPage: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="grid gap-3 sm:grid-cols-4">
+                            <div className={`grid gap-3 ${assessment?.tab_switch_enabled ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
                                 <div className="rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] p-4">
                                     <p className="text-xs uppercase tracking-widest text-muted-foreground dark:text-gray-500 font-bold">Questions</p>
                                     <p className="text-2xl font-black mt-1">{questions.length}</p>
@@ -406,13 +427,19 @@ export const FinalAssessmentPage: React.FC = () => {
                                     <p className="text-xs uppercase tracking-widest text-muted-foreground dark:text-gray-500 font-bold">Course</p>
                                     <p className="text-2xl font-black mt-1">{Math.round(progress?.completion_percentage || 0)}%</p>
                                 </div>
+                                {assessment?.tab_switch_enabled && (
+                                    <div className="rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] p-4">
+                                        <p className="text-xs uppercase tracking-widest text-muted-foreground dark:text-gray-500 font-bold">Tab Switch</p>
+                                        <p className="text-2xl font-black mt-1">{assessment.tab_switch_limit}</p>
+                                    </div>
+                                )}
                             </div>
 
                             {assessment?.tab_switch_enabled && (
                                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5 text-sm text-amber-100">
                                     <div className="flex items-start gap-3">
                                         <BookOpenCheck className="h-5 w-5 text-amber-300 mt-0.5" />
-                                        <p className='text-muted-foreground dark:text-gray-400 font-bold'>Leaving or repeatedly switching tabs may be recorded for review.</p>
+                                        <p className='text-muted-foreground dark:text-gray-400 font-bold'>Leaving or repeatedly switching tabs may be recorded for review. After {assessment.tab_switch_limit} allowed tab switches, the next switch will automatically submit your attempt.</p>
                                     </div>
                                 </div>
                             )}
