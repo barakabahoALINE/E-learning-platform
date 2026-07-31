@@ -40,6 +40,11 @@ const assessmentAPI = {
     return response.data;
   },
 
+  tabSwitchEvent: async (attemptId: number | string) => {
+    const response = await api.post(`/assessments/attempts/tab-switch/`, { attempt_id: attemptId });
+    return response.data;
+  },
+
   fetchAttemptDetails: async (attemptId: number | string) => {
     const response = await api.get(`/assessments/attempt-details/${attemptId}/`);
     return response.data;
@@ -75,7 +80,7 @@ const assessmentAPI = {
     return response.data;
   },
 
-  updateAssessmentSettings: async (assessmentId: number | string, data: { duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string }) => {
+  updateAssessmentSettings: async (assessmentId: number | string, data: { duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string; tab_switch_enabled?: boolean; tab_switch_limit?: number }) => {
     const response = await api.patch('/assessments/create/', { assessment_id: assessmentId, ...data });
     return response.data;
   },

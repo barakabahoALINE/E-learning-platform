@@ -16,6 +16,18 @@ class HasPermission(BasePermission):
         if not self.required_permission:
             return False
 
+        role = getattr(user, "role", None)
+        group_names = set(user.groups.values_list("name", flat=True)) if hasattr(user, "groups") else set()
+
+        if role in {"admin", "instructor"}:
+            return True
+
+        if group_names.intersection({"Admin", "Instructor"}):
+            return True
+
+        if role == "viewer" and self.required_permission.startswith("courses_app.view"):
+            return True
+
         return user.has_perm(self.required_permission)
 
 

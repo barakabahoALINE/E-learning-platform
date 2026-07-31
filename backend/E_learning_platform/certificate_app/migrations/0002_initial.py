@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('assessments_app', '0001_initial'),
+        ('certificate_app', '0001_initial'),
         ('courses_app', '0001_initial'),
     ]
 
@@ -17,6 +17,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='feedback',
             name='course',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='courses_app.course'),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='certificate_feedback', to='courses_app.course'),
         ),
     ]

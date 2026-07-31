@@ -18,7 +18,8 @@ from .services.rules import (
     handle_attempt_state,
     unlock_attempt,
     apply_assessment_rules,
-    RuleError
+    RuleError,
+    enforce_tab_switch_limit,
 )
 from progress_app.models import (
                 CourseProgress
@@ -110,7 +111,7 @@ class CreateAssessmentAPIView(APIView):
 
         assessment = get_object_or_404(Assessment, id=assessment_id)
 
-        allowed_fields = ["duration", "max_attempts", "pass_mark", "instructions", "title"]
+        allowed_fields = ["duration", "max_attempts", "pass_mark", "instructions", "title", "tab_switch_enabled", "tab_switch_limit"]
         update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
 
         for field, value in update_data.items():
@@ -631,11 +632,54 @@ class SaveAnswerAPIView(APIView):
 
         answer.save()
 
+        if attempt.assessment.assessment_type == "FINAL" and attempt.assessment.tab_switch_enabled:
+            enforce_tab_switch_limit(attempt)
+
         return Response({
             "success": True,
             "message": "Answer saved"
         })
 
+
+
+# =========================================================
+# TAB SWITCH EVENT
+# =========================================================
+
+class TabSwitchEventAPIView(APIView):
+
+    permission_classes = [IsAuthenticated, CanStartAssessment]
+
+    def post(self, request):
+        attempt_id = request.data.get("attempt_id")
+
+        attempt = get_object_or_404(
+            Attempt,
+            id=attempt_id,
+            student=request.user
+        )
+
+        if attempt.is_submitted or attempt.is_locked:
+            return Response({
+                "success": False,
+                "message": "Attempt is no longer active"
+            }, status=403)
+
+        attempt.tab_switch_count = (attempt.tab_switch_count or 0) + 1
+        attempt.save(update_fields=["tab_switch_count"])
+
+        if attempt.assessment.assessment_type == "FINAL" and attempt.assessment.tab_switch_enabled:
+            enforce_tab_switch_limit(attempt)
+
+        return Response({
+            "success": True,
+            "message": "Tab switch recorded",
+            "data": {
+                "tab_switch_count": attempt.tab_switch_count,
+                "is_submitted": attempt.is_submitted,
+                "is_locked": attempt.is_locked,
+            }
+        })
 
 
 # =========================================================
@@ -657,6 +701,21 @@ class SubmitAttemptAPIView(APIView):
                 "success": False,
                 "message": "Attempt already submitted"
             }, status=400)
+
+        if attempt.assessment.assessment_type == "FINAL" and attempt.assessment.tab_switch_enabled and attempt.tab_switch_count > attempt.assessment.tab_switch_limit:
+            attempt.is_submitted = True
+            attempt.submitted_at = timezone.now()
+            attempt.save(update_fields=["is_submitted", "submitted_at"])
+            result = _calculate_attempt_score(
+                attempt,
+                request.user
+            )
+
+            return Response({
+                "success": True,
+                "message": "Attempt auto-submitted due to tab switch limit.",
+                "data": result["data"]
+            }, status=200)
 
         # Refresh attempt state (autosubmit on expiration)
         state = handle_attempt_state(attempt)

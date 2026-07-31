@@ -5,6 +5,8 @@ interface FinalAssessmentSettings {
   duration: number;
   max_attempts: number;
   pass_mark: number;
+  tab_switch_enabled?: boolean;
+  tab_switch_limit?: number;
 }
 
 interface FinalAssessmentSettingsModalProps {
@@ -26,6 +28,8 @@ export function FinalAssessmentSettingsModal({
   const [duration, setDuration] = useState<number>(initialValues?.duration ?? 60);
   const [maxAttempts, setMaxAttempts] = useState<number>(initialValues?.max_attempts ?? 3);
   const [passMark, setPassMark] = useState<number>(initialValues?.pass_mark ?? 60);
+  const [tabSwitchEnabled, setTabSwitchEnabled] = useState<boolean>(initialValues?.tab_switch_enabled ?? false);
+  const [tabSwitchLimit, setTabSwitchLimit] = useState<number>(initialValues?.tab_switch_limit ?? 0);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,10 +46,20 @@ export function FinalAssessmentSettingsModal({
       setError("Pass mark must be between 1 and 100.");
       return;
     }
+    if (tabSwitchEnabled && tabSwitchLimit < 0) {
+      setError("Tab switch limit must be 0 or greater.");
+      return;
+    }
     setError(null);
     setIsSaving(true);
     try {
-      await onConfirm({ duration, max_attempts: maxAttempts, pass_mark: passMark });
+      await onConfirm({
+        duration,
+        max_attempts: maxAttempts,
+        pass_mark: passMark,
+        tab_switch_enabled: tabSwitchEnabled,
+        tab_switch_limit: tabSwitchEnabled ? tabSwitchLimit : 0,
+      });
     } finally {
       setIsSaving(false);
     }
@@ -55,7 +69,7 @@ export function FinalAssessmentSettingsModal({
     <div className="fixed inset-0 bg-gray-900/30 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold text-gray-900">
               {isCreating ? "Configure Final Assessment" : "Edit Assessment Settings"}
@@ -64,12 +78,24 @@ export function FinalAssessmentSettingsModal({
               Set the rules for how students will take this assessment
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X className="w-4 h-4 text-gray-500" />
-          </button>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <span className="text-sm">Tab switch</span>
+              <button
+                type="button"
+                onClick={() => setTabSwitchEnabled((value) => !value)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${tabSwitchEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${tabSwitchEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
+            </label>
+            <button
+              onClick={onClose}
+              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4 text-gray-500" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -131,6 +157,25 @@ export function FinalAssessmentSettingsModal({
               Minimum percentage score required to pass.
             </p>
           </div>
+
+          {tabSwitchEnabled && (
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+                <span className="text-gray-700">tabswitch</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={tabSwitchLimit}
+                onChange={(e) => setTabSwitchLimit(Number(e.target.value))}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., 0"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Maximum number of allowed tab switches during the assessment.
+              </p>
+            </div>
+          )}
 
           {/* Summary pill row */}
           <div className="flex items-center gap-2 flex-wrap">

@@ -412,9 +412,12 @@ class CourseListSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        is_admin = True
-        if request and hasattr(request.user, 'role') and request.user.role != 'admin':
-            is_admin = False
+        user = request.user if request else None
+        is_admin = user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
+        )
 
         if is_admin:
             if instance.draft_title:
@@ -510,3 +513,4 @@ class PublishCourseChangesSerializer(serializers.Serializer):
         if value is not True:
             raise serializers.ValidationError("You must confirm publishing changes.")
         return value
+

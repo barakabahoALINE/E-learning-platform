@@ -30,6 +30,8 @@ class Assessment(models.Model):
     pass_mark = models.PositiveIntegerField(default=60)
     max_attempts = models.PositiveIntegerField(null=True,blank=True)
     duration = models.PositiveIntegerField(null=True,blank=True)
+    tab_switch_enabled = models.BooleanField(default=False)
+    tab_switch_limit = models.PositiveIntegerField(default=0)
     instructions = models.TextField(blank=True, null=True)
     descriptions = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -116,6 +118,7 @@ class Attempt(models.Model):
     started_at = models.DateTimeField(auto_now_add=True)
 
     is_locked = models.BooleanField(default=False)
+    tab_switch_count = models.PositiveIntegerField(default=0)
 
     submitted_at = models.DateTimeField(null=True, blank=True)
 

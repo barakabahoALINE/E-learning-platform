@@ -115,6 +115,24 @@ def handle_attempt_state(attempt):
     return "active"
 
 
+def enforce_tab_switch_limit(attempt):
+
+    if (
+        attempt.assessment.assessment_type != "FINAL"
+        or not attempt.assessment.tab_switch_enabled
+        or attempt.assessment.tab_switch_limit is None
+    ):
+        return False
+
+    if attempt.tab_switch_count > attempt.assessment.tab_switch_limit:
+        attempt.is_submitted = True
+        attempt.submitted_at = timezone.now()
+        attempt.save(update_fields=["is_submitted", "submitted_at"])
+        return True
+
+    return False
+
+
 # ADMIN UNLOCK
 def unlock_attempt(attempt, user):
 

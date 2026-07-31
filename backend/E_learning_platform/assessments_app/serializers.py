@@ -9,6 +9,8 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
 
     max_attempts = serializers.IntegerField(required=False, default=1, min_value=0)
     duration = serializers.IntegerField(required=False, default=30, min_value=0)
+    tab_switch_enabled = serializers.BooleanField(required=False, default=False)
+    tab_switch_limit = serializers.IntegerField(required=False, default=0, min_value=0)
 
     class Meta:
         model = Assessment
@@ -22,6 +24,8 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             'pass_mark',
             'max_attempts',
             'duration',
+            'tab_switch_enabled',
+            'tab_switch_limit',
             'descriptions',
             'instructions',
             'is_published',
@@ -45,6 +49,10 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             data['max_attempts'] = 1
         if data.get('duration') is None:
             data['duration'] = 30
+        if data.get('tab_switch_enabled') is None:
+            data['tab_switch_enabled'] = False
+        if data.get('tab_switch_limit') is None:
+            data['tab_switch_limit'] = 0
 
         assessment = Assessment(
             course=data.get('course'),
@@ -54,6 +62,8 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             pass_mark=data.get('pass_mark'),
             max_attempts=data.get('max_attempts'),
             duration=data.get('duration'),
+            tab_switch_enabled=data.get('tab_switch_enabled', False),
+            tab_switch_limit=data.get('tab_switch_limit', 0),
             descriptions=data.get('descriptions'),
             instructions=data.get('instructions')
         )
@@ -73,6 +83,8 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             data.pop("instructions", None)
             data.pop("duration", None)
             data.pop("max_attempts", None)
+            data.pop("tab_switch_enabled", None)
+            data.pop("tab_switch_limit", None)
 
         # FINAL — kura ibidakenewe
         elif instance.assessment_type == "FINAL":
@@ -245,6 +257,8 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
             'title',
             'assessment_type',
             'pass_mark',
+            'tab_switch_enabled',
+            'tab_switch_limit',
             'max_attempts',
             'duration',
             'descriptions',

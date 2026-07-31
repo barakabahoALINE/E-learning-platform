@@ -79,7 +79,7 @@ export const deleteAssessmentAction = createAsyncThunk(
 
 export const updateAssessmentSettings = createAsyncThunk(
   'assessments/updateSettings',
-  async ({ assessmentId, data }: { assessmentId: number | string; data: { duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string } }, { rejectWithValue }) => {
+  async ({ assessmentId, data }: { assessmentId: number | string; data: { duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string; tab_switch_enabled?: boolean; tab_switch_limit?: number } }, { rejectWithValue }) => {
     try {
       return await assessmentAPI.updateAssessmentSettings(assessmentId, data);
     } catch (error: any) {

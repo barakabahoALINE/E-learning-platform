@@ -210,6 +210,8 @@ export const FinalAssessmentPage: React.FC = () => {
     }, [endTime, showInstructions, showResults]);
 
     useEffect(() => {
+        if (!assessment || !assessment.tab_switch_enabled) return;
+
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
             if (!showResults && !showInstructions) {
                 event.preventDefault();
@@ -217,10 +219,53 @@ export const FinalAssessmentPage: React.FC = () => {
             }
         };
 
-        const handleVisibilityChange = () => {
+        const handleVisibilityChange = async () => {
             if (document.hidden && !showResults && !showInstructions) {
-                setTabSwitches((count) => count + 1);
-                toast.warning('Tab switch detected. Repeated switches may be reviewed for assessment integrity.');
+                console.debug('visibilitychange detected, document.hidden=', document.hidden, 'attemptId=', attemptId);
+                // Immediately update local counter for responsiveness
+                setTabSwitches((c) => c + 1);
+
+                if (attemptId != null) {
+                    try {
+                        const resp = await assessmentAPI.tabSwitchEvent(attemptId);
+                        // resp may be the axios data or full response; normalize
+                        const payload = resp && resp.data ? resp.data : resp;
+                        const inner = payload && payload.data ? payload.data : payload;
+                        const count = inner?.tab_switch_count ?? inner?.tabSwitchCount ?? null;
+
+                        if (typeof count === 'number') setTabSwitches(count);
+
+                        const submitted = inner?.is_submitted || inner?.isSubmitted || false;
+                        if (submitted) {
+                            // Attempt was auto-submitted by backend due to tab switch limit
+                            try {
+                                const resultResponse = await assessmentAPI.fetchResult(attemptId);
+                                const resultPayload = resultResponse && resultResponse.data ? resultResponse.data : resultResponse;
+                                setBackendResult({
+                                    ...resultPayload,
+                                    pass_mark: resultPayload?.pass_mark ?? passMark,
+                                });
+                                setShowResults(true);
+                                localStorage.removeItem(sessionKey);
+                                dispatch(fetchCourseProgress(numericCourseId));
+                                toast.info('Attempt auto-submitted due to tab-switch limit.');
+                            } catch (err: any) {
+                                const message = err.response?.data?.message || 'Unable to fetch assessment result.';
+                                setLockedMessage(message);
+                                toast.error(message);
+                            }
+                            return;
+                        }
+
+                        toast.warning('Tab switch detected. Repeated switches may be reviewed for assessment integrity.');
+                    } catch (err: any) {
+                        console.error('Tab switch event error', err);
+                        // keep local increment; consider retrying later
+                    }
+                } else {
+                    // No attemptId yet; we still increment locally and rely on server sync later
+                    toast.warning('Tab switch detected. Repeated switches may be reviewed for assessment integrity.');
+                }
             }
         };
 
@@ -231,7 +276,7 @@ export const FinalAssessmentPage: React.FC = () => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [showInstructions, showResults]);
+    }, [showInstructions, showResults, attemptId, assessment, numericCourseId, passMark, sessionKey, dispatch]);
 
     const startAssessment = async () => {
         if (!assessment?.id) return;
@@ -240,7 +285,16 @@ export const FinalAssessmentPage: React.FC = () => {
         setLockedMessage(null);
         try {
             const response = await assessmentAPI.startAttempt(assessment.id);
-            setAttemptId(Number(response.data.id));
+            // response may be the axios response.data wrapper or the inner data.
+            const wrapper = response?.data ? response : { data: response };
+            const inner = wrapper.data?.data ? wrapper.data.data : wrapper.data;
+            const newAttemptId = inner?.id ?? inner?.attempt_id ?? inner?.attemptId ?? null;
+            if (newAttemptId) {
+                setAttemptId(Number(newAttemptId));
+                console.debug('Started attempt id:', newAttemptId);
+            } else {
+                console.warn('Could not determine attempt id from startAttempt response', response);
+            }
             setShowInstructions(false);
         } catch (error: any) {
             const message = error.response?.data?.message || 'Unable to start final assessment.';
@@ -354,12 +408,14 @@ export const FinalAssessmentPage: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5 text-sm text-amber-100">
-                                <div className="flex items-start gap-3">
-                                    <BookOpenCheck className="h-5 w-5 text-amber-300 mt-0.5" />
-                                    <p className='text-muted-foreground dark:text-gray-400 font-bold'>Leaving or repeatedly switching tabs may be recorded for review.</p>
+                            {assessment?.tab_switch_enabled && (
+                                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5 text-sm text-amber-100">
+                                    <div className="flex items-start gap-3">
+                                        <BookOpenCheck className="h-5 w-5 text-amber-300 mt-0.5" />
+                                        <p className='text-muted-foreground dark:text-gray-400 font-bold'>Leaving or repeatedly switching tabs may be recorded for review.</p>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                             {lockedMessage && (
                                 <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
                                     {lockedMessage}
@@ -408,10 +464,12 @@ export const FinalAssessmentPage: React.FC = () => {
                         </div>
                         <div className="text-7xl font-black text-primary">{score.percentage}%</div>
                         <div className="grid gap-3 sm:grid-cols-3 text-left">
-                            <div className="rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] p-4">
-                                <p className="text-sm text-muted-foreground dark:text-gray-500">Integrity events</p>
-                                <p className="text-xl font-semibold">{tabSwitches}</p>
-                            </div>
+                            {assessment?.tab_switch_enabled && (
+                                <div className="rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] p-4">
+                                    <p className="text-sm text-muted-foreground dark:text-gray-500">Integrity events</p>
+                                    <p className="text-xl font-semibold">{tabSwitches}</p>
+                                </div>
+                            )}
                             <div className="rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] p-4">
                                 <p className="text-sm text-muted-foreground dark:text-gray-500">Submission</p>
                                 <p className="text-xl font-semibold">Manual</p>
@@ -636,20 +694,22 @@ export const FinalAssessmentPage: React.FC = () => {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-card dark:bg-gray-900 border-border dark:border-white/5 text-foreground dark:text-white rounded-2xl">
-                        <CardContent className="p-5">
-                            <h3 className="flex items-center font-medium">
-                                <ShieldAlert className="mr-2 h-5 w-5 text-amber-400" />
-                                Session integrity
-                            </h3>
-                            <p className="mt-3 text-sm text-muted-foreground dark:text-gray-400">
-                                Refreshing, leaving, or repeatedly switching tabs may be recorded for review.
-                            </p>
-                            <div className="mt-4 rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] p-3 text-sm">
-                                Tab switches detected: <span className="font-semibold">{tabSwitches}</span>
-                            </div>
-                        </CardContent>
-                    </Card>
+                    {assessment.tab_switch_enabled && (
+                        <Card className="bg-card dark:bg-gray-900 border-border dark:border-white/5 text-foreground dark:text-white rounded-2xl">
+                            <CardContent className="p-5">
+                                <h3 className="flex items-center font-medium">
+                                    <ShieldAlert className="mr-2 h-5 w-5 text-amber-400" />
+                                    Session integrity
+                                </h3>
+                                <p className="mt-3 text-sm text-muted-foreground dark:text-gray-400">
+                                    Refreshing, leaving, or repeatedly switching tabs may be recorded for review.
+                                </p>
+                                <div className="mt-4 rounded-xl border border-border dark:border-white/10 bg-muted/60 dark:bg-white/[0.03] p-3 text-sm">
+                                    Tab switches detected: <span className="font-semibold">{tabSwitches}</span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
                 </aside>
             </div>
         </div>
