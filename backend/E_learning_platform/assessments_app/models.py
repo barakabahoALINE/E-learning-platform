@@ -64,6 +64,7 @@ class Question(models.Model):
     class QuestionType(models.TextChoices):
         SINGLE = "single", "Single Choice"
         MULTIPLE = "multiple", "Multiple Choice"
+        MATCHING = "matching", "Matching"
 
     assessment = models.ForeignKey(
         Assessment,
@@ -80,6 +81,8 @@ class Question(models.Model):
     )
 
     marks = models.PositiveIntegerField(default=1)
+
+    matching_pairs = models.JSONField(blank=True, null=True)
 
     order = models.PositiveIntegerField()
 

@@ -1,10 +1,15 @@
 export type AssessmentType = "QUIZ" | "FINAL";
-export type QuestionType = "single" | "multiple" | "text";
+export type QuestionType = "single" | "multiple" | "matching" | "text";
 
 export interface Choice {
   id?: number | string;
   text: string;
   is_correct: boolean;
+}
+
+export interface MatchingPair {
+  left: string;
+  right: string;
 }
 
 export interface Question {
@@ -80,4 +85,5 @@ export interface QuestionCreateData {
   question_type: QuestionType;
   marks: number;
   choices: Choice[];
+  matching_pairs?: MatchingPair[];
 }

@@ -412,16 +412,22 @@ export function CourseBuilderPage() {
       }
 
       if (assessmentId) {
-        const questionData = {
+        const questionData: any = {
           assessment: assessmentId,
           question_text: data.question,
           question_type: (data.question_type || "single") as any,
           marks: data.marks || 1,
-          choices: data.choices || data.options.map((opt, idx) => ({
+        };
+
+        if (data.question_type === "matching") {
+          questionData.matching_pairs = data.matching_pairs || [];
+          questionData.choices = [];
+        } else {
+          questionData.choices = data.choices || data.options.map((opt, idx) => ({
             text: opt,
             is_correct: idx === data.correctAnswer
-          }))
-        };
+          }));
+        }
 
         if (data.id && typeof data.id === 'number') {
           await dispatch(updateQuestion({ questionId: data.id, data: questionData })).unwrap();

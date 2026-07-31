@@ -92,12 +92,17 @@ class ChoiceCreateSerializer(serializers.ModelSerializer):
 # QUESTION CREATE SERIALIZER
 class QuestionCreateSerializer(serializers.ModelSerializer):
 
-    choices = ChoiceCreateSerializer(many=True)
+    choices = ChoiceCreateSerializer(many=True, required=False)
+    matching_pairs = serializers.ListField(
+        child=serializers.DictField(child=serializers.CharField()),
+        required=False,
+        allow_null=True
+    )
     order = serializers.IntegerField(required=False)
 
     class Meta:
         model = Question
-        fields = ['assessment', 'question_text', 'question_type', 'marks', 'choices', 'order']
+        fields = ['assessment', 'question_text', 'question_type', 'marks', 'choices', 'matching_pairs', 'order']
 
     def validate(self, data):
 
@@ -117,29 +122,44 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Question text cannot be empty.")
 
         # 2. Validate choices exist
-        if not choices:
-            raise serializers.ValidationError(
-                "Choices are required."
-            )
+        if question_type == "matching":
+            matching_pairs = data.get('matching_pairs')
+            if not matching_pairs or not isinstance(matching_pairs, list) or len(matching_pairs) == 0:
+                raise serializers.ValidationError(
+                    "Matching questions require at least one pair."
+                )
+            for pair in matching_pairs:
+                left = pair.get('left')
+                right = pair.get('right')
+                if not left or not str(left).strip() or not right or not str(right).strip():
+                    raise serializers.ValidationError(
+                        "Each matching pair must include both a left and right value."
+                    )
+        else:
+            if not choices:
+                raise serializers.ValidationError(
+                    "Choices are required."
+                )
 
-        # 3. Count correct answers
-        correct_count = sum(1 for c in choices if c.get('is_correct'))
+            # 3. Count correct answers
+            correct_count = sum(1 for c in choices if c.get('is_correct'))
 
-        if question_type == "single" and correct_count != 1:
-            raise serializers.ValidationError(
-                "Single choice question must have exactly ONE correct answer."
-            )
+            if question_type == "single" and correct_count != 1:
+                raise serializers.ValidationError(
+                    "Single choice question must have exactly ONE correct answer."
+                )
 
-        if question_type == "multiple" and correct_count < 1:
-            raise serializers.ValidationError(
-                "Multiple choice question must have at least ONE correct answer."
-            )
+            if question_type == "multiple" and correct_count < 1:
+                raise serializers.ValidationError(
+                    "Multiple choice question must have at least ONE correct answer."
+                )
 
         return data
 
     def create(self, validated_data):
 
-        choices_data = validated_data.pop('choices')
+        choices_data = validated_data.pop('choices', None)
+        matching_pairs = validated_data.pop('matching_pairs', None)
         order = validated_data.pop('order', None)
 
         if order is None:
@@ -147,29 +167,31 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
             last_question = assessment.questions.order_by('-order').first()
             order = (last_question.order + 1) if last_question else 1
 
-        question = Question.objects.create(order=order, **validated_data)
+        question = Question.objects.create(order=order, matching_pairs=matching_pairs or None, **validated_data)
 
-        for choice_data in choices_data:
-            Choice.objects.create(
-                question=question,
-                **choice_data
-            )
+        if choices_data:
+            for choice_data in choices_data:
+                Choice.objects.create(
+                    question=question,
+                    **choice_data
+                )
 
         return question
 
     def update(self, instance, validated_data):
         choices_data = validated_data.pop('choices', None)
+        matching_pairs = validated_data.pop('matching_pairs', None)
 
         # Update the Question instance fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        if matching_pairs is not None:
+            instance.matching_pairs = matching_pairs
         instance.save()
 
         # Update the choices nested field
         if choices_data is not None:
-            # Delete old choices associated with this question
             instance.choices.all().delete()
-            # Recreate updated choices
             for choice_data in choices_data:
                 Choice.objects.create(
                     question=instance,
@@ -189,6 +211,7 @@ class ChoiceSerializer(serializers.ModelSerializer):
 class QuestionSerializer(serializers.ModelSerializer):
 
     choices = serializers.SerializerMethodField()
+    matching_pairs = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
@@ -199,19 +222,31 @@ class QuestionSerializer(serializers.ModelSerializer):
             'question_type',
             'marks',
             'order',
-            'choices'
+            'choices',
+            'matching_pairs'
         ]
 
     def get_choices(self, obj):
+        if obj.question_type == Question.QuestionType.MATCHING:
+            return []
 
         choices = list(obj.choices.all())
-
         random.shuffle(choices)
-
         return ChoiceSerializer(
             choices,
             many=True
         ).data
+
+    def get_matching_pairs(self, obj):
+        if obj.question_type != Question.QuestionType.MATCHING:
+            return []
+
+        pairs = obj.matching_pairs or []
+        if isinstance(pairs, list):
+            shuffled = list(pairs)
+            random.shuffle(shuffled)
+            return shuffled
+        return []
 
 
 class StartAttemptSerializer(serializers.ModelSerializer):

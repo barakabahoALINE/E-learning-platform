@@ -55,7 +55,7 @@ const assessmentAPI = {
     return response.data;
   },
 
-  saveAnswer: async (data: { attempt_id: number | string; question_id: number | string; selected_choices?: Array<number | string>; text_answer?: string }) => {
+  saveAnswer: async (data: { attempt_id: number | string; question_id: number | string; selected_choices?: Array<number | string>; matching_pairs?: Array<{ left: string; right: string }>; text_answer?: string }) => {
     const response = await api.post('/assessments/attempts/save-answer/', data);
     return response.data;
   },

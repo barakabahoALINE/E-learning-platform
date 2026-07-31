@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardCheck, Loader2, ShieldCheck, Trophy } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardCheck, Loader2, ShieldCheck, Trophy, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppDispatch, useAppSelector } from '../../hooks/reduxHooks';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -14,7 +14,32 @@ import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Checkbox } from '../components/ui/checkbox';
 import { Label } from '../components/ui/label';
 
-type AnswerMap = Record<number, Array<number | string>>;
+type MatchingPair = { left: string; right: string };
+type MatchingOption = {
+  value: string;
+  palette: {
+    bg: string;
+    border: string;
+    text: string;
+  };
+};
+
+type AnswerValue = Array<number | string> | MatchingPair[];
+
+type AnswerMap = Record<number, AnswerValue>;
+
+const matchingPalette = [
+  { bg: '#DBEAFE', border: '#93C5FD', text: '#1D4ED8' },
+  { bg: '#DCFCE7', border: '#86EFAC', text: '#15803D' },
+  { bg: '#FEF3C7', border: '#FCD34D', text: '#B45309' },
+  { bg: '#EDE9FE', border: '#C4B5FD', text: '#6D28D9' },
+  { bg: '#FCE7F3', border: '#F9A8D4', text: '#BE185D' },
+  { bg: '#CCFBF1', border: '#5EEAD4', text: '#0F766E' },
+];
+
+const getMatchingPalette = (index: number) => matchingPalette[index % matchingPalette.length];
+
+const shuffleArray = <T,>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
 
 const getQuestionText = (question: any) => question?.question_text || question?.question || '';
 
@@ -33,6 +58,9 @@ export const QuizPage: React.FC = () => {
 
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<AnswerMap>({});
+  const [matchingLeftItems, setMatchingLeftItems] = useState<string[]>([]);
+  const [matchingRightItems, setMatchingRightItems] = useState<MatchingOption[]>([]);
+  const [draggedMatch, setDraggedMatch] = useState<string | null>(null);
   const [hasStarted, setHasStarted] = useState(false);
   const [acceptedInstructions, setAcceptedInstructions] = useState(false);
   const [attemptId, setAttemptId] = useState<number | null>(null);
@@ -62,6 +90,23 @@ export const QuizPage: React.FC = () => {
   const progressValue = questions.length ? ((currentQuestion + 1) / questions.length) * 100 : 0;
   const quizTitle = currentModule ? getQuizTitle(moduleIndex, currentModule.title, quizData?.title) : 'Module Quiz';
 
+  React.useEffect(() => {
+    if (question?.question_type !== 'matching') {
+      setMatchingLeftItems([]);
+      setMatchingRightItems([]);
+      setDraggedMatch(null);
+      return;
+    }
+
+    const pairs = question.matching_pairs || [];
+    setMatchingLeftItems(shuffleArray(pairs.map((pair: MatchingPair) => pair.left)));
+    setMatchingRightItems(shuffleArray(pairs.map((pair: MatchingPair, index: number) => ({
+      value: pair.right,
+      palette: getMatchingPalette(index),
+    }))));
+    setDraggedMatch(null);
+  }, [question]);
+
   const normalizeChoices = (item: any) => item?.choices?.length
     ? item.choices.map((choice: any, index: number) => ({
       id: Number(choice.id ?? index),
@@ -69,16 +114,26 @@ export const QuizPage: React.FC = () => {
     }))
     : (item?.options || []).map((option: string, index: number) => ({ id: index, text: option }));
 
+  const choices = normalizeChoices(question);
+  const selected = selectedAnswers[currentQuestion] || [];
+  const isMultiple = question?.question_type === 'multiple';
+
   const saveCurrentAnswer = async () => {
     if (!attemptId || !question) return;
-    const selected = selectedAnswers[currentQuestion] || [];
     if (selected.length === 0) return;
 
-    await assessmentAPI.saveAnswer({
+    const payload: any = {
       attempt_id: attemptId,
       question_id: question.id,
-      selected_choices: selected,
-    });
+    };
+
+    if (question.question_type === 'matching') {
+      payload.matching_pairs = selected;
+    } else {
+      payload.selected_choices = selected;
+    }
+
+    await assessmentAPI.saveAnswer(payload);
   };
 
   const startQuiz = async () => {
@@ -145,7 +200,7 @@ export const QuizPage: React.FC = () => {
 
   const handleMultipleSelect = (choiceId: number, checked: boolean) => {
     setSelectedAnswers(prev => {
-      const existing = prev[currentQuestion] || [];
+      const existing = (prev[currentQuestion] as Array<number | string>) || [];
       return {
         ...prev,
         [currentQuestion]: checked
@@ -153,6 +208,55 @@ export const QuizPage: React.FC = () => {
           : existing.filter(id => Number(id) !== Number(choiceId)),
       };
     });
+  };
+
+  const handleMatchingSelect = (leftItem: string, rightValue: string) => {
+    setSelectedAnswers(prev => {
+      const existing = (prev[currentQuestion] as MatchingPair[]) || [];
+      const basePairs = question?.matching_pairs || [];
+      const updated = basePairs.map((pair: MatchingPair) => {
+        const existingPair = existing.find(item => item.left === pair.left);
+        return {
+          left: pair.left,
+          right: existingPair?.right || '',
+        };
+      });
+
+      const previousIndex = updated.findIndex(pair => pair.right === rightValue);
+      if (previousIndex !== -1) {
+        updated[previousIndex] = { ...updated[previousIndex], right: '' };
+      }
+
+      const targetIndex = updated.findIndex(pair => pair.left === leftItem);
+      if (targetIndex !== -1) {
+        updated[targetIndex] = { ...updated[targetIndex], right: rightValue };
+      }
+
+      return {
+        ...prev,
+        [currentQuestion]: updated,
+      };
+    });
+  };
+
+  const handleDragStart = (rightValue: string, event: React.DragEvent<HTMLButtonElement>) => {
+    setDraggedMatch(rightValue);
+    event.dataTransfer.setData('text/plain', rightValue);
+    event.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (leftItem: string, event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const value = draggedMatch || event.dataTransfer.getData('text/plain');
+    if (value) {
+      handleMatchingSelect(leftItem, value);
+    }
+    setDraggedMatch(null);
   };
 
   if (isLoading || !course) {
@@ -321,9 +425,6 @@ export const QuizPage: React.FC = () => {
     );
   }
 
-  const choices = normalizeChoices(question);
-  const selected = selectedAnswers[currentQuestion] || [];
-  const isMultiple = question?.question_type === 'multiple';
 
   return (
     <div className="min-h-screen bg-background dark:bg-gray-950 flex flex-col font-sans">
@@ -352,7 +453,88 @@ export const QuizPage: React.FC = () => {
             <CardContent className="p-8">
               <h3 className="text-xl mb-6">{getQuestionText(question)}</h3>
 
-              {isMultiple ? (
+              {question?.question_type === 'matching' ? (
+                <div className="space-y-6">
+                  <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+                    <div className="space-y-4">
+                      <div className="px-4 pb-2">
+                        <p className="text-sm font-semibold uppercase tracking-widest text-gray-900">COLUMN A</p>
+                      </div>
+                      {matchingLeftItems.map((leftItem: string) => {
+                        const selectedPairs = (selectedAnswers[currentQuestion] as MatchingPair[]) || [];
+                        const selectedPair = selectedPairs.find(pair => pair.left === leftItem) || { left: leftItem, right: '' };
+                        const matchedOption = matchingRightItems.find(item => item.value === selectedPair.right);
+
+                        return (
+                          <div
+                            key={leftItem}
+                            className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-sm font-medium text-gray-800">{leftItem}</span>
+                              <div
+                                onDragOver={handleDragOver}
+                                onDrop={(event) => handleDrop(leftItem, event)}
+                                className="relative min-w-[160px] rounded-3xl border border-dashed border-gray-300 bg-white px-4 py-3 text-sm text-gray-500 text-center"
+                                style={selectedPair.right && matchedOption ? {
+                                  backgroundColor: matchedOption.palette.bg,
+                                  borderColor: matchedOption.palette.border,
+                                  color: matchedOption.palette.text,
+                                } : undefined}
+                              >
+                              <div
+                                className="min-h-[2.5rem] flex items-center justify-center"
+                              >
+                                {selectedPair.right || 'drop here'}
+                              </div>
+                              {selectedPair.right ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMatchingSelect(leftItem, '')}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                                  aria-label="Clear matched answer"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="px-4 pb-2">
+                        <p className="text-sm font-semibold uppercase tracking-widest text-gray-900">COLUMN B</p>
+                      </div>
+                      {matchingRightItems.map((rightItem) => {
+                        const selectedPairs = (selectedAnswers[currentQuestion] as MatchingPair[]) || [];
+                        const isSelected = selectedPairs.some(pair => pair.right === rightItem.value);
+                        const paletteStyle = isSelected ? undefined : {
+                          backgroundColor: rightItem.palette.bg,
+                          borderColor: rightItem.palette.border,
+                          color: rightItem.palette.text,
+                        };
+
+                        return (
+                          <button
+                            type="button"
+                            key={rightItem.value}
+                            draggable
+                            onDragStart={(event) => handleDragStart(rightItem.value, event)}
+                            className={`w-full rounded-3xl px-6 py-4 text-center text-sm font-semibold transition ${isSelected ? 'border border-gray-200 bg-white text-gray-400 opacity-70' : 'bg-sky-100 border border-sky-200 text-sky-800 hover:bg-sky-200'}`}
+                            style={paletteStyle}
+                            disabled={isSelected}
+                          >
+                            {isSelected ? '\u00A0' : rightItem.value}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : isMultiple ? (
                 <div className="space-y-3">
                   {choices.map((choice: any) => {
                     const checked = selected.some(id => Number(id) === Number(choice.id));

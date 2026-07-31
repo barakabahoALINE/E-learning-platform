@@ -1,6 +1,11 @@
 import { useState } from "react";
-import { X, Check, Plus, Trash2, CircleHelp, FileText, CheckSquare } from "lucide-react";
+import { X, Check, Shuffle, Plus, Trash2, CircleHelp, FileText, CheckSquare } from "lucide-react";
 import type { QuizQuestion } from "../../../features/courses/types";
+
+interface MatchingPairItem {
+  left: string;
+  right: string;
+}
 
 export function AssessmentModal({
   onClose,
@@ -38,9 +43,10 @@ export function QuizQuestionModal({
   title?: string;
 }) {
   // Determine initial question type
-  const getInitialType = (): "single" | "multiple" | "true_false" => {
+  const getInitialType = (): "single" | "multiple" | "true_false" | "matching" => {
     if (!initialQuestion) return "single";
     if (initialQuestion.question_type === "multiple") return "multiple";
+    if (initialQuestion.question_type === "matching") return "matching";
 
     // Check if it looks like a true/false question
     const choices = initialQuestion.choices || [];
@@ -53,20 +59,20 @@ export function QuizQuestionModal({
     return "single";
   };
 
-  const [questionType, setQuestionType] = useState<"single" | "multiple" | "true_false">(getInitialType);
+  const [questionType, setQuestionType] = useState<"single" | "multiple" | "true_false" | "matching">(getInitialType);
   const [questionText, setQuestionText] = useState(initialQuestion?.question_text || initialQuestion?.question || "");
   const [marksInput, setMarksInput] = useState(String(initialQuestion?.marks || 1));
 
   // Initialize options based on type and initialQuestion
   const [options, setOptions] = useState<OptionItem[]>(() => {
-    if (initialQuestion?.choices && initialQuestion.choices.length > 0) {
+    if (initialQuestion?.question_type !== "matching" && initialQuestion?.choices && initialQuestion.choices.length > 0) {
       return initialQuestion.choices.map((c: any) => ({
         text: c.text,
         isCorrect: Boolean(c.is_correct),
       }));
     }
     const legacyOpts = initialQuestion?.options || [];
-    if (legacyOpts.length > 0) {
+    if (initialQuestion?.question_type !== "matching" && legacyOpts.length > 0) {
       const correctIdx = initialQuestion?.correctAnswer ?? 0;
       return legacyOpts.map((opt: string, idx: number) => ({
         text: opt,
@@ -90,10 +96,22 @@ export function QuizQuestionModal({
     ];
   });
 
-  const handleTypeChange = (type: "single" | "multiple" | "true_false") => {
+  const [matchingPairs, setMatchingPairs] = useState<MatchingPairItem[]>(() => {
+    if (initialQuestion?.question_type === "matching" && initialQuestion.matching_pairs) {
+      return initialQuestion.matching_pairs.map((pair: any) => ({
+        left: pair.left || "",
+        right: pair.right || "",
+      }));
+    }
+    return [
+      { left: "", right: "" },
+      { left: "", right: "" },
+    ];
+  });
+
+  const handleTypeChange = (type: "single" | "multiple" | "true_false" | "matching") => {
     setQuestionType(type);
     if (type === "true_false") {
-      // Check if existing options have True/False
       const hasTrue = options.some(o => o.text.toLowerCase() === "true");
       const hasFalse = options.some(o => o.text.toLowerCase() === "false");
       if (hasTrue && hasFalse) {
@@ -108,9 +126,10 @@ export function QuizQuestionModal({
           { text: "False", isCorrect: false }
         ]);
       }
+      setMatchingPairs([{ left: "", right: "" }, { left: "", right: "" }]);
+    } else if (type === "matching") {
+      setMatchingPairs(matchingPairs.length ? matchingPairs : [{ left: "", right: "" }, { left: "", right: "" }]);
     } else {
-      // Switch to single or multiple
-      // If previous was true_false, reset to default 4 choices
       if (questionType === "true_false") {
         setOptions([
           { text: "", isCorrect: false },
@@ -119,9 +138,7 @@ export function QuizQuestionModal({
           { text: "", isCorrect: false },
         ]);
       } else {
-        // If switching between single and multiple, adjust correct choices if needed
         if (type === "single") {
-          // Make sure at most one is correct
           const firstCorrectIdx = options.findIndex(o => o.isCorrect);
           const newOptions = options.map((o, idx) => ({
             ...o,
@@ -176,20 +193,27 @@ export function QuizQuestionModal({
       return;
     }
 
-    if (options.some(opt => !opt.text.trim())) {
-      alert("Please fill in all option texts");
-      return;
-    }
+    if (questionType === "matching") {
+      if (matchingPairs.some(pair => !pair.left.trim() || !pair.right.trim())) {
+        alert("Please fill in all matching pair fields");
+        return;
+      }
+    } else {
+      if (options.some(opt => !opt.text.trim())) {
+        alert("Please fill in all option texts");
+        return;
+      }
 
-    const correctCount = options.filter(o => o.isCorrect).length;
-    if (correctCount === 0) {
-      alert("Please mark at least one option as the correct answer");
-      return;
-    }
+      const correctCount = options.filter(o => o.isCorrect).length;
+      if (correctCount === 0) {
+        alert("Please mark at least one option as the correct answer");
+        return;
+      }
 
-    if ((questionType === "single" || questionType === "true_false") && correctCount !== 1) {
-      alert("Single choice questions must have exactly one correct answer");
-      return;
+      if ((questionType === "single" || questionType === "true_false") && correctCount !== 1) {
+        alert("Single choice questions must have exactly one correct answer");
+        return;
+      }
     }
 
     const parsedMarks = Math.max(1, parseInt(marksInput) || 1);
@@ -198,14 +222,15 @@ export function QuizQuestionModal({
       id: initialQuestion?.id ?? "",
       question: questionText,
       question_text: questionText,
-      question_type: questionType === "multiple" ? "multiple" : "single",
+      question_type: questionType === "multiple" ? "multiple" : questionType === "matching" ? "matching" : "single",
       marks: parsedMarks,
-      options: options.map(o => o.text),
-      choices: options.map(o => ({
+      options: questionType === "matching" ? [] : options.map(o => o.text),
+      choices: questionType === "matching" ? [] : options.map(o => ({
         text: o.text,
         is_correct: o.isCorrect
       })),
-      correctAnswer: options.findIndex(o => o.isCorrect),
+      matching_pairs: questionType === "matching" ? matchingPairs.map(pair => ({ left: pair.left, right: pair.right })) : undefined,
+      correctAnswer: questionType === "matching" ? -1 : options.findIndex(o => o.isCorrect),
     });
   };
 
@@ -233,13 +258,13 @@ export function QuizQuestionModal({
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Question Type
             </label>
-            <div className="flex gap-2 p-1 bg-gray-50 border border-gray-200/80 rounded-xl">
+            <div className="flex gap-2 p-1 bg-gray-50 border border-gray-200/80 rounded-full">
               <button
                 type="button"
                 onClick={() => handleTypeChange("single")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${questionType === "single"
-                  ? "bg-white text-blue-600 border border-gray-200/50 shadow-xs"
-                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50 border border-transparent"
+                className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-4 rounded-full text-xs font-semibold transition-all ${questionType === "single"
+                  ? "bg-white text-blue-600 border border-blue-200 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 bg-white/80 border border-transparent"
                   }`}
               >
                 <CircleHelp className="w-4 h-4" />
@@ -248,9 +273,9 @@ export function QuizQuestionModal({
               <button
                 type="button"
                 onClick={() => handleTypeChange("multiple")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${questionType === "multiple"
-                  ? "bg-white text-blue-600 border border-gray-200/50 shadow-xs"
-                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50 border border-transparent"
+                className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-4 rounded-full text-xs font-semibold transition-all ${questionType === "multiple"
+                  ? "bg-white text-blue-600 border border-blue-200 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 bg-white/80 border border-transparent"
                   }`}
               >
                 <CheckSquare className="w-4 h-4" />
@@ -259,13 +284,24 @@ export function QuizQuestionModal({
               <button
                 type="button"
                 onClick={() => handleTypeChange("true_false")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${questionType === "true_false"
-                  ? "bg-white text-blue-600 border border-gray-200/50 shadow-xs"
-                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50 border border-transparent"
+                className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-4 rounded-full text-xs font-semibold transition-all ${questionType === "true_false"
+                  ? "bg-white text-blue-600 border border-blue-200 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 bg-white/80 border border-transparent"
                   }`}
               >
                 <FileText className="w-4 h-4" />
                 True / False
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTypeChange("matching")}
+                className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-4 rounded-full text-xs font-semibold transition-all ${questionType === "matching"
+                  ? "bg-blue-600 text-white border border-blue-600 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 bg-white/80 border border-transparent"
+                  }`}
+              >
+                <Shuffle className="w-4 h-4" />
+                Matching
               </button>
             </div>
           </div>
@@ -305,9 +341,14 @@ export function QuizQuestionModal({
 
           {/* Answer Options */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-4">
-              Answers <span className="text-red-500">*</span>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              {questionType === "matching" ? "Answer pairs" : "Answers"} <span className="text-red-500">*</span>
             </label>
+            {questionType === "matching" && (
+              <p className="text-xs text-gray-500 mb-4">
+                Add each correct pair once — the right-hand side is shuffled automatically for students.
+              </p>
+            )}
 
             {questionType === "true_false" ? (
               <div className="grid grid-cols-2 gap-4">
@@ -336,6 +377,55 @@ export function QuizQuestionModal({
                     </div>
                   );
                 })}
+              </div>
+            ) : questionType === "matching" ? (
+              <div className="space-y-3">
+                {matchingPairs.map((pair, index) => (
+                  <div key={index} className="grid gap-3 items-center rounded-full border border-gray-200 bg-white p-3 md:grid-cols-[1fr_auto_1fr_auto]">
+                    <input
+                      value={pair.left}
+                      onChange={(e) => {
+                        const updated = [...matchingPairs];
+                        updated[index].left = e.target.value;
+                        setMatchingPairs(updated);
+                      }}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-gray-50"
+                      placeholder={`Left item ${index + 1}`}
+                    />
+                    <div className="text-xs font-semibold uppercase tracking-[0.3em] text-gray-500 text-center">
+                      Matches
+                    </div>
+                    <input
+                      value={pair.right}
+                      onChange={(e) => {
+                        const updated = [...matchingPairs];
+                        updated[index].right = e.target.value;
+                        setMatchingPairs(updated);
+                      }}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-gray-50"
+                      placeholder={`Right item ${index + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = matchingPairs.filter((_, idx) => idx !== index);
+                        setMatchingPairs(updated.length ? updated : [{ left: "", right: "" }]);
+                      }}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-gray-400 hover:text-red-600 hover:border-red-200 transition-colors"
+                      title="Remove pair"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setMatchingPairs([...matchingPairs, { left: "", right: "" }])}
+                  className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full border border-dashed border-blue-200 bg-blue-50/70 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add pair
+                </button>
               </div>
             ) : (
               <div className="space-y-3">

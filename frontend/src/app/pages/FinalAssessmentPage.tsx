@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, ArrowRight, BookOpenCheck, CheckCircle, Clock, Loader2, Save, ShieldAlert, Target, Trophy } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, BookOpenCheck, CheckCircle, Clock, Loader2, Save, ShieldAlert, Target, Trophy, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchCourseDetails } from '../../features/courses/courseSlice';
 import { fetchCourseProgress } from '../../features/progress/progressSlice';
@@ -21,6 +21,36 @@ type AssessmentChoice = {
     isCorrect: boolean;
 };
 
+type MatchingPair = {
+    left: string;
+    right: string;
+};
+
+type MatchingOption = {
+    value: string;
+    palette: {
+        bg: string;
+        border: string;
+        text: string;
+    };
+};
+
+type AnswerValue = Array<number | string> | MatchingPair[];
+type AnswerMap = Record<number, AnswerValue>;
+
+const matchingPalette = [
+    { bg: '#DBEAFE', border: '#93C5FD', text: '#1D4ED8' },
+    { bg: '#DCFCE7', border: '#86EFAC', text: '#15803D' },
+    { bg: '#FEF3C7', border: '#FCD34D', text: '#B45309' },
+    { bg: '#EDE9FE', border: '#C4B5FD', text: '#6D28D9' },
+    { bg: '#FCE7F3', border: '#F9A8D4', text: '#BE185D' },
+    { bg: '#CCFBF1', border: '#5EEAD4', text: '#0F766E' },
+];
+
+const getMatchingPalette = (index: number) => matchingPalette[index % matchingPalette.length];
+
+const shuffleArray = <T,>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
+
 const getQuestionText = (question: any) => question?.question_text || question?.question || '';
 
 const getChoices = (question: any): AssessmentChoice[] => {
@@ -39,6 +69,22 @@ const getChoices = (question: any): AssessmentChoice[] => {
     }));
 };
 
+const isChoiceAnswer = (answer: AnswerValue): answer is Array<number | string> => {
+    return Array.isArray(answer) && (answer.length === 0 || typeof answer[0] !== 'object');
+};
+
+const isMatchingAnswer = (answer: AnswerValue): answer is MatchingPair[] => {
+    return Array.isArray(answer) && answer.length > 0 && typeof answer[0] === 'object';
+};
+
+const getSelectedChoiceIds = (answers: AnswerValue | undefined): Array<number | string> => {
+    return answers && isChoiceAnswer(answers) ? answers : [];
+};
+
+const getSelectedMatchingPairs = (answers: AnswerValue | undefined): MatchingPair[] => {
+    return answers && isMatchingAnswer(answers) ? answers : [];
+};
+
 export const FinalAssessmentPage: React.FC = () => {
     const { courseId } = useParams();
     const numericCourseId = Number(courseId);
@@ -49,7 +95,10 @@ export const FinalAssessmentPage: React.FC = () => {
     const { courseProgress } = useAppSelector((state) => state.progress);
 
     const [currentQuestion, setCurrentQuestion] = useState(0);
-    const [selectedAnswers, setSelectedAnswers] = useState<{ [key: number]: number[] }>({});
+    const [selectedAnswers, setSelectedAnswers] = useState<AnswerMap>({});
+    const [matchingLeftItems, setMatchingLeftItems] = useState<string[]>([]);
+    const [matchingRightItems, setMatchingRightItems] = useState<MatchingOption[]>([]);
+    const [draggedMatch, setDraggedMatch] = useState<string | null>(null);
     const [showInstructions, setShowInstructions] = useState(true);
     const [showResults, setShowResults] = useState(false);
     const [startTime, setStartTime] = useState<Date | null>(null);
@@ -94,9 +143,9 @@ export const FinalAssessmentPage: React.FC = () => {
 
                 // Normalize selectedAnswers to hold arrays
                 const restored = parsed.selectedAnswers || {};
-                const normalized: { [key: number]: number[] } = {};
+                const normalized: AnswerMap = {};
                 Object.entries(restored).forEach(([key, val]) => {
-                    normalized[Number(key)] = Array.isArray(val) ? val : [val as number];
+                    normalized[Number(key)] = Array.isArray(val) ? val : [val as number | string];
                 });
                 setSelectedAnswers(normalized);
 
@@ -114,6 +163,21 @@ export const FinalAssessmentPage: React.FC = () => {
         setEndTime(new Date(now.getTime() + examDurationMinutes * 60 * 1000));
     }, [assessment, courseId, sessionKey, showInstructions]);
 
+    useEffect(() => {
+        if (question?.question_type !== 'matching') {
+            setMatchingLeftItems([]);
+            setMatchingRightItems([]);
+            return;
+        }
+
+        const pairs = question.matching_pairs || [];
+        setMatchingLeftItems(shuffleArray(pairs.map((pair: MatchingPair) => pair.left)));
+        setMatchingRightItems(shuffleArray(pairs.map((pair: MatchingPair, index: number) => ({
+            value: pair.right,
+            palette: getMatchingPalette(index),
+        }))));
+    }, [question]);
+
     const calculateScore = () => {
         const correct = questions.filter((item: any, index: number) => {
             const questionChoices = getChoices(item);
@@ -121,12 +185,24 @@ export const FinalAssessmentPage: React.FC = () => {
 
             if (item.question_type === 'multiple') {
                 const correctIds = questionChoices.filter(c => c.isCorrect).map(c => c.id);
-                if (selected.length !== correctIds.length) return false;
-                return correctIds.every(id => selected.includes(id));
-            } else {
-                const correctChoice = questionChoices.find((choice) => choice.isCorrect);
-                return correctChoice && selected.includes(correctChoice.id);
+                const selectedChoiceIds = getSelectedChoiceIds(selected);
+                if (selectedChoiceIds.length !== correctIds.length) return false;
+                return correctIds.every(id => selectedChoiceIds.includes(id));
             }
+
+            if (item.question_type === 'matching') {
+                const selectedPairs = getSelectedMatchingPairs(selected);
+                const correctPairs = item.matching_pairs || [];
+                if (selectedPairs.length !== correctPairs.length) return false;
+                return correctPairs.every((correctPair: MatchingPair, pairIndex: number) => {
+                    const selectedPair = selectedPairs[pairIndex];
+                    return selectedPair?.left === correctPair.left && selectedPair?.right === correctPair.right;
+                });
+            }
+
+            const correctChoice = questionChoices.find((choice) => choice.isCorrect);
+            const selectedChoiceIds = getSelectedChoiceIds(selected);
+            return Boolean(correctChoice && selectedChoiceIds.includes(correctChoice.id));
         }).length;
 
         return {
@@ -257,14 +333,64 @@ export const FinalAssessmentPage: React.FC = () => {
 
     const handleMultipleSelect = (choiceId: number, checked: boolean) => {
         setSelectedAnswers(prev => {
-            const existing = prev[currentQuestion] || [];
+            const existing = getSelectedChoiceIds(prev[currentQuestion]);
+            const updated = checked
+                ? [...existing, choiceId]
+                : existing.filter(id => Number(id) !== Number(choiceId));
             return {
                 ...prev,
-                [currentQuestion]: checked
-                    ? [...existing, choiceId]
-                    : existing.filter(id => Number(id) !== Number(choiceId)),
+                [currentQuestion]: updated,
             };
         });
+    };
+
+    const handleMatchingSelect = (leftItem: string, rightValue: string) => {
+        setSelectedAnswers(prev => {
+            const existing = (prev[currentQuestion] as MatchingPair[]) || [];
+            const basePairs = question?.matching_pairs || [];
+            const updated = basePairs.map((pair: MatchingPair) => {
+                const existingPair = existing.find(item => item.left === pair.left);
+                return {
+                    left: pair.left,
+                    right: existingPair?.right || '',
+                };
+            });
+
+            const previousIndex = updated.findIndex(pair => pair.right === rightValue);
+            if (previousIndex !== -1) {
+                updated[previousIndex] = { ...updated[previousIndex], right: '' };
+            }
+
+            const targetIndex = updated.findIndex(pair => pair.left === leftItem);
+            if (targetIndex !== -1) {
+                updated[targetIndex] = { ...updated[targetIndex], right: rightValue };
+            }
+
+            return {
+                ...prev,
+                [currentQuestion]: updated,
+            };
+        });
+    };
+
+    const handleDragStart = (rightValue: string, event: React.DragEvent<HTMLButtonElement>) => {
+        setDraggedMatch(rightValue);
+        event.dataTransfer.setData('text/plain', rightValue);
+        event.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+    };
+
+    const handleDrop = (leftItem: string, event: React.DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        const value = draggedMatch || event.dataTransfer.getData('text/plain');
+        if (value) {
+            handleMatchingSelect(leftItem, value);
+        }
+        setDraggedMatch(null);
     };
 
     const saveAnswer = async (questionIndex = currentQuestion) => {
@@ -274,11 +400,18 @@ export const FinalAssessmentPage: React.FC = () => {
         if (!targetQuestion) return;
         if (!selected.length) return;
 
-        await assessmentAPI.saveAnswer({
+        const payload: any = {
             attempt_id: attemptId,
             question_id: targetQuestion.id,
-            selected_choices: selected,
-        });
+        };
+
+        if (targetQuestion.question_type === 'matching') {
+            payload.matching_pairs = selected;
+        } else {
+            payload.selected_choices = selected;
+        }
+
+        await assessmentAPI.saveAnswer(payload);
         setLastSavedAt(new Date());
     };
 
@@ -525,7 +658,7 @@ export const FinalAssessmentPage: React.FC = () => {
                             {question?.question_type === 'multiple' ? (
                                 <div className="space-y-3">
                                     {choices.map((option, index) => {
-                                        const checked = (selectedAnswers[currentQuestion] || []).includes(option.id);
+                                        const checked = getSelectedChoiceIds(selectedAnswers[currentQuestion]).includes(option.id);
                                         return (
                                             <label
                                                 key={option.id}
@@ -543,6 +676,85 @@ export const FinalAssessmentPage: React.FC = () => {
                                             </label>
                                         );
                                     })}
+                                </div>
+                            ) : question?.question_type === 'matching' ? (
+                                <div className="space-y-6">
+                                    <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+                                        <div className="space-y-4">
+                                            <div className="px-4 pb-2">
+                                                <p className="text-sm font-semibold uppercase tracking-widest text-gray-900">COLUMN A</p>
+                                            </div>
+                                            {matchingLeftItems.map((leftItem) => {
+                                                const selectedPairs = (selectedAnswers[currentQuestion] as MatchingPair[]) || [];
+                                                const selectedPair = selectedPairs.find(pair => pair.left === leftItem) || { left: leftItem, right: '' };
+                                                const matchedOption = matchingRightItems.find(item => item.value === selectedPair.right);
+
+                                                return (
+                                                    <div
+                                                        key={leftItem}
+                                                        className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm"
+                                                    >
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <span className="text-sm font-medium text-gray-800">{leftItem}</span>
+                                                            <div
+                                                                onDragOver={handleDragOver}
+                                                                onDrop={(event) => handleDrop(leftItem, event)}
+                                                                className="relative min-w-[160px] rounded-3xl border border-dashed border-gray-300 bg-white px-4 py-3 text-sm text-gray-500 text-center"
+                                                                style={selectedPair.right && matchedOption ? {
+                                                                    backgroundColor: matchedOption.palette.bg,
+                                                                    borderColor: matchedOption.palette.border,
+                                                                    color: matchedOption.palette.text,
+                                                                } : undefined}
+                                                            >
+                                                              <div
+                                                                className="min-h-[2.5rem] flex items-center justify-center"
+                                                              >
+                                                                {selectedPair.right || 'drop here'}
+                                                              </div>
+                                                              {selectedPair.right ? (
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={() => handleMatchingSelect(leftItem, '')}
+                                                                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                                                                  aria-label="Clear matched answer"
+                                                                >
+                                                                  <X className="h-4 w-4" />
+                                                                </button>
+                                                              ) : null}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <div className="space-y-3">
+                                            <div className="px-4 pb-2">
+                                                <p className="text-sm font-semibold uppercase tracking-widest text-gray-900">COLUMN B</p>
+                                            </div>
+                                            {matchingRightItems.map((rightItem) => {
+                                                const selectedPairs = (selectedAnswers[currentQuestion] as MatchingPair[]) || [];
+                                                const isSelected = selectedPairs.some(pair => pair.right === rightItem.value);
+                                                const paletteStyle = isSelected ? undefined : {
+                                                    backgroundColor: rightItem.palette.bg,
+                                                    borderColor: rightItem.palette.border,
+                                                    color: rightItem.palette.text,
+                                                };
+                                                return (
+                                                    <button
+                                                        key={rightItem.value}
+                                                        type="button"
+                                                        draggable
+                                                        onDragStart={(event) => handleDragStart(rightItem.value, event)}
+                                                        className={`w-full rounded-3xl px-6 py-4 text-center text-sm font-semibold transition ${isSelected ? 'border border-gray-200 bg-white text-gray-400 opacity-70' : 'bg-sky-100 border border-sky-200 text-sky-800 hover:bg-sky-200'}`}
+                                                        style={paletteStyle}
+                                                        disabled={isSelected}
+                                                    >
+                                                        {isSelected ? '\u00A0' : rightItem.value}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
                                 </div>
                             ) : (
                                 <RadioGroup
