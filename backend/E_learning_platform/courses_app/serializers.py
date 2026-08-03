@@ -379,7 +379,8 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 class CourseListSerializer(serializers.ModelSerializer):
-    admin = serializers.CharField(source="created_by.username", read_only=True)
+    admin = serializers.SerializerMethodField()
+    instructor = serializers.SerializerMethodField()
     modules_count = serializers.SerializerMethodField()
     enrolled_students_count = serializers.IntegerField(read_only=True)
     rating = serializers.FloatField(read_only=True)
@@ -399,6 +400,7 @@ class CourseListSerializer(serializers.ModelSerializer):
             "thumbnail",
             "is_published",
             "admin",
+            "instructor",
             "modules_count",
             "enrolled_students_count",
             "rating",
@@ -408,6 +410,18 @@ class CourseListSerializer(serializers.ModelSerializer):
 
     def get_modules_count(self, obj):
         return obj.modules.count()
+
+    def get_creator_name(self, obj):
+        creator = getattr(obj, "created_by", None)
+        if not creator:
+            return None
+        return getattr(creator, "full_name", None) or getattr(creator, "email", None) or getattr(creator, "username", None)
+
+    def get_admin(self, obj):
+        return self.get_creator_name(obj)
+
+    def get_instructor(self, obj):
+        return self.get_creator_name(obj)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -440,6 +454,8 @@ class CourseListSerializer(serializers.ModelSerializer):
         return data
 
 class CourseDetailSerializer(serializers.ModelSerializer):
+    admin = serializers.SerializerMethodField()
+    instructor = serializers.SerializerMethodField()
     modules = serializers.SerializerMethodField()
     final_assessment = serializers.SerializerMethodField()
     enrolled_students_count = serializers.IntegerField(read_only=True)
@@ -447,6 +463,18 @@ class CourseDetailSerializer(serializers.ModelSerializer):
 
     category = serializers.CharField(source="category.name", read_only=True)
     level = serializers.CharField(source="level.name", read_only=True)
+
+    def get_creator_name(self, obj):
+        creator = getattr(obj, "created_by", None)
+        if not creator:
+            return None
+        return getattr(creator, "full_name", None) or getattr(creator, "email", None) or getattr(creator, "username", None)
+
+    def get_admin(self, obj):
+        return self.get_creator_name(obj)
+
+    def get_instructor(self, obj):
+        return self.get_creator_name(obj)
 
     def get_final_assessment(self, obj):
         from assessments_app.models import Assessment

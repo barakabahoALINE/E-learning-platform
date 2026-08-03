@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useParams, useNavigate, Link, useLocation } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
@@ -19,7 +25,7 @@ import {
   Target,
   PlayCircle,
   Lock,
-  ClipboardCheck
+  ClipboardCheck,
 } from "lucide-react";
 import Logo from "../assets/R.png";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -47,30 +53,37 @@ const parseContentBlocks = (item: ContentItem): ContentBlock[] => {
 
     if (legacyText) {
       try {
-        const parsed = typeof legacyText === "string" ? JSON.parse(legacyText) : legacyText;
+        const parsed =
+          typeof legacyText === "string" ? JSON.parse(legacyText) : legacyText;
         blocks = Array.isArray(parsed) ? parsed : [parsed];
       } catch (e) {
         console.error("Failed to parse legacy content blocks", e);
-        blocks = [{
-          id: "fallback",
-          type: (item as any).content_type || "text",
-          content: legacyText,
-        }];
+        blocks = [
+          {
+            id: "fallback",
+            type: (item as any).content_type || "text",
+            content: legacyText,
+          },
+        ];
       }
     } else if (legacyVideo || legacyFile) {
-      blocks = [{
-        id: "fallback",
-        type: legacyVideo ? "video" : "file",
-        content: legacyVideo || legacyFile || "",
-      }];
+      blocks = [
+        {
+          id: "fallback",
+          type: legacyVideo ? "video" : "file",
+          content: legacyVideo || legacyFile || "",
+        },
+      ];
     }
   }
 
   return Array.isArray(blocks) ? blocks : [];
 };
 
-const getVideoWatchKey = (contentItemId: string | number, blockId: string | number) =>
-  `${contentItemId}:${blockId}`;
+const getVideoWatchKey = (
+  contentItemId: string | number,
+  blockId: string | number,
+) => `${contentItemId}:${blockId}`;
 
 export const LessonPage: React.FC = () => {
   const { courseId, moduleId } = useParams();
@@ -89,11 +102,18 @@ export const LessonPage: React.FC = () => {
   const [expandedSections, setExpandedSections] = useState<number[]>([]);
 
   // Track active and completed items for the sidebar
-  const [activeItemId, setActiveItemId] = useState<string | number | null>(null);
-  const [completedItemIds, setCompletedItemIds] = useState<Set<string | number>>(new Set());
+  const [activeItemId, setActiveItemId] = useState<string | number | null>(
+    null,
+  );
+  const [completedItemIds, setCompletedItemIds] = useState<
+    Set<string | number>
+  >(new Set());
 
-  const { currentCourse: course, isLoading } = useAppSelector((state) => state.courses);
-  const { courseProgress, moduleContentsProgress, courseModulesProgress } = useAppSelector((state) => state.progress);
+  const { currentCourse: course, isLoading } = useAppSelector(
+    (state) => state.courses,
+  );
+  const { courseProgress, moduleContentsProgress, courseModulesProgress } =
+    useAppSelector((state) => state.progress);
 
   const numericCourseId = Number(courseId);
   const numericModuleId = Number(moduleId);
@@ -112,12 +132,14 @@ export const LessonPage: React.FC = () => {
   useEffect(() => {
     // Auto-expand current module and its sections
     if (numericModuleId) {
-      setExpandedModules(prev => prev.includes(numericModuleId) ? prev : [...prev, numericModuleId]);
+      setExpandedModules((prev) =>
+        prev.includes(numericModuleId) ? prev : [...prev, numericModuleId],
+      );
 
-      const mod = course?.modules?.find(m => m.id === numericModuleId);
+      const mod = course?.modules?.find((m) => m.id === numericModuleId);
       if (mod) {
-        const sectionIds = mod.sections.map(s => Number(s.id));
-        setExpandedSections(prev => {
+        const sectionIds = mod.sections.map((s) => Number(s.id));
+        setExpandedSections((prev) => {
           const newSet = new Set([...prev, ...sectionIds]);
           return Array.from(newSet);
         });
@@ -126,25 +148,29 @@ export const LessonPage: React.FC = () => {
   }, [numericModuleId, course]);
 
   const currentModule = useMemo(() => {
-    return course?.modules?.find(m => m.id === numericModuleId);
+    return course?.modules?.find((m) => m.id === numericModuleId);
   }, [course, numericModuleId]);
 
   const currentModuleProgress = moduleContentsProgress[numericModuleId];
 
-  const scrollMainToItem = useCallback((itemId: string | number, behavior: ScrollBehavior = "auto") => {
-    const scrollRoot = mainRef.current;
-    const element = document.getElementById(`item-${itemId}`);
-    if (!scrollRoot || !element) return;
+  const scrollMainToItem = useCallback(
+    (itemId: string | number, behavior: ScrollBehavior = "auto") => {
+      const scrollRoot = mainRef.current;
+      const element = document.getElementById(`item-${itemId}`);
+      if (!scrollRoot || !element) return;
 
-    const rootRect = scrollRoot.getBoundingClientRect();
-    const elementRect = element.getBoundingClientRect();
-    const targetTop = scrollRoot.scrollTop + elementRect.top - rootRect.top - 24;
+      const rootRect = scrollRoot.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      const targetTop =
+        scrollRoot.scrollTop + elementRect.top - rootRect.top - 24;
 
-    scrollRoot.scrollTo({
-      top: Math.max(0, targetTop),
-      behavior,
-    });
-  }, []);
+      scrollRoot.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior,
+      });
+    },
+    [],
+  );
 
   const contentMetaById = useMemo(() => {
     const meta = new Map<string, { sectionId: number; contentId: number }>();
@@ -173,7 +199,9 @@ export const LessonPage: React.FC = () => {
     const videoIdsByItemId = new Map<string, Array<string | number>>();
     contentBlocksByItemId.forEach((blocks, itemId) => {
       const videoBlockIds = blocks
-        .filter((block) => block.type === "video" && Boolean(block.content?.trim()))
+        .filter(
+          (block) => block.type === "video" && Boolean(block.content?.trim()),
+        )
         .map((block) => block.id);
 
       if (videoBlockIds.length > 0) {
@@ -183,9 +211,14 @@ export const LessonPage: React.FC = () => {
     return videoIdsByItemId;
   }, [contentBlocksByItemId]);
 
-  const itemRequiresVideoCompletion = useCallback((contentItemId: string | number) => {
-    return (videoBlockIdsByItemId.get(String(contentItemId))?.length ?? 0) > 0;
-  }, [videoBlockIdsByItemId]);
+  const itemRequiresVideoCompletion = useCallback(
+    (contentItemId: string | number) => {
+      return (
+        (videoBlockIdsByItemId.get(String(contentItemId))?.length ?? 0) > 0
+      );
+    },
+    [videoBlockIdsByItemId],
+  );
 
   const allCompletedContentIds = useMemo(() => {
     const completed = new Set<string | number>();
@@ -209,7 +242,12 @@ export const LessonPage: React.FC = () => {
   useEffect(() => {
     if (numericCourseId && course?.modules) {
       course.modules.forEach((mod) => {
-        dispatch(fetchModuleContentsProgress({ courseId: numericCourseId, moduleId: Number(mod.id) }));
+        dispatch(
+          fetchModuleContentsProgress({
+            courseId: numericCourseId,
+            moduleId: Number(mod.id),
+          }),
+        );
       });
       dispatch(fetchCourseModulesProgress(numericCourseId));
     }
@@ -233,11 +271,17 @@ export const LessonPage: React.FC = () => {
   useEffect(() => {
     if (!currentModule) return;
 
-    const navigationTargetItemId = (location.state as { targetItemId?: string | number } | null)?.targetItemId;
+    const navigationTargetItemId = (
+      location.state as { targetItemId?: string | number } | null
+    )?.targetItemId;
     if (
       navigationTargetItemId &&
       !hasInitializedActiveItem.current &&
-      currentModule.sections.some(section => section.contents.some(item => String(item.id) === String(navigationTargetItemId)))
+      currentModule.sections.some((section) =>
+        section.contents.some(
+          (item) => String(item.id) === String(navigationTargetItemId),
+        ),
+      )
     ) {
       setActiveItemId(navigationTargetItemId);
       userCompletionIntentRef.current = false;
@@ -251,7 +295,9 @@ export const LessonPage: React.FC = () => {
     }
 
     if (activeItemId === null) {
-      const firstItem = currentModule.sections.flatMap(section => section.contents)[0];
+      const firstItem = currentModule.sections.flatMap(
+        (section) => section.contents,
+      )[0];
       setActiveItemId(firstItem?.id ?? null);
     }
 
@@ -259,11 +305,15 @@ export const LessonPage: React.FC = () => {
 
     let targetItemId: string | number | null = null;
     for (const section of currentModuleProgress.sections || []) {
-      const incompleteContent = section.contents.find(c => !c.completed);
+      const incompleteContent = section.contents.find((c) => !c.completed);
       if (incompleteContent) {
         const matchedItem = currentModule.sections
-          .flatMap(s => s.contents)
-          .find(item => String(item.id) === String(incompleteContent.content_id) || String(item.id) === String(incompleteContent.id));
+          .flatMap((s) => s.contents)
+          .find(
+            (item) =>
+              String(item.id) === String(incompleteContent.content_id) ||
+              String(item.id) === String(incompleteContent.id),
+          );
         if (matchedItem) {
           targetItemId = matchedItem.id;
           break;
@@ -272,7 +322,7 @@ export const LessonPage: React.FC = () => {
     }
 
     if (!targetItemId) {
-      const firstItem = currentModule.sections.flatMap(s => s.contents)[0];
+      const firstItem = currentModule.sections.flatMap((s) => s.contents)[0];
       targetItemId = firstItem?.id ?? null;
     }
 
@@ -287,7 +337,14 @@ export const LessonPage: React.FC = () => {
       hasInitializedActiveItem.current = true;
       return () => clearTimeout(timeoutId);
     }
-  }, [currentModule, currentModuleProgress, numericModuleId, activeItemId, location.state, scrollMainToItem]);
+  }, [
+    currentModule,
+    currentModuleProgress,
+    numericModuleId,
+    activeItemId,
+    location.state,
+    scrollMainToItem,
+  ]);
 
   useEffect(() => {
     const scrollRoot = mainRef.current;
@@ -312,74 +369,118 @@ export const LessonPage: React.FC = () => {
     userCompletionIntentRef.current = false;
   }, [activeItemId]);
 
-  const completeActiveContent = useCallback((contentId: string | number) => {
-    if (!numericCourseId || !currentModule) return;
+  const completeActiveContent = useCallback(
+    (contentId: string | number) => {
+      if (!numericCourseId || !currentModule) return;
 
-    const meta = contentMetaById.get(String(contentId));
-    if (!meta) return;
+      const meta = contentMetaById.get(String(contentId));
+      if (!meta) return;
 
-    const requestKey = `${numericCourseId}:${meta.sectionId}:${meta.contentId}`;
-    if (
-      completionRequestsRef.current.has(requestKey) ||
-      completedItemIds.has(meta.contentId) ||
-      completedItemIds.has(String(meta.contentId))
-    ) {
-      return;
-    }
+      const requestKey = `${numericCourseId}:${meta.sectionId}:${meta.contentId}`;
+      if (
+        completionRequestsRef.current.has(requestKey) ||
+        completedItemIds.has(meta.contentId) ||
+        completedItemIds.has(String(meta.contentId))
+      ) {
+        return;
+      }
 
-    completionRequestsRef.current.add(requestKey);
-    setCompletedItemIds(prev => new Set(prev).add(meta.contentId).add(String(meta.contentId)));
-    dispatch(markContentComplete({
-      courseId: numericCourseId,
-      sectionId: meta.sectionId,
-      contentId: meta.contentId,
-    })).unwrap().catch(() => {
-      completionRequestsRef.current.delete(requestKey);
-      setCompletedItemIds(prev => {
-        const next = new Set(prev);
-        next.delete(meta.contentId);
-        next.delete(String(meta.contentId));
-        return next;
-      });
-    });
-  }, [completedItemIds, contentMetaById, currentModule, dispatch, numericCourseId]);
+      completionRequestsRef.current.add(requestKey);
+      setCompletedItemIds((prev) =>
+        new Set(prev).add(meta.contentId).add(String(meta.contentId)),
+      );
+      dispatch(
+        markContentComplete({
+          courseId: numericCourseId,
+          sectionId: meta.sectionId,
+          contentId: meta.contentId,
+        }),
+      )
+        .unwrap()
+        .catch(() => {
+          completionRequestsRef.current.delete(requestKey);
+          setCompletedItemIds((prev) => {
+            const next = new Set(prev);
+            next.delete(meta.contentId);
+            next.delete(String(meta.contentId));
+            return next;
+          });
+        });
+    },
+    [
+      completedItemIds,
+      contentMetaById,
+      currentModule,
+      dispatch,
+      numericCourseId,
+    ],
+  );
 
-  const hasWatchedRequiredVideos = useCallback((contentItemId: string | number) => {
-    const requiredVideoBlockIds = videoBlockIdsByItemId.get(String(contentItemId));
-    if (!requiredVideoBlockIds?.length) return false;
+  const hasWatchedRequiredVideos = useCallback(
+    (contentItemId: string | number) => {
+      const requiredVideoBlockIds = videoBlockIdsByItemId.get(
+        String(contentItemId),
+      );
+      if (!requiredVideoBlockIds?.length) return false;
 
-    return requiredVideoBlockIds.every((requiredBlockId) =>
-      watchedVideoBlockKeysRef.current.has(getVideoWatchKey(contentItemId, requiredBlockId))
-    );
-  }, [videoBlockIdsByItemId]);
+      return requiredVideoBlockIds.every((requiredBlockId) =>
+        watchedVideoBlockKeysRef.current.has(
+          getVideoWatchKey(contentItemId, requiredBlockId),
+        ),
+      );
+    },
+    [videoBlockIdsByItemId],
+  );
 
-  const tryCompleteVideoContent = useCallback((contentItemId: string | number) => {
-    if (!itemRequiresVideoCompletion(contentItemId)) return false;
-    if (!contentEndReachedItemIdsRef.current.has(String(contentItemId))) return false;
-    if (!hasWatchedRequiredVideos(contentItemId)) return false;
+  const tryCompleteVideoContent = useCallback(
+    (contentItemId: string | number) => {
+      if (!itemRequiresVideoCompletion(contentItemId)) return false;
+      if (!contentEndReachedItemIdsRef.current.has(String(contentItemId)))
+        return false;
+      if (!hasWatchedRequiredVideos(contentItemId)) return false;
 
-    completeActiveContent(contentItemId);
-    return true;
-  }, [completeActiveContent, hasWatchedRequiredVideos, itemRequiresVideoCompletion]);
+      completeActiveContent(contentItemId);
+      return true;
+    },
+    [
+      completeActiveContent,
+      hasWatchedRequiredVideos,
+      itemRequiresVideoCompletion,
+    ],
+  );
 
-  const markContentEndReached = useCallback((contentItemId: string | number) => {
-    contentEndReachedItemIdsRef.current.add(String(contentItemId));
+  const markContentEndReached = useCallback(
+    (contentItemId: string | number) => {
+      contentEndReachedItemIdsRef.current.add(String(contentItemId));
 
-    if (itemRequiresVideoCompletion(contentItemId)) {
+      if (itemRequiresVideoCompletion(contentItemId)) {
+        tryCompleteVideoContent(contentItemId);
+        return;
+      }
+
+      completeActiveContent(contentItemId);
+    },
+    [
+      completeActiveContent,
+      itemRequiresVideoCompletion,
+      tryCompleteVideoContent,
+    ],
+  );
+
+  const handleVideoWatchedToEnd = useCallback(
+    (contentItemId: string | number, blockId: string | number) => {
+      const requiredVideoBlockIds = videoBlockIdsByItemId.get(
+        String(contentItemId),
+      );
+      if (!requiredVideoBlockIds?.length) return;
+
+      watchedVideoBlockKeysRef.current.add(
+        getVideoWatchKey(contentItemId, blockId),
+      );
       tryCompleteVideoContent(contentItemId);
-      return;
-    }
-
-    completeActiveContent(contentItemId);
-  }, [completeActiveContent, itemRequiresVideoCompletion, tryCompleteVideoContent]);
-
-  const handleVideoWatchedToEnd = useCallback((contentItemId: string | number, blockId: string | number) => {
-    const requiredVideoBlockIds = videoBlockIdsByItemId.get(String(contentItemId));
-    if (!requiredVideoBlockIds?.length) return;
-
-    watchedVideoBlockKeysRef.current.add(getVideoWatchKey(contentItemId, blockId));
-    tryCompleteVideoContent(contentItemId);
-  }, [tryCompleteVideoContent, videoBlockIdsByItemId]);
+    },
+    [tryCompleteVideoContent, videoBlockIdsByItemId],
+  );
 
   const markContentEndReachedRef = useRef(markContentEndReached);
   useEffect(() => {
@@ -395,33 +496,42 @@ export const LessonPage: React.FC = () => {
   useEffect(() => {
     if (!currentModule) return;
 
-    const orderedItemIds = currentModule.sections.flatMap(s => s.contents.map(i => i.id));
+    const orderedItemIds = currentModule.sections.flatMap((s) =>
+      s.contents.map((i) => i.id),
+    );
     let observer: IntersectionObserver | null = null;
 
     const timeoutId = setTimeout(() => {
-      const itemElements = orderedItemIds.map(id => document.getElementById(`item-${id}`)).filter(Boolean) as HTMLElement[];
+      const itemElements = orderedItemIds
+        .map((id) => document.getElementById(`item-${id}`))
+        .filter(Boolean) as HTMLElement[];
 
       if (itemElements.length === 0) return;
 
-      const obs = new IntersectionObserver((entries) => {
-        const intersecting = entries.filter(e => e.isIntersecting);
-        if (intersecting.length > 0) {
-          intersecting.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-          const target = intersecting[0];
+      const obs = new IntersectionObserver(
+        (entries) => {
+          const intersecting = entries.filter((e) => e.isIntersecting);
+          if (intersecting.length > 0) {
+            intersecting.sort(
+              (a, b) => a.boundingClientRect.top - b.boundingClientRect.top,
+            );
+            const target = intersecting[0];
 
-          const idStr = target.target.id.replace('item-', '');
-          const id = isNaN(Number(idStr)) ? idStr : Number(idStr);
+            const idStr = target.target.id.replace("item-", "");
+            const id = isNaN(Number(idStr)) ? idStr : Number(idStr);
 
-          setActiveItemId(id);
-        }
-      }, {
-        root: mainRef.current,
-        rootMargin: '-10% 0px -20% 0px',
-        threshold: 0
-      });
+            setActiveItemId(id);
+          }
+        },
+        {
+          root: mainRef.current,
+          rootMargin: "-10% 0px -20% 0px",
+          threshold: 0,
+        },
+      );
       observer = obs;
 
-      itemElements.forEach(el => obs.observe(el));
+      itemElements.forEach((el) => obs.observe(el));
     }, 100);
 
     return () => {
@@ -441,13 +551,22 @@ export const LessonPage: React.FC = () => {
       if (!scrollRoot) return;
 
       if (activeItemId && contentMetaById.has(String(activeItemId))) {
-        const activeItemElement = document.getElementById(`item-${activeItemId}`);
-        const activeSentinel = document.getElementById(`item-${activeItemId}-end`);
+        const activeItemElement = document.getElementById(
+          `item-${activeItemId}`,
+        );
+        const activeSentinel = document.getElementById(
+          `item-${activeItemId}-end`,
+        );
         if (activeItemElement && activeSentinel) {
-          const rootIsScrollable = scrollRoot.scrollHeight > scrollRoot.clientHeight + 4;
-          const itemFitsInView = activeItemElement.getBoundingClientRect().height <= scrollRoot.clientHeight * 0.85;
-          const requiresVideo = itemRequiresVideoCompletionRef.current(activeItemId);
-          const shouldAutoMarkEndReached = !rootIsScrollable || (!requiresVideo && itemFitsInView);
+          const rootIsScrollable =
+            scrollRoot.scrollHeight > scrollRoot.clientHeight + 4;
+          const itemFitsInView =
+            activeItemElement.getBoundingClientRect().height <=
+            scrollRoot.clientHeight * 0.85;
+          const requiresVideo =
+            itemRequiresVideoCompletionRef.current(activeItemId);
+          const shouldAutoMarkEndReached =
+            !rootIsScrollable || (!requiresVideo && itemFitsInView);
 
           if (shouldAutoMarkEndReached) {
             shortContentTimer = window.setTimeout(() => {
@@ -459,21 +578,24 @@ export const LessonPage: React.FC = () => {
         }
       }
 
-      observer = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          if (!userCompletionIntentRef.current) return;
+      observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            if (!userCompletionIntentRef.current) return;
 
-          const contentId = (entry.target as HTMLElement).dataset.contentId;
-          if (!contentId || !contentMetaById.has(String(contentId))) return;
+            const contentId = (entry.target as HTMLElement).dataset.contentId;
+            if (!contentId || !contentMetaById.has(String(contentId))) return;
 
-          markContentEndReachedRef.current(contentId);
-        });
-      }, {
-        root: mainRef.current,
-        rootMargin: '0px 0px -12% 0px',
-        threshold: 1,
-      });
+            markContentEndReachedRef.current(contentId);
+          });
+        },
+        {
+          root: mainRef.current,
+          rootMargin: "0px 0px -12% 0px",
+          threshold: 1,
+        },
+      );
 
       currentModule.sections.forEach((section) => {
         section.contents.forEach((item) => {
@@ -494,7 +616,9 @@ export const LessonPage: React.FC = () => {
 
   const nextModule = useMemo(() => {
     if (!course || !currentModule) return null;
-    const currentIndex = course.modules.findIndex(m => m.id === currentModule.id);
+    const currentIndex = course.modules.findIndex(
+      (m) => m.id === currentModule.id,
+    );
     return course.modules[currentIndex + 1] || null;
   }, [course, currentModule]);
 
@@ -503,7 +627,9 @@ export const LessonPage: React.FC = () => {
       <div className="min-h-screen bg-background dark:bg-gray-950 flex items-center justify-center">
         <div className="text-center text-foreground dark:text-white">
           <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4 text-primary" />
-          <h2 className="text-xl font-medium tracking-tight">Preparing your learning environment...</h2>
+          <h2 className="text-xl font-medium tracking-tight">
+            Preparing your learning environment...
+          </h2>
         </div>
       </div>
     );
@@ -517,9 +643,13 @@ export const LessonPage: React.FC = () => {
             <X className="w-10 h-10" />
           </div>
           <h2 className="text-2xl font-bold mb-4">Module not found</h2>
-          <p className="text-muted-foreground dark:text-gray-400 mb-8">The module you're looking for doesn't exist or has been moved.</p>
+          <p className="text-muted-foreground dark:text-gray-400 mb-8">
+            The module you're looking for doesn't exist or has been moved.
+          </p>
           <Link to={`/course/${courseId}`}>
-            <Button className="w-full h-12 text-lg">Back to Course Overview</Button>
+            <Button className="w-full h-12 text-lg">
+              Back to Course Overview
+            </Button>
           </Link>
         </div>
       </div>
@@ -531,18 +661,23 @@ export const LessonPage: React.FC = () => {
     (courseModulesProgress[numericCourseId] || []).map((moduleProgress) => [
       Number(moduleProgress.module_id),
       moduleProgress,
-    ])
+    ]),
   );
   const isModuleReady = (module: NonNullable<typeof currentModule>) => {
     const moduleProgress = moduleProgressById.get(Number(module.id));
-    return module.quiz ? Boolean(moduleProgress?.quiz_passed) : Boolean(moduleProgress?.module_completed);
+    return module.quiz
+      ? Boolean(moduleProgress?.quiz_passed)
+      : Boolean(moduleProgress?.module_completed);
   };
   const allModulesCompleted = course?.modules?.length
     ? course.modules.every((module) => isModuleReady(module))
     : false;
   const isCurrentModuleCompleted = isModuleReady(currentModule);
-  const canOpenFinalAssessment = allModulesCompleted && Boolean(course.final_assessment);
-  const finalAssessmentCompleted = Boolean(progress?.final_passed || progress?.course_completed);
+  const canOpenFinalAssessment =
+    allModulesCompleted && Boolean(course.final_assessment);
+  const finalAssessmentCompleted = Boolean(
+    progress?.final_passed || progress?.course_completed,
+  );
 
   const handleNextModule = () => {
     if (nextModule) {
@@ -556,23 +691,27 @@ export const LessonPage: React.FC = () => {
   };
 
   const toggleModule = (id: number) => {
-    setExpandedModules(prev =>
-      prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
+    setExpandedModules((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
     );
   };
 
   const toggleSection = (id: number) => {
-    setExpandedSections(prev =>
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+    setExpandedSections((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
     );
   };
 
   const getStatusIcon = (isCompleted: boolean, isActive: boolean) => {
     if (isCompleted) {
-      return <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />;
+      return (
+        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+      );
     }
     if (isActive) {
-      return <PlayCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />;
+      return (
+        <PlayCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+      );
     }
     return <Circle className="h-4 w-4 text-gray-400 dark:text-gray-500" />;
   };
@@ -603,12 +742,22 @@ export const LessonPage: React.FC = () => {
       <header className=" bg-white/30 dark:bg-gray-900/30 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50 px-6 bg-red-500 py-4 backdrop-blur-2xl rounded-b-lg shadow-xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-4 flex-1">
-            <Link to="/dashboard" className="flex items-center space-x-2 border-r border-gray-300 pr-4">
+            <Link
+              to="/dashboard"
+              className="flex items-center space-x-2 border-r border-gray-300 pr-4"
+            >
               <img src={Logo} alt="Logo" className="h-14 w-auto" />
             </Link>
             <div className="flex-1 px-6">
-              <h1 className="text-sm dark:text-white font-medium">{course.title}</h1>
-              <p className="text-xs text-muted-foreground dark:text-gray-400">{currentModule.title} {" > "} {currentModule.sections.map((section) => section.title).join(", ")}</p>
+              <h1 className="text-sm dark:text-white font-medium">
+                {course.title}
+              </h1>
+              <p className="text-xs text-muted-foreground dark:text-gray-400">
+                {currentModule.title} {" > "}{" "}
+                {currentModule.sections
+                  .map((section) => section.title)
+                  .join(", ")}
+              </p>
               <div className="flex-1">
                 <div className="flex items-center justify-between text-sm text-muted-foreground dark:text-gray-400 mb-1">
                   <div></div>
@@ -645,33 +794,46 @@ export const LessonPage: React.FC = () => {
 
       <div className="flex-1 flex overflow-hidden relative">
         {/* Main Content Area - Scrollable */}
-        <main ref={mainRef} className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth custom-scrollbar bg-gray-50 dark:bg-[#111827]">
+        <main
+          ref={mainRef}
+          className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth custom-scrollbar bg-gray-50 dark:bg-[#111827]"
+        >
           <div className="max-w-4xl mx-auto px-6 py-12 space-y-20 pb-32">
-
             {/* Continuous Scroll Sections */}
             <div className="space-y-32">
               {currentModule.sections.map((section, sIdx) => (
-                <div key={section.id} id={`section-${section.id}`} className="space-y-12 scroll-mt-24">
+                <div
+                  key={section.id}
+                  id={`section-${section.id}`}
+                  className="space-y-12 scroll-mt-24"
+                >
                   <div className="flex items-center gap-6">
                     <div className="flex-1">
-                      <h3 className="text-2xl font-bold text-foreground dark:text-white tracking-tight">{section.title}</h3>
+                      <h3 className="text-2xl font-bold text-foreground dark:text-white tracking-tight">
+                        {section.title}
+                      </h3>
                       <div className="h-px w-full bg-gradient-to-r from-border dark:from-white/10 to-transparent mt-4" />
                     </div>
                   </div>
 
                   <div className="space-y-16 pl-0">
                     {section.contents.map((item) => {
-                      const blocks = contentBlocksByItemId.get(String(item.id)) || [];
+                      const blocks =
+                        contentBlocksByItemId.get(String(item.id)) || [];
 
                       return (
-                        <div key={item.id} id={`item-${item.id}`} >
+                        <div key={item.id} id={`item-${item.id}`}>
                           <div className="flex items-center gap-4 mb-4">
-                            <h4 className="text-xl font-bold text-foreground dark:text-white tracking-tight">{item.title}</h4>
+                            <h4 className="text-xl font-bold text-foreground dark:text-white tracking-tight">
+                              {item.title}
+                            </h4>
                           </div>
 
                           <ContentBlockRenderer
                             blocks={blocks}
-                            onVideoWatchedToEnd={(blockId) => handleVideoWatchedToEnd(item.id, blockId)}
+                            onVideoWatchedToEnd={(blockId) =>
+                              handleVideoWatchedToEnd(item.id, blockId)
+                            }
                           />
                           <div
                             id={`item-${item.id}-end`}
@@ -693,16 +855,18 @@ export const LessonPage: React.FC = () => {
                 <div className="relative flex flex-col md:flex-row items-center gap-8">
                   {currentModule.quiz ? (
                     <>
-                      <div className="w-20 h-20 rounded-2xl bg-amber-500/20 flex items-center justify-center flex-shrink-0 border border-amber-500/30">
+                      <div className="w-20 h-20 rounded-2xl bg-blue-500/20 flex items-center justify-center flex-shrink-0 border border-blue-500/30">
                         {isCurrentModuleCompleted ? (
                           <CheckCircle2 className="w-10 h-10 text-green-500" />
                         ) : (
-                          <FileText className="w-10 h-10 text-amber-400" />
+                          <FileText className="w-10 h-10 text-blue-400" />
                         )}
                       </div>
                       <div className="flex-1 text-center md:text-left">
                         <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">
-                          {isCurrentModuleCompleted ? "Module Review Complete" : "Module Review"}
+                          {isCurrentModuleCompleted
+                            ? "Module Review Complete"
+                            : "Module Review"}
                         </h3>
                         <p className="text-muted-foreground dark:text-gray-300 text-lg">
                           {isCurrentModuleCompleted
@@ -712,10 +876,20 @@ export const LessonPage: React.FC = () => {
                       </div>
                       <Button
                         size="lg"
-                        onClick={() => isCurrentModuleCompleted ? handleNextModule() : navigate(`/learning/${courseId}/quiz/${currentModule.id}`)}
-                        className="h-14 px-8 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-semibold transition-colors"
+                        onClick={() =>
+                          isCurrentModuleCompleted
+                            ? handleNextModule()
+                            : navigate(
+                                `/learning/${courseId}/quiz/${currentModule.id}`,
+                              )
+                        }
+                        className="h-14 px-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300"
                       >
-                        {isCurrentModuleCompleted ? (nextModule ? "Next Module" : "Continue") : "Start Quiz"}
+                        {isCurrentModuleCompleted
+                          ? nextModule
+                            ? "Next Module"
+                            : "Continue"
+                          : "Start Quiz"}
                       </Button>
                     </>
                   ) : (
@@ -724,8 +898,12 @@ export const LessonPage: React.FC = () => {
                         <CheckCircle2 className="w-10 h-10 text-emerald-400" />
                       </div>
                       <div className="flex-1 text-center md:text-left">
-                        <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">Well Done!</h3>
-                        <p className="text-muted-foreground dark:text-gray-300 text-lg">You've completed all lessons in this module.</p>
+                        <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">
+                          Well Done!
+                        </h3>
+                        <p className="text-muted-foreground dark:text-gray-300 text-lg">
+                          You've completed all lessons in this module.
+                        </p>
                       </div>
                       <Button
                         size="lg"
@@ -754,7 +932,9 @@ export const LessonPage: React.FC = () => {
                       )}
                     </div>
                     <div className="flex-1 text-center md:text-left">
-                      <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">Final Assessment</h3>
+                      <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">
+                        Final Assessment
+                      </h3>
                       <p className="text-muted-foreground dark:text-gray-300 text-lg">
                         {finalAssessmentCompleted
                           ? "You passed the final assessment."
@@ -765,18 +945,27 @@ export const LessonPage: React.FC = () => {
                     </div>
                     <Button
                       size="lg"
-                      disabled={!canOpenFinalAssessment && !finalAssessmentCompleted}
-                      onClick={() => navigate(finalAssessmentCompleted ? `/certificate/${courseId}` : `/learning/${courseId}/final-assessment`)}
+                      disabled={
+                        !canOpenFinalAssessment && !finalAssessmentCompleted
+                      }
+                      onClick={() =>
+                        navigate(
+                          finalAssessmentCompleted
+                            ? `/certificate/${courseId}`
+                            : `/learning/${courseId}/final-assessment`,
+                        )
+                      }
                       className="h-14 px-8 rounded-2xl font-semibold transition-colors"
                     >
                       <ClipboardCheck className="mr-2 h-5 w-5" />
-                      {finalAssessmentCompleted ? "View Certificate" : "Start Assessment"}
+                      {finalAssessmentCompleted
+                        ? "View Certificate"
+                        : "Start Assessment"}
                     </Button>
                   </div>
                 </div>
               </div>
             )}
-
           </div>
         </main>
 
@@ -795,13 +984,15 @@ export const LessonPage: React.FC = () => {
             "w-96 max-w-[90vw] h-full",
             "bg-gray-50 dark:bg-[#111827] border-l border-gray-200 dark:border-gray-800 shadow-2xl lg:shadow-none",
             "transition-transform duration-500 ease-in-out flex flex-col overflow-hidden",
-            showSidebar ? "translate-x-0" : "translate-x-full lg:translate-x-0"
+            showSidebar ? "translate-x-0" : "translate-x-full lg:translate-x-0",
           )}
         >
           {/* Sidebar Header */}
           <div className="px-6 py-5 border-b border-border dark:border-white/5 backdrop-blur-md sticky top-0 z-10 shrink-0">
             <div className="flex items-center justify-between mb-1.5">
-              <h3 className="text-[17px] font-bold text-foreground dark:text-white">Course Content</h3>
+              <h3 className="text-[17px] font-bold text-foreground dark:text-white">
+                Course Content
+              </h3>
               <Button
                 variant="ghost"
                 size="icon"
@@ -812,21 +1003,46 @@ export const LessonPage: React.FC = () => {
               </Button>
             </div>
             <p className="text-[13px] text-muted-foreground dark:text-slate-400 font-medium">
-              {course.modules.length} modules • {course.modules.reduce((acc, m) => acc + m.sections.length, 0)} sections • {course.modules.reduce((acc, m) => acc + m.sections.reduce((sAcc, s) => sAcc + s.contents.length, 0), 0)} lessons
+              {course.modules.length} modules •{" "}
+              {course.modules.reduce((acc, m) => acc + m.sections.length, 0)}{" "}
+              sections •{" "}
+              {course.modules.reduce(
+                (acc, m) =>
+                  acc +
+                  m.sections.reduce((sAcc, s) => sAcc + s.contents.length, 0),
+                0,
+              )}{" "}
+              lessons
             </p>
           </div>
 
           {/* Scrollable Sidebar Content */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-2">
             {course.modules?.map((module, mIdx) => {
-              const isModuleExpanded = expandedModules.includes(Number(module.id));
+              const isModuleExpanded = expandedModules.includes(
+                Number(module.id),
+              );
               const isCurrentModule = Number(module.id) === numericModuleId;
 
-              const totalModuleItems = module.sections.reduce((acc, s) => acc + s.contents.length, 0);
+              const totalModuleItems = module.sections.reduce(
+                (acc, s) => acc + s.contents.length,
+                0,
+              );
               const moduleCompletedCount = module.sections.reduce((acc, s) => {
-                return acc + s.contents.filter(item => completedItemIds.has(item.id) || completedItemIds.has(Number(item.id)) || completedItemIds.has(String(item.id))).length;
+                return (
+                  acc +
+                  s.contents.filter(
+                    (item) =>
+                      completedItemIds.has(item.id) ||
+                      completedItemIds.has(Number(item.id)) ||
+                      completedItemIds.has(String(item.id)),
+                  ).length
+                );
               }, 0);
-              const moduleProgressPercent = totalModuleItems > 0 ? (moduleCompletedCount / totalModuleItems) * 100 : 0;
+              const moduleProgressPercent =
+                totalModuleItems > 0
+                  ? (moduleCompletedCount / totalModuleItems) * 100
+                  : 0;
 
               return (
                 <Collapsible
@@ -849,17 +1065,28 @@ export const LessonPage: React.FC = () => {
                           Module {mIdx + 1}: {module.title}
                         </h4>
                         <p className="text-[13px] text-muted-foreground dark:text-slate-400 mt-1 mb-2">
-                          {moduleCompletedCount}/{totalModuleItems} completed • 0 hours
+                          {moduleCompletedCount}/{totalModuleItems} completed •
+                          0 hours
                         </p>
-                        <Progress value={moduleProgressPercent} className="h-1.5" />
+                        <Progress
+                          value={moduleProgressPercent}
+                          className="h-1.5"
+                        />
                       </div>
                     </div>
                   </CollapsibleTrigger>
 
                   <CollapsibleContent className="pl-6 space-y-2 pt-2 animate-in slide-in-from-top-2 duration-300">
                     {module.sections.map((section, sIdx) => {
-                      const isSectionExpanded = expandedSections.includes(Number(section.id));
-                      const sectionCompletedCount = section.contents.filter(item => completedItemIds.has(item.id) || completedItemIds.has(Number(item.id)) || completedItemIds.has(String(item.id))).length;
+                      const isSectionExpanded = expandedSections.includes(
+                        Number(section.id),
+                      );
+                      const sectionCompletedCount = section.contents.filter(
+                        (item) =>
+                          completedItemIds.has(item.id) ||
+                          completedItemIds.has(Number(item.id)) ||
+                          completedItemIds.has(String(item.id)),
+                      ).length;
 
                       return (
                         <Collapsible
@@ -882,7 +1109,8 @@ export const LessonPage: React.FC = () => {
                                   {section.title}
                                 </h5>
                                 <p className="text-[13px] text-muted-foreground dark:text-slate-400 mt-0.5">
-                                  {sectionCompletedCount}/{section.contents.length} • 0 hours
+                                  {sectionCompletedCount}/
+                                  {section.contents.length} • 0 hours
                                 </p>
                               </div>
                             </div>
@@ -890,8 +1118,12 @@ export const LessonPage: React.FC = () => {
 
                           <CollapsibleContent className="pl-8 pr-2 space-y-0.5 pt-1">
                             {section.contents.map((item, iIdx) => {
-                              const isActiveItem = String(item.id) === String(activeItemId);
-                              const isCompleted = completedItemIds.has(item.id) || completedItemIds.has(Number(item.id)) || completedItemIds.has(String(item.id));
+                              const isActiveItem =
+                                String(item.id) === String(activeItemId);
+                              const isCompleted =
+                                completedItemIds.has(item.id) ||
+                                completedItemIds.has(Number(item.id)) ||
+                                completedItemIds.has(String(item.id));
 
                               return (
                                 <button
@@ -900,25 +1132,34 @@ export const LessonPage: React.FC = () => {
                                     if (isCurrentModule) {
                                       scrollToItem(item.id);
                                     } else {
-                                      navigate(`/learning/${courseId}/${module.id}`, { state: { targetItemId: item.id } });
+                                      navigate(
+                                        `/learning/${courseId}/${module.id}`,
+                                        { state: { targetItemId: item.id } },
+                                      );
                                     }
                                   }}
                                   className={cn(
-                                    'w-full flex items-start gap-2 p-2 rounded text-left transition-colors mb-1 last:mb-0 border border-transparent',
+                                    "w-full flex items-start gap-2 p-2 rounded text-left transition-colors mb-1 last:mb-0 border border-transparent",
                                     isActiveItem
-                                      ? 'active-lesson-card'
-                                      : 'hover:bg-gray-100 dark:hover:bg-[#1F2937]/45',
-                                    isCompleted && !isActiveItem && 'opacity-85'
+                                      ? "active-lesson-card"
+                                      : "hover:bg-gray-100 dark:hover:bg-[#1F2937]/45",
+                                    isCompleted &&
+                                      !isActiveItem &&
+                                      "opacity-85",
                                   )}
                                 >
                                   <div className="flex-shrink-0 mt-0.5">
                                     {getStatusIcon(isCompleted, isActiveItem)}
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <p className={cn(
-                                      "text-[14px] font-medium leading-tight",
-                                      isActiveItem ? "text-foreground dark:text-white" : "text-muted-foreground dark:text-slate-200 group-hover:text-foreground dark:group-hover:text-white"
-                                    )}>
+                                    <p
+                                      className={cn(
+                                        "text-[14px] font-medium leading-tight",
+                                        isActiveItem
+                                          ? "text-foreground dark:text-white"
+                                          : "text-muted-foreground dark:text-slate-200 group-hover:text-foreground dark:group-hover:text-white",
+                                      )}
+                                    >
                                       {item.title}
                                     </p>
                                     <p className="text-[13px] text-muted-foreground dark:text-slate-400 mt-1">
@@ -936,29 +1177,43 @@ export const LessonPage: React.FC = () => {
                     {module.quiz && (
                       <div className="pt-2 pb-2">
                         {(() => {
-                          const moduleProgress = moduleProgressById.get(Number(module.id));
-                          const isQuizCompleted = Boolean(moduleProgress?.quiz_passed);
+                          const moduleProgress = moduleProgressById.get(
+                            Number(module.id),
+                          );
+                          const isQuizCompleted = Boolean(
+                            moduleProgress?.quiz_passed,
+                          );
                           return (
                             <button
-                              onClick={() => navigate(`/learning/${courseId}/quiz/${module.id}`)}
+                              onClick={() =>
+                                navigate(
+                                  `/learning/${courseId}/quiz/${module.id}`,
+                                )
+                              }
                               className="w-full flex items-start gap-3 py-2 pl-2 pr-2 rounded-lg text-left transition-all group border border-transparent hover:bg-accent dark:hover:bg-white/[0.04]"
                             >
                               <div className="flex-shrink-0 mt-0.5">
                                 {isQuizCompleted ? (
                                   <CheckCircle2 className="h-[18px] w-[18px] text-green-600 dark:text-green-400 transition-colors" />
                                 ) : (
-                                  <Circle className="h-[18px] w-[18px] text-amber-500 group-hover:text-amber-400 transition-colors" />
+                                  <Circle className="h-[18px] w-[18px] text-blue-500 group-hover:text-amber-400 transition-colors" />
                                 )}
                               </div>
                               <div className="flex-1 pr-2">
-                                <h5 className={cn(
-                                  "text-[14px] font-bold transition-colors leading-snug",
-                                  isQuizCompleted ? "text-green-600 dark:text-green-400" : "text-amber-500 group-hover:text-amber-400"
-                                )}>
+                                <h5
+                                  className={cn(
+                                    "text-[14px] font-bold transition-colors leading-snug",
+                                    isQuizCompleted
+                                      ? "text-green-600 dark:text-green-400"
+                                      : "text-blue-500 group-hover:text-black-400",
+                                  )}
+                                >
                                   Module Quiz
                                 </h5>
                                 <p className="text-[13px] text-muted-foreground dark:text-slate-400 mt-0.5">
-                                  {isQuizCompleted ? "Completed" : "Required before next module"}
+                                  {isQuizCompleted
+                                    ? "Completed"
+                                    : "Required before next module"}
                                 </p>
                               </div>
                             </button>
@@ -984,7 +1239,7 @@ export const LessonPage: React.FC = () => {
                   "w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all group border border-transparent",
                   canOpenFinalAssessment
                     ? "hover:bg-accent dark:hover:bg-white/[0.04]"
-                    : "opacity-55 cursor-not-allowed"
+                    : "opacity-55 cursor-not-allowed",
                 )}
               >
                 <div className="flex-shrink-0 mt-0.5">

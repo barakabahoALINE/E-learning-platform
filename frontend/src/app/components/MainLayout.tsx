@@ -10,14 +10,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { Input } from "./ui/input";
+import { GlobalSearch } from "./GlobalSearch";
 import {
   LayoutDashboard,
   BookOpen,
   Settings,
   LogOut,
   User,
-  Search,
   Menu,
   X,
   CreditCard,
@@ -44,7 +43,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Courses", href: "/courses", icon: BookOpen },
-    { name: 'My Learning', href: '/my-learning', icon: Award, authOnly: true },
+    { name: "My Learning", href: "/my-learning", icon: Award, authOnly: true },
     { name: "Pricing", href: "/pricing", icon: CreditCard },
   ];
 
@@ -93,15 +92,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
             {/* Search & User Menu */}
             <div className="flex items-center space-x-4">
-              <div className="hidden lg:block w-64">
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                  <Input
-                    type="search"
-                    placeholder="Search courses..."
-                    className="pl-10"
-                  />
-                </div>
+              <div className="hidden lg:block w-80">
+                <GlobalSearch />
               </div>
 
               <ThemeToggle />
@@ -113,13 +105,20 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     className="relative h-10 w-10 rounded-full"
                   >
                     <Avatar>
-                      <AvatarImage src={getMediaUrl(user?.profile_picture || user?.avatar, '')} alt={displayName} />
+                      <AvatarImage
+                        src={getMediaUrl(
+                          user?.profile_picture || user?.avatar,
+                          "",
+                        )}
+                        alt={displayName}
+                      />
                       <AvatarFallback>
                         {displayName
                           ?.split(" ")
                           .map((n) => n[0])
                           .join("")
-                          .toUpperCase().slice(0, 2)}
+                          .toUpperCase()
+                          .slice(0, 2)}
                       </AvatarFallback>
                     </Avatar>
                   </Button>
@@ -129,7 +128,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium">{displayName}</p>
                       <p className="text-xs text-gray-500">{user?.email}</p>
-                      {user?.role && <p className="text-xs text-gray-400">{user.role}</p>}
+                      {user?.role && (
+                        <p className="text-xs text-gray-400">{user.role}</p>
+                      )}
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
