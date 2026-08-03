@@ -7,7 +7,13 @@ import { Checkbox } from "../components/ui/checkbox";
 import { Label } from "../components/ui/label";
 import { Input } from "../components/ui/input";
 import { ScrollArea, ScrollBar } from "../components/ui/scroll-area";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "../components/ui/sheet";
 import { MainLayout } from "../components/MainLayout";
 import {
   Select,
@@ -25,15 +31,26 @@ import {
   Search,
   Loader2,
 } from "lucide-react";
-import { fetchCourses, fetchCategories, fetchLevels } from "../../features/courses/courseSlice";
+import {
+  fetchCourses,
+  fetchCategories,
+  fetchLevels,
+} from "../../features/courses/courseSlice";
 import { Category, Level } from "../../features/courses/types";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
+import { selectSearchQuery } from "../../features/search/searchSelectors";
+import {
+  runGlobalSearch,
+  setSearchQuery,
+} from "../../features/search/searchSlice";
 import { getMediaUrl } from "../utils/media";
 
 export const CoursesPage: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { courses, categories, levels, isLoading } = useAppSelector((state) => state.courses);
-  const [searchQuery, setSearchQuery] = useState("");
+  const { courses, categories, levels, isLoading } = useAppSelector(
+    (state) => state.courses,
+  );
+  const searchQuery = useAppSelector(selectSearchQuery);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
   const [priceFilter, setPriceFilter] = useState<string>("all");
@@ -46,6 +63,12 @@ export const CoursesPage: React.FC = () => {
     dispatch(fetchCategories());
     dispatch(fetchLevels());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      dispatch(runGlobalSearch(searchQuery));
+    }
+  }, [searchQuery, dispatch]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -63,7 +86,9 @@ export const CoursesPage: React.FC = () => {
 
   const toggleLevel = (levelId: number) => {
     setSelectedLevels((prev) =>
-      prev.includes(levelId) ? prev.filter((l) => l !== levelId) : [...prev, levelId],
+      prev.includes(levelId)
+        ? prev.filter((l) => l !== levelId)
+        : [...prev, levelId],
     );
   };
 
@@ -72,9 +97,15 @@ export const CoursesPage: React.FC = () => {
       course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       course.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesCategory = !selectedCategory || Number(course.category_id) === selectedCategory;
-    const courseLevelId = course.level || levels.find(l => l.name === course.level)?.id;
-    const matchesLevel = selectedLevels.length === 0 || (courseLevelId !== undefined && courseLevelId !== null && selectedLevels.includes(Number(courseLevelId)));
+    const matchesCategory =
+      !selectedCategory || Number(course.category_id) === selectedCategory;
+    const courseLevelId =
+      course.level || levels.find((l) => l.name === course.level)?.id;
+    const matchesLevel =
+      selectedLevels.length === 0 ||
+      (courseLevelId !== undefined &&
+        courseLevelId !== null &&
+        selectedLevels.includes(Number(courseLevelId)));
 
     const isFree = Number(course.price) === 0;
     const matchesPrice =
@@ -86,8 +117,15 @@ export const CoursesPage: React.FC = () => {
   });
 
   const sortedCourses = [...filteredCourses].sort((a, b) => {
-    if (sortBy === "popular") return (b.enrolled_students_count || 0) - (a.enrolled_students_count || 0);
-    if (sortBy === "newest") return new Date(b.created_at || "").getTime() - new Date(a.created_at || "").getTime();
+    if (sortBy === "popular")
+      return (
+        (b.enrolled_students_count || 0) - (a.enrolled_students_count || 0)
+      );
+    if (sortBy === "newest")
+      return (
+        new Date(b.created_at || "").getTime() -
+        new Date(a.created_at || "").getTime()
+      );
     if (sortBy === "price-low") return a.price - b.price;
     if (sortBy === "price-high") return b.price - a.price;
     return 0;
@@ -97,7 +135,19 @@ export const CoursesPage: React.FC = () => {
     setSelectedCategory(null);
     setSelectedLevels([]);
     setPriceFilter("all");
-    setSearchQuery("");
+    dispatch(setSearchQuery(""));
+  };
+
+  const handleSearchKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === "Escape") {
+      dispatch(setSearchQuery(""));
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
   };
 
   const activeFiltersCount =
@@ -124,14 +174,21 @@ export const CoursesPage: React.FC = () => {
               type="search"
               placeholder="Search for courses..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => dispatch(setSearchQuery(e.target.value))}
+              onKeyDown={handleSearchKeyDown}
               className="pl-10 h-11"
             />
           </div>
           <div className="flex gap-2">
-            <Sheet open={isMobileFiltersOpen} onOpenChange={setIsMobileFiltersOpen}>
+            <Sheet
+              open={isMobileFiltersOpen}
+              onOpenChange={setIsMobileFiltersOpen}
+            >
               <SheetTrigger asChild>
-                <Button variant="outline" className="flex md:hidden items-center flex-1">
+                <Button
+                  variant="outline"
+                  className="flex md:hidden items-center flex-1"
+                >
                   <Filter className="mr-2 h-4 w-4" />
                   Filters
                   {activeFiltersCount > 0 && (
@@ -141,7 +198,11 @@ export const CoursesPage: React.FC = () => {
                   )}
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[300px] sm:w-[400px] p-6" aria-describedby={undefined}>
+              <SheetContent
+                side="left"
+                className="w-[300px] sm:w-[400px] p-6"
+                aria-describedby={undefined}
+              >
                 <SheetHeader>
                   <SheetTitle></SheetTitle>
                 </SheetHeader>
@@ -204,7 +265,9 @@ export const CoursesPage: React.FC = () => {
             {categories.map((category) => (
               <Button
                 key={category.id}
-                variant={selectedCategory === category.id ? "default" : "outline"}
+                variant={
+                  selectedCategory === category.id ? "default" : "outline"
+                }
                 size="sm"
                 onClick={() => toggleCategory(category.id)}
                 className="rounded-full px-5 h-9"
@@ -218,7 +281,9 @@ export const CoursesPage: React.FC = () => {
 
         <div className="flex flex-col md:flex-row gap-6">
           {/* Filters Sidebar (Desktop) */}
-          <div className={`${showFilters ? 'hidden md:block' : 'hidden'} w-64 flex-shrink-0`}>
+          <div
+            className={`${showFilters ? "hidden md:block" : "hidden"} w-64 flex-shrink-0`}
+          >
             <Card className="sticky top-20 border-none bg-gray-50/50 shadow-none">
               <CardContent className="p-0">
                 <FilterSections
@@ -269,7 +334,9 @@ export const CoursesPage: React.FC = () => {
                           </div>
                           <div className="p-4">
                             <Badge variant="secondary" className="mb-2">
-                              {categories.find(c => c.id === course.category_id)?.name || "Uncategorized"}
+                              {categories.find(
+                                (c) => c.id === course.category_id,
+                              )?.name || "Uncategorized"}
                             </Badge>
                             <h3 className="font-medium mb-2 line-clamp-2">
                               {course.title}
@@ -280,10 +347,18 @@ export const CoursesPage: React.FC = () => {
 
                             <div className="flex items-center space-x-2 mb-3">
                               <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold">
-                                {course.admin ? course.admin.substring(0, 2).toUpperCase() : course.instructor ? course.instructor.substring(0, 2).toUpperCase() : "AD"}
+                                {course.admin
+                                  ? course.admin.substring(0, 2).toUpperCase()
+                                  : course.instructor
+                                    ? course.instructor
+                                        .substring(0, 2)
+                                        .toUpperCase()
+                                    : "AD"}
                               </div>
                               <span className="text-sm text-gray-600">
-                                {course.admin || course.instructor || "Platform Instructor"}
+                                {course.admin ||
+                                  course.instructor ||
+                                  "Platform Instructor"}
                               </span>
                             </div>
 
@@ -306,16 +381,26 @@ export const CoursesPage: React.FC = () => {
 
                             <div className="flex items-center justify-between pt-3 border-t">
                               <Badge variant="outline">
-                                {typeof course.level === 'string' && isNaN(Number(course.level)) ? course.level : (levels.find(l => l.id === course.level)?.name || "All Levels")}
+                                {typeof course.level === "string" &&
+                                isNaN(Number(course.level))
+                                  ? course.level
+                                  : levels.find((l) => l.id === course.level)
+                                      ?.name || "All Levels"}
                               </Badge>
                               <div className="font-medium">
                                 {Number(course.price) === 0 ? (
                                   <span className="text-green-600">Free</span>
                                 ) : (
-                                  <span>Frw {Number(course.price).toLocaleString('en-US', {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2
-                                  })}</span>
+                                  <span>
+                                    Frw{" "}
+                                    {Number(course.price).toLocaleString(
+                                      "en-US",
+                                      {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      },
+                                    )}
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -387,14 +472,19 @@ const FilterSections = ({
 
       {/* Price Filter */}
       <div className="space-y-4">
-        <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">Price</h4>
+        <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">
+          Price
+        </h4>
         <div className="space-y-3">
           {[
             { id: "all", label: "All Courses" },
             { id: "free", label: "Free" },
             { id: "paid", label: "Paid" },
           ].map((price) => (
-            <div key={price.id} className="flex items-center space-x-3 group cursor-pointer">
+            <div
+              key={price.id}
+              className="flex items-center space-x-3 group cursor-pointer"
+            >
               <Checkbox
                 id={`price-${price.id}`}
                 checked={priceFilter === price.id}
@@ -414,10 +504,15 @@ const FilterSections = ({
 
       {/* Level Filter */}
       <div className="space-y-4">
-        <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">Level</h4>
+        <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">
+          Level
+        </h4>
         <div className="space-y-3">
           {levels.map((level) => (
-            <div key={level.id} className="flex items-center space-x-3 group cursor-pointer">
+            <div
+              key={level.id}
+              className="flex items-center space-x-3 group cursor-pointer"
+            >
               <Checkbox
                 id={`level-${level.id}`}
                 checked={selectedLevels.includes(level.id)}

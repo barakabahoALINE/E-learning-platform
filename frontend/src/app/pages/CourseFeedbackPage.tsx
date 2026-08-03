@@ -1,21 +1,27 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Textarea } from '../components/ui/textarea';
-import { Label } from '../components/ui/label';
-import { Star, CheckCircle, Award } from 'lucide-react';
-import { useAppDispatch, useAppSelector } from '../../hooks/reduxHooks';
-import { fetchCourseDetails } from '../../features/courses/courseSlice';
-import { fetchCourseProgress } from '../../features/progress/progressSlice';
+import React, { useEffect, useState } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Textarea } from "../components/ui/textarea";
+import { Label } from "../components/ui/label";
+import { Star, CheckCircle, Award } from "lucide-react";
+import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
+import { fetchCourseDetails } from "../../features/courses/courseSlice";
+import { fetchCourseProgress } from "../../features/progress/progressSlice";
 import {
   claimCertificate,
   resetCertificateState,
   submitCertificateFeedback,
-} from '../../features/certificates/certificateSlice';
-import { toast } from 'sonner';
-import StatusModal from '../components/ui/StatusModal';
-import { FeedbackCreateData } from '../../features/certificates/types';
+} from "../../features/certificates/certificateSlice";
+import { toast } from "sonner";
+import StatusModal from "../components/ui/StatusModal";
+import { triggerCelebrationBubbleAnimation } from "../components/CelebrationBubbleAnimation";
+import { FeedbackCreateData } from "../../features/certificates/types";
 
 export const CourseFeedbackPage: React.FC = () => {
   const { courseId } = useParams();
@@ -27,17 +33,30 @@ export const CourseFeedbackPage: React.FC = () => {
   const [contentQuality, setContentQuality] = useState(0);
   const [instructorClarity, setInstructorClarity] = useState(0);
   const [platformUsability, setPlatformUsability] = useState(0);
-  const [textFeedback, setTextFeedback] = useState('');
-  const [hoveredRating, setHoveredRating] = useState<{ [key: string]: number }>({});
+  const [textFeedback, setTextFeedback] = useState("");
+  const [hoveredRating, setHoveredRating] = useState<{ [key: string]: number }>(
+    {},
+  );
   const [showMandatoryModal, setShowMandatoryModal] = useState(true);
 
-  const { courses, currentCourse, isLoading: courseLoading } = useAppSelector((state) => state.courses);
-  const progress = useAppSelector((state) => state.progress.courseProgress[numericCourseId]);
+  const {
+    courses,
+    currentCourse,
+    isLoading: courseLoading,
+  } = useAppSelector((state) => state.courses);
+  const progress = useAppSelector(
+    (state) => state.progress.courseProgress[numericCourseId],
+  );
   const certificateClaim = useAppSelector((state) => state.certificates.claim);
-  const certificateFeedback = useAppSelector((state) => state.certificates.feedback);
+  const certificateFeedback = useAppSelector(
+    (state) => state.certificates.feedback,
+  );
 
-  const course = courses.find((c) => String(c.id) === courseId) ||
-    (currentCourse && currentCourse.id === numericCourseId ? currentCourse : null);
+  const course =
+    courses.find((c) => String(c.id) === courseId) ||
+    (currentCourse && currentCourse.id === numericCourseId
+      ? currentCourse
+      : null);
 
   useEffect(() => {
     if (courseId && !Number.isNaN(numericCourseId)) {
@@ -80,7 +99,9 @@ export const CourseFeedbackPage: React.FC = () => {
     );
   }
 
-  const finalAssessmentCompleted = Boolean(progress?.final_passed || progress?.course_completed);
+  const finalAssessmentCompleted = Boolean(
+    progress?.final_passed || progress?.course_completed,
+  );
 
   if (!finalAssessmentCompleted) {
     return (
@@ -88,7 +109,8 @@ export const CourseFeedbackPage: React.FC = () => {
         <div className="text-center max-w-md">
           <h2 className="text-2xl mb-4">Final assessment required</h2>
           <p className="text-gray-600 mb-6">
-            Complete the final assessment before submitting feedback and unlocking your certificate.
+            Complete the final assessment before submitting feedback and
+            unlocking your certificate.
           </p>
           <Link to={`/learning/${courseId}/final-assessment`}>
             <Button>Go to Final Assessment</Button>
@@ -102,7 +124,7 @@ export const CourseFeedbackPage: React.FC = () => {
     value: number,
     setValue: (val: number) => void,
     label: string,
-    key: string
+    key: string,
   ) => {
     return (
       <div className="space-y-2">
@@ -113,20 +135,25 @@ export const CourseFeedbackPage: React.FC = () => {
               key={star}
               type="button"
               onClick={() => setValue(star)}
-              onMouseEnter={() => setHoveredRating({ ...hoveredRating, [key]: star })}
-              onMouseLeave={() => setHoveredRating({ ...hoveredRating, [key]: 0 })}
+              onMouseEnter={() =>
+                setHoveredRating({ ...hoveredRating, [key]: star })
+              }
+              onMouseLeave={() =>
+                setHoveredRating({ ...hoveredRating, [key]: 0 })
+              }
               className="focus:outline-none transition-transform hover:scale-110"
             >
               <Star
-                className={`w-8 h-8 ${star <= (hoveredRating[key] || value)
-                  ? 'fill-yellow-400 text-yellow-400'
-                  : 'text-gray-300'
-                  }`}
+                className={`w-8 h-8 ${
+                  star <= (hoveredRating[key] || value)
+                    ? "fill-yellow-400 text-yellow-400"
+                    : "text-gray-300"
+                }`}
               />
             </button>
           ))}
           <span className="ml-2 text-sm text-gray-600">
-            {value > 0 ? `${value}/5` : 'Not rated'}
+            {value > 0 ? `${value}/5` : "Not rated"}
           </span>
         </div>
       </div>
@@ -136,13 +163,18 @@ export const CourseFeedbackPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (courseRating === 0 || contentQuality === 0 || instructorClarity === 0 || platformUsability === 0) {
-      toast.error('Please provide all ratings');
+    if (
+      courseRating === 0 ||
+      contentQuality === 0 ||
+      instructorClarity === 0 ||
+      platformUsability === 0
+    ) {
+      toast.error("Please provide all ratings");
       return;
     }
 
     if (textFeedback.trim().length < 10) {
-      toast.error('Please provide detailed feedback (at least 10 characters)');
+      toast.error("Please provide detailed feedback (at least 10 characters)");
       return;
     }
 
@@ -155,11 +187,15 @@ export const CourseFeedbackPage: React.FC = () => {
     };
 
     try {
-      await dispatch(submitCertificateFeedback({ courseId: numericCourseId, payload })).unwrap();
-      toast.success('Thank you for your feedback!');
-      navigate(`/certificate/${courseId}`);
+      await dispatch(
+        submitCertificateFeedback({ courseId: numericCourseId, payload }),
+      ).unwrap();
+      toast.success("Thank you for your feedback!");
+      triggerCelebrationBubbleAnimation(() => {
+        navigate(`/certificate/${courseId}`);
+      }); // CELEBRATION ANIMATION TRIGGER - added feature, safe to remove
     } catch (submitError: any) {
-      toast.error(submitError || 'Failed to submit feedback.');
+      toast.error(submitError || "Failed to submit feedback.");
     }
   };
 
@@ -171,7 +207,9 @@ export const CourseFeedbackPage: React.FC = () => {
             <CheckCircle className="w-12 h-12 text-green-600" />
           </div>
           <h1 className="text-4xl mb-2">Course Completed! 🎉</h1>
-          <p className="text-xl text-gray-600">One last step before getting your certificate</p>
+          <p className="text-xl text-gray-600">
+            One last step before getting your certificate
+          </p>
         </div>
 
         <Card className="shadow-2xl">
@@ -181,7 +219,8 @@ export const CourseFeedbackPage: React.FC = () => {
               Share Your Learning Experience
             </CardTitle>
             <p className="text-sm text-gray-600 mt-2">
-              Your feedback helps us improve the course quality and helps other learners make informed decisions.
+              Your feedback helps us improve the course quality and helps other
+              learners make informed decisions.
             </p>
           </CardHeader>
           <CardContent>
@@ -189,17 +228,40 @@ export const CourseFeedbackPage: React.FC = () => {
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
                 <p className="text-sm text-gray-600">Course</p>
                 <p className="font-medium text-lg">{course.title}</p>
-                <p className="text-sm text-gray-500">by {course.instructor || course.admin || 'Instructor'}</p>
+                <p className="text-sm text-gray-500">
+                  by {course.instructor || course.admin || "Instructor"}
+                </p>
               </div>
 
-              {renderStarRating(courseRating, setCourseRating, '1. Overall Course Rating', 'course')}
-              {renderStarRating(contentQuality, setContentQuality, '2. Content Quality', 'content')}
-              {renderStarRating(instructorClarity, setInstructorClarity, '3. Instructor Clarity', 'instructor')}
-              {renderStarRating(platformUsability, setPlatformUsability, '4. Platform Usability', 'platform')}
+              {renderStarRating(
+                courseRating,
+                setCourseRating,
+                "1. Overall Course Rating",
+                "course",
+              )}
+              {renderStarRating(
+                contentQuality,
+                setContentQuality,
+                "2. Content Quality",
+                "content",
+              )}
+              {renderStarRating(
+                instructorClarity,
+                setInstructorClarity,
+                "3. Instructor Clarity",
+                "instructor",
+              )}
+              {renderStarRating(
+                platformUsability,
+                setPlatformUsability,
+                "4. Platform Usability",
+                "platform",
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="feedback">
-                  5. What did you like most about this course? Any suggestions for improvement?
+                  5. What did you like most about this course? Any suggestions
+                  for improvement?
                   <span className="text-red-500 ml-1">*</span>
                 </Label>
                 <Textarea
@@ -210,16 +272,22 @@ export const CourseFeedbackPage: React.FC = () => {
                   className="min-h-[120px]"
                   required
                 />
-                <p className="text-xs text-gray-500">{textFeedback.length} characters (minimum 10 required)</p>
+                <p className="text-xs text-gray-500">
+                  {textFeedback.length} characters (minimum 10 required)
+                </p>
               </div>
 
               {certificateFeedback.error && (
-                <p className="text-sm text-red-600">{certificateFeedback.error}</p>
+                <p className="text-sm text-red-600">
+                  {certificateFeedback.error}
+                </p>
               )}
 
               <div className="flex items-center justify-between pt-6 border-t">
                 <Link to={`/course/${courseId}`}>
-                  <Button type="button" variant="outline">Back to Course</Button>
+                  <Button type="button" variant="outline">
+                    Back to Course
+                  </Button>
                 </Link>
                 <Button
                   type="submit"
@@ -227,7 +295,9 @@ export const CourseFeedbackPage: React.FC = () => {
                   className="bg-blue-600 hover:-blue-700"
                   disabled={certificateFeedback.loading}
                 >
-                  {certificateFeedback.loading ? 'Submitting...' : 'Submit Feedback & Get Certificate'}
+                  {certificateFeedback.loading
+                    ? "Submitting..."
+                    : "Submit Feedback & Get Certificate"}
                 </Button>
               </div>
             </form>
@@ -235,7 +305,8 @@ export const CourseFeedbackPage: React.FC = () => {
         </Card>
 
         <p className="text-center text-sm text-gray-500 mt-4">
-          Your feedback will be kept confidential and used only for improving course quality.
+          Your feedback will be kept confidential and used only for improving
+          course quality.
         </p>
       </div>
       <StatusModal

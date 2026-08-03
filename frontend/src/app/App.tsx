@@ -36,6 +36,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
 import { DashboardPage as AdminDashboardPage } from "./pages/Dashboard";
+import { SearchResultsPage } from "./pages/SearchResultsPage";
 import { LearnersPage } from "./pages/Learners";
 import { CoursesPage as AdminCoursesPage } from "./pages/Courses";
 import { CourseBuilderPage } from "./pages/CourseBuilder";
@@ -267,6 +268,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <ProfilePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search"
+          element={
+            <ProtectedRoute>
+              <SearchResultsPage />
             </ProtectedRoute>
           }
         />

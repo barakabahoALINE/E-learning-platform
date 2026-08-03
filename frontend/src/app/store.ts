@@ -6,6 +6,7 @@ import progressReducer from '../features/progress/progressSlice';
 import assessmentReducer from '../features/assessments/assessmentSlice';
 import certificateReducer from '../features/certificates/certificateSlice';
 import rbacReducer from '../features/rbac/rbacSlice';
+import searchReducer from '../features/search/searchSlice';
 
 export const store = configureStore({
   reducer: {
@@ -16,6 +17,7 @@ export const store = configureStore({
     assessments: assessmentReducer,
     certificates: certificateReducer,
     rbac: rbacReducer,
+    search: searchReducer,
   },
 });
 
