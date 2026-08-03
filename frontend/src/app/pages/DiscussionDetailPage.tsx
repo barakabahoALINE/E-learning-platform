@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -14,16 +14,26 @@ import {
   Heart,
 } from "lucide-react";
 import { MainLayout } from "../components/MainLayout";
-import { useAppSelector } from "../../hooks/reduxHooks";
+import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
 import {
-  useCommunity,
-  formatRelativeTime,
-  getInitials,
+  fetchCommunityDiscussion,
+  fetchCommunityReplies,
+  fetchCommunityLikes,
+  createCommunityReply,
+  updateCommunityDiscussion,
+  deleteCommunityDiscussion,
+  updateCommunityReply,
+  deleteCommunityReply,
+  createCommunityLike,
+  deleteCommunityLike,
+} from "../../features/community/communitySlice";
+import {
   CommunityDiscussion,
   CommunityReply,
-} from "../data/community-data";
-import { LikeItemType, useLikeState } from "../data/like-data";
+  LikeItemType,
+} from "../../features/community/types";
+import { formatRelativeTime, getInitials } from "../data/community-data";
 
 // ── Reply Item ─────────────────────────────────────────────────────────────────
 
@@ -175,6 +185,7 @@ const ReplyItem: React.FC<ReplyItemProps> = ({
 export const DiscussionDetailPage: React.FC = () => {
   const { discussionId } = useParams();
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const reduxUser = useAppSelector(selectCurrentUser);
   const user = reduxUser
     ? {
@@ -182,19 +193,13 @@ export const DiscussionDetailPage: React.FC = () => {
         name: reduxUser.full_name || reduxUser.email?.split("@")[0] || "User",
       }
     : null;
-  const {
-    discussions,
-    replies,
-    editDiscussion,
-    deleteDiscussion,
-    addReply,
-    editReply,
-    deleteReply,
-  } = useCommunity();
-
-  const discussion = discussions.find(
-    (d: CommunityDiscussion) => d.id === discussionId,
+  const { discussions, discussionById, replies, likes } = useAppSelector(
+    (state) => state.community,
   );
+
+  const discussion = discussionId
+    ? discussionById[discussionId] || discussions.find((d) => d.id === discussionId)
+    : undefined;
   const threadReplies = replies
     .filter((r: CommunityReply) => r.discussionId === discussionId)
     .sort(
@@ -210,16 +215,31 @@ export const DiscussionDetailPage: React.FC = () => {
   );
   const [likeError, setLikeError] = useState<string | null>(null);
   const [likeLoading, setLikeLoading] = useState<Record<string, boolean>>({});
-  const { getSummary, toggleLike } = useLikeState(user?.id);
 
-  const discussionLike = discussion
-    ? getSummary("discussion", discussion.id)
-    : {
-        itemType: "discussion" as const,
-        itemId: "",
-        likeCount: 0,
-        likedByCurrentUser: false,
-      };
+  useEffect(() => {
+    if (!discussionId) return;
+    dispatch(fetchCommunityDiscussion(discussionId));
+    dispatch(fetchCommunityReplies(discussionId));
+    dispatch(fetchCommunityLikes());
+  }, [discussionId, dispatch]);
+
+  useEffect(() => {
+    if (discussion && !editingQuestion) {
+      setEditTitle(discussion.title);
+      setEditDescription(discussion.description);
+    }
+  }, [discussion, editingQuestion]);
+
+  const getItemLike = (itemType: LikeItemType, itemId: string) => {
+    const like = likes.find(
+      (likeItem) => likeItem.itemType === itemType && likeItem.itemId === itemId,
+    );
+    return {
+      likeCount: like ? 1 : 0,
+      likedByCurrentUser: Boolean(like),
+      likeId: like?.id,
+    };
+  };
 
   const handleToggleItemLike = async (
     itemType: LikeItemType,
@@ -229,21 +249,117 @@ export const DiscussionDetailPage: React.FC = () => {
       setLikeError("Sign in to like content.");
       return;
     }
+
     const key = `${itemType}:${itemId}`;
     setLikeError(null);
     setLikeLoading((prev) => ({ ...prev, [key]: true }));
+
+    const existingLike = likes.find(
+      (likeItem) => likeItem.itemType === itemType && likeItem.itemId === itemId,
+    );
+
     try {
-      await toggleLike(itemType, itemId);
-    } catch (error) {
+      if (existingLike) {
+        await dispatch(deleteCommunityLike(existingLike.id)).unwrap();
+      } else {
+        await dispatch(createCommunityLike({ itemType, itemId })).unwrap();
+      }
+    } catch (error: any) {
       setLikeError(
-        error instanceof Error
-          ? error.message
-          : "Unable to update like. Please try again.",
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to update like. Please try again.',
       );
     } finally {
       setLikeLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
+
+  const handleDeleteDiscussion = async () => {
+    if (!discussion) return;
+    if (!window.confirm("Delete this discussion? This cannot be undone.")) return;
+
+    try {
+      await dispatch(deleteCommunityDiscussion(discussion.id)).unwrap();
+      navigate("/community");
+    } catch (error: any) {
+      setLikeError(
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to delete discussion. Please try again.',
+      );
+    }
+  };
+
+  const handleSaveQuestion = async () => {
+    if (!discussion || !editTitle.trim() || !editDescription.trim()) return;
+    try {
+      await dispatch(
+        updateCommunityDiscussion({
+          discussionId: discussion.id,
+          title: editTitle.trim(),
+          description: editDescription.trim(),
+        }),
+      ).unwrap();
+      setEditingQuestion(false);
+    } catch (error: any) {
+      setLikeError(
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to update discussion. Please try again.',
+      );
+    }
+  };
+
+  const handlePostReply = async () => {
+    if (!discussion || !replyText.trim()) return;
+
+    try {
+      await dispatch(
+        createCommunityReply({ discussionId: discussion.id, content: replyText.trim() }),
+      ).unwrap();
+      setReplyText("");
+    } catch (error: any) {
+      setLikeError(
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to post reply. Please try again.',
+      );
+    }
+  };
+
+  const handleEditReply = async (replyId: string, content: string) => {
+    try {
+      await dispatch(updateCommunityReply({ replyId, content })).unwrap();
+    } catch (error: any) {
+      setLikeError(
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to update reply. Please try again.',
+      );
+    }
+  };
+
+  const handleDeleteReply = async (replyId: string) => {
+    if (!window.confirm('Delete this reply?')) return;
+    try {
+      await dispatch(deleteCommunityReply(replyId)).unwrap();
+    } catch (error: any) {
+      setLikeError(
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to delete reply. Please try again.',
+      );
+    }
+  };
+
+  const discussionLike = discussion
+    ? getItemLike("discussion", discussion.id)
+    : {
+        likeCount: 0,
+        likedByCurrentUser: false,
+        likeId: undefined,
+      };
 
   if (!discussion) {
     return (
@@ -262,26 +378,6 @@ export const DiscussionDetailPage: React.FC = () => {
   }
 
   const isQuestionOwner = user?.id === discussion.authorId;
-
-  const handleDeleteDiscussion = () => {
-    if (window.confirm("Delete this discussion? This cannot be undone.")) {
-      deleteDiscussion(discussion.id);
-      navigate("/community");
-    }
-  };
-
-  const handleSaveQuestion = () => {
-    if (editTitle.trim() && editDescription.trim()) {
-      editDiscussion(discussion.id, editTitle.trim(), editDescription.trim());
-    }
-    setEditingQuestion(false);
-  };
-
-  const handlePostReply = () => {
-    if (!replyText.trim() || !user) return;
-    addReply(discussion.id, replyText.trim(), user.id, user.name);
-    setReplyText("");
-  };
 
   return (
     <MainLayout>
@@ -432,7 +528,7 @@ export const DiscussionDetailPage: React.FC = () => {
               </h2>
               <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {threadReplies.map((r: CommunityReply) => {
-                  const replyLike = getSummary("reply", r.id);
+                  const replyLike = getItemLike("reply", r.id);
                   return (
                     <ReplyItem
                       key={r.id}
@@ -446,8 +542,8 @@ export const DiscussionDetailPage: React.FC = () => {
                       likedByCurrentUser={replyLike.likedByCurrentUser}
                       isLikeLoading={Boolean(likeLoading[`reply:${r.id}`])}
                       onToggleLike={() => handleToggleItemLike("reply", r.id)}
-                      onEdit={editReply}
-                      onDelete={deleteReply}
+                      onEdit={handleEditReply}
+                      onDelete={handleDeleteReply}
                     />
                   );
                 })}
