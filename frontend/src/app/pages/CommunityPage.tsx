@@ -1,9 +1,8 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import {
   MessageSquare,
   Search,
@@ -15,16 +14,17 @@ import {
   Heart,
 } from "lucide-react";
 import { MainLayout } from "../components/MainLayout";
-import { useAppSelector } from "../../hooks/reduxHooks";
+import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
 import {
-  useCommunity,
-  formatRelativeTime,
-  getInitials,
-  normalizeCourseId,
-  CommunityDiscussion,
-} from "../data/community-data";
-import { useLikeState } from "../data/like-data";
+  fetchCommunityDiscussions,
+  fetchCommunityLikes,
+  createCommunityDiscussion,
+  createCommunityLike,
+  deleteCommunityLike,
+} from "../../features/community/communitySlice";
+import { CommunityDiscussion } from "../../features/community/types";
+import { formatRelativeTime, getInitials, normalizeCourseId } from "../data/community-data";
 import AskDiscussionModal from "../components/AskDiscussionModal";
 
 // ── Ask Question Modal ─────────────────────────────────────────────────────────
@@ -163,6 +163,7 @@ const DiscussionRow: React.FC<DiscussionRowProps> = ({
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export const CommunityPage: React.FC = () => {
+  const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const reduxUser = useAppSelector(selectCurrentUser);
   const user = reduxUser
@@ -175,6 +176,7 @@ export const CommunityPage: React.FC = () => {
   // Get enrolled courses from Redux
   const { myEnrollments } = useAppSelector((state) => state.enrollments);
   const { courses } = useAppSelector((state) => state.courses);
+  const { discussions, likes } = useAppSelector((state) => state.community);
 
   const enrolledCourses = myEnrollments
     .filter((enrollment) => enrollment.status !== "cancelled")
@@ -186,20 +188,25 @@ export const CommunityPage: React.FC = () => {
       };
     });
 
-  const { discussions, addDiscussion } = useCommunity();
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [likeLoading, setLikeLoading] = useState<Record<string, boolean>>({});
   const [likeError, setLikeError] = useState<string | null>(null);
-  const { getSummary, toggleLike } = useLikeState(user?.id);
 
-  const enrolledIds = new Set(
-    enrolledCourses.map((course) => normalizeCourseId(course.id)),
-  );
-  const enrolledCoursesSimple = enrolledCourses.map((c) => ({
-    id: c.id,
-    title: c.title,
-  }));
+  useEffect(() => {
+    dispatch(fetchCommunityDiscussions());
+    dispatch(fetchCommunityLikes());
+  }, [dispatch]);
+
+  const getDiscussionLike = (discussionId: string) => {
+    const like = likes.find(
+      (likeItem) => likeItem.itemType === 'discussion' && likeItem.itemId === discussionId,
+    );
+    return {
+      likeCount: like ? 1 : 0,
+      likedByCurrentUser: Boolean(like),
+    };
+  };
 
   const handleToggleDiscussionLike = async (discussionId: string) => {
     if (!user) {
@@ -210,18 +217,35 @@ export const CommunityPage: React.FC = () => {
     const key = `discussion:${discussionId}`;
     setLikeError(null);
     setLikeLoading((prev) => ({ ...prev, [key]: true }));
+
+    const existingLike = likes.find(
+      (likeItem) => likeItem.itemType === 'discussion' && likeItem.itemId === discussionId,
+    );
+
     try {
-      await toggleLike("discussion", discussionId);
-    } catch (error) {
+      if (existingLike) {
+        await dispatch(deleteCommunityLike(existingLike.id)).unwrap();
+      } else {
+        await dispatch(createCommunityLike({ itemType: 'discussion', itemId: discussionId })).unwrap();
+      }
+    } catch (error: any) {
       setLikeError(
-        error instanceof Error
-          ? error.message
-          : "Unable to update like. Please try again.",
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to update like. Please try again.',
       );
     } finally {
       setLikeLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
+
+  const enrolledIds = new Set(
+    enrolledCourses.map((course) => normalizeCourseId(course.id)),
+  );
+  const enrolledCoursesSimple = enrolledCourses.map((c) => ({
+    id: c.id,
+    title: c.title,
+  }));
 
   const visibleDiscussions = useMemo<CommunityDiscussion[]>(() => {
     const query = search.trim().toLowerCase();
@@ -347,7 +371,7 @@ export const CommunityPage: React.FC = () => {
                 <CardContent className="p-5">
                   <div className="space-y-4">
                     {visibleDiscussions.map((d) => {
-                      const discussionLike = getSummary("discussion", d.id);
+                      const discussionLike = getDiscussionLike(d.id);
                       return (
                         <DiscussionRow
                           key={d.id}
@@ -379,19 +403,29 @@ export const CommunityPage: React.FC = () => {
         <AskDiscussionModal
           enrolledCourses={enrolledCoursesSimple}
           defaultCourseId={enrolledCoursesSimple[0]?.id}
-          onPost={(cId, cTitle, title, desc) => {
-            const newId = addDiscussion(
-              cId,
-              cTitle,
-              title,
-              desc,
-              user.id,
-              user.name,
-            );
-            // close modal and navigate to discussion
-            setShowModal(false);
-            navigate(`/community/${newId}`);
-            return newId;
+          onPost={async (cId, cTitle, title, desc) => {
+            try {
+              const result = await dispatch(
+                createCommunityDiscussion({
+                  course_id: cId,
+                  course_title: cTitle,
+                  title,
+                  description: desc,
+                }),
+              ).unwrap();
+
+              const newId = String(result.data.id);
+              setShowModal(false);
+              navigate(`/community/${newId}`);
+              return newId;
+            } catch (error) {
+              setLikeError(
+                typeof error === 'string'
+                  ? error
+                  : error?.message || 'Unable to post discussion. Please try again.',
+              );
+              return '';
+            }
           }}
           onClose={() => setShowModal(false)}
         />

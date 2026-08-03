@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     'progress_app',
     'assessments_app',
     'certificate_app',
-    
+    'community_app',
 ]
 
 MIDDLEWARE = [
