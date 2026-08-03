@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, ArrowRight, BookOpenCheck, CheckCircle, Clock, Loader2, Save, ShieldAlert, Target, Trophy, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -14,6 +14,11 @@ import { Progress } from '../components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Checkbox } from '../components/ui/checkbox';
 import StatusModal from '../components/ui/StatusModal';
+import {
+    clearAssessmentSessionData,
+    loadAssessmentSessionData,
+    saveAssessmentSessionData,
+} from '../../features/assessments/finalAssessmentSession';
 
 type AssessmentChoice = {
     id: number;
@@ -111,8 +116,9 @@ export const FinalAssessmentPage: React.FC = () => {
     const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [lockedMessage, setLockedMessage] = useState<string | null>(null);
     const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+    const activeAttemptRef = useRef<number | null>(null);
 
-    const sessionKey = `final-assessment-session-${courseId}`;
+    const sessionKey = attemptId !== null ? `final-assessment-session-${courseId}-${attemptId}` : `final-assessment-session-${courseId}`;
     const progress = numericCourseId ? courseProgress[numericCourseId] : undefined;
     const assessment = course?.final_assessment;
     const questions = assessment?.questions || [];
@@ -131,37 +137,30 @@ export const FinalAssessmentPage: React.FC = () => {
     }, [course?.id, dispatch, numericCourseId]);
 
     useEffect(() => {
-        if (!assessment || !courseId || showInstructions) return;
+        if (!assessment || !courseId || showInstructions || attemptId === null) return;
 
-        const storedSession = localStorage.getItem(sessionKey);
+        const storedSession = loadAssessmentSessionData(courseId, attemptId);
         if (storedSession) {
-            try {
-                const parsed = JSON.parse(storedSession);
-                setStartTime(new Date(parsed.startTime));
-                setEndTime(parsed.endTime ? new Date(parsed.endTime) : null);
-                setCurrentQuestion(parsed.currentQuestion || 0);
+            setStartTime(new Date(storedSession.startTime));
+            setEndTime(storedSession.endTime ? new Date(storedSession.endTime) : null);
+            setCurrentQuestion(storedSession.currentQuestion || 0);
 
-                // Normalize selectedAnswers to hold arrays
-                const restored = parsed.selectedAnswers || {};
-                const normalized: AnswerMap = {};
-                Object.entries(restored).forEach(([key, val]) => {
-                    normalized[Number(key)] = Array.isArray(val) ? val : [val as number | string];
-                });
-                setSelectedAnswers(normalized);
-
-                setTabSwitches(parsed.tabSwitches || 0);
-                setLastSavedAt(new Date());
-                toast.info('Assessment session restored.');
-                return;
-            } catch {
-                localStorage.removeItem(sessionKey);
-            }
+            const restored = storedSession.selectedAnswers || {};
+            const normalized: AnswerMap = {};
+            Object.entries(restored).forEach(([key, val]) => {
+                normalized[Number(key)] = Array.isArray(val) ? val : [val as number | string];
+            });
+            setSelectedAnswers(normalized);
+            setTabSwitches(storedSession.tabSwitches || 0);
+            setLastSavedAt(new Date());
+            toast.info('Assessment session restored.');
+            return;
         }
 
         const now = new Date();
         setStartTime(now);
         setEndTime(new Date(now.getTime() + examDurationMinutes * 60 * 1000));
-    }, [assessment, courseId, sessionKey, showInstructions]);
+    }, [assessment, attemptId, courseId, examDurationMinutes, showInstructions]);
 
     useEffect(() => {
         if (question?.question_type !== 'matching') {
@@ -215,7 +214,7 @@ export const FinalAssessmentPage: React.FC = () => {
     const submitAssessment = async () => {
         const score = calculateScore();
 
-        if (!attemptId) return;
+        if (!attemptId || activeAttemptRef.current !== attemptId) return;
 
         setIsAttemptLoading(true);
         try {
@@ -226,7 +225,8 @@ export const FinalAssessmentPage: React.FC = () => {
                 pass_mark: response.data?.pass_mark ?? passMark,
             });
             setShowResults(true);
-            localStorage.removeItem(sessionKey);
+            clearAssessmentSessionData(courseId, attemptId);
+            activeAttemptRef.current = null;
             dispatch(fetchCourseProgress(numericCourseId));
             toast.success('Final assessment submitted.');
         } catch (error: any) {
@@ -256,19 +256,19 @@ export const FinalAssessmentPage: React.FC = () => {
     useEffect(() => {
         if (!startTime || !endTime || showResults || showInstructions) return;
 
-        localStorage.setItem(sessionKey, JSON.stringify({
+        saveAssessmentSessionData(courseId, attemptId, {
             startTime: startTime.toISOString(),
             endTime: endTime.toISOString(),
             currentQuestion,
             selectedAnswers,
             tabSwitches,
-        }));
+        });
         setLastSavedAt(new Date());
-    }, [currentQuestion, endTime, selectedAnswers, sessionKey, showInstructions, showResults, startTime, tabSwitches]);
+    }, [attemptId, courseId, currentQuestion, endTime, selectedAnswers, showInstructions, showResults, startTime, tabSwitches]);
 
     // Countdown timer — ticks every second while the assessment is active
     useEffect(() => {
-        if (!endTime || showInstructions || showResults) return;
+        if (!endTime || !attemptId || showInstructions || showResults) return;
 
         const tick = () => {
             const now = new Date();
@@ -283,7 +283,7 @@ export const FinalAssessmentPage: React.FC = () => {
         tick(); // run immediately
         const interval = setInterval(tick, 1000);
         return () => clearInterval(interval);
-    }, [endTime, showInstructions, showResults]);
+    }, [attemptId, endTime, showInstructions, showResults]);
 
     useEffect(() => {
         if (!assessment || !assessment.tab_switch_enabled) return;
@@ -322,7 +322,7 @@ export const FinalAssessmentPage: React.FC = () => {
                 // Immediately update local counter for responsiveness
                 setTabSwitches((c) => c + 1);
 
-                if (attemptId != null) {
+                if (attemptId != null && activeAttemptRef.current === attemptId) {
                     try {
                         const resp = await assessmentAPI.tabSwitchEvent(attemptId);
                         // resp may be the axios data or full response; normalize
@@ -343,7 +343,8 @@ export const FinalAssessmentPage: React.FC = () => {
                                     pass_mark: resultPayload?.pass_mark ?? passMark,
                                 });
                                 setShowResults(true);
-                                localStorage.removeItem(sessionKey);
+                                clearAssessmentSessionData(courseId, attemptId);
+                                activeAttemptRef.current = null;
                                 dispatch(fetchCourseProgress(numericCourseId));
                                 toast.info('Attempt auto-submitted due to tab-switch limit.');
                             } catch (err: any) {
@@ -378,16 +379,28 @@ export const FinalAssessmentPage: React.FC = () => {
     const startAssessment = async () => {
         if (!assessment?.id) return;
 
-        setIsAttemptLoading(true);
+        clearAssessmentSessionData(courseId, attemptId);
+        activeAttemptRef.current = null;
+        setAttemptId(null);
+        setStartTime(null);
+        setEndTime(null);
+        setRemainingSeconds(null);
+        setCurrentQuestion(0);
+        setSelectedAnswers({});
+        setTabSwitches(0);
+        setBackendResult(null);
+        setShowResults(false);
         setLockedMessage(null);
+        setIsAttemptLoading(true);
         try {
             const response = await assessmentAPI.startAttempt(assessment.id);
-            // response may be the axios response.data wrapper or the inner data.
             const wrapper = response?.data ? response : { data: response };
             const inner = wrapper.data?.data ? wrapper.data.data : wrapper.data;
             const newAttemptId = inner?.id ?? inner?.attempt_id ?? inner?.attemptId ?? null;
             if (newAttemptId) {
-                setAttemptId(Number(newAttemptId));
+                const normalizedAttemptId = Number(newAttemptId);
+                setAttemptId(normalizedAttemptId);
+                activeAttemptRef.current = normalizedAttemptId;
                 console.debug('Started attempt id:', newAttemptId);
             } else {
                 console.warn('Could not determine attempt id from startAttempt response', response);
@@ -645,7 +658,7 @@ export const FinalAssessmentPage: React.FC = () => {
                                     variant="outline"
                                     className="h-12 rounded-xl border-border dark:border-white/10 text-muted-foreground dark:text-gray-300 hover:text-foreground dark:hover:text-white hover:bg-accent dark:hover:bg-white/5"
                                     onClick={() => {
-                                        localStorage.removeItem(sessionKey);
+                                        clearAssessmentSessionData(courseId, attemptId);
                                         setAttemptId(null);
                                         setCurrentQuestion(0);
                                         setSelectedAnswers({});
