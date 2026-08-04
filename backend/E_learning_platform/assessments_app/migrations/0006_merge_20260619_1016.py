@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('assessments_app', '0004_assessment_tab_switch_enabled_and_more'),
+        ('assessments_app', '0003_initial'),
     ]
 
     operations = []

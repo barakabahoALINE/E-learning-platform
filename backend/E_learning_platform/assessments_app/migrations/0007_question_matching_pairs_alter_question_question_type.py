@@ -6,15 +6,10 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('assessments_app', '0004_assessment_tab_switch_enabled_and_more'),
+        ('assessments_app', '0003_initial'),
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='question',
-            name='matching_pairs',
-            field=models.JSONField(blank=True, null=True),
-        ),
         migrations.AlterField(
             model_name='question',
             name='question_type',

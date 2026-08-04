@@ -38,6 +38,11 @@ export interface LocalAssessmentTemplate {
   questions: QuizQuestion[];
   created_at: string;
   updated_at: string;
+  // optional metadata for backend-backed templates
+  courseId?: string | number;
+  courseTitle?: string;
+  moduleId?: string | number;
+  moduleTitle?: string;
 }
 
 interface CreateTemplateData {
@@ -90,15 +95,30 @@ const writeLocalTemplates = (templates: LocalAssessmentTemplate[]) => {
 
 export const getLocalAssessmentTemplates = (): AssessmentLibraryItem[] => {
   return readLocalTemplates().map((template) => ({
-    ...template,
-    source: "local",
+    id: template.id,
+    title: template.title,
+    assessment_type: template.assessment_type,
+    pass_mark: template.pass_mark,
+    max_attempts: template.max_attempts,
+    duration: template.duration,
+    tab_switch_enabled: template.tab_switch_enabled,
+    tab_switch_limit: template.tab_switch_limit,
+    descriptions: template.descriptions,
+    instructions: template.instructions,
+    questions: template.questions || [],
+    // If id looks like a backend id (not starting with local-), treat as course source
+    source: String(template.id).startsWith("local-") ? "local" : "course",
+    courseId: template.courseId,
+    courseTitle: template.courseTitle,
+    moduleId: template.moduleId,
+    moduleTitle: template.moduleTitle,
   }));
 };
 
-export const createLocalAssessmentTemplate = (data: CreateTemplateData): LocalAssessmentTemplate => {
+export const createLocalAssessmentTemplate = (data: CreateTemplateData, id?: string): LocalAssessmentTemplate => {
   const now = new Date().toISOString();
   const template: LocalAssessmentTemplate = {
-    id: makeLocalId(),
+    id: id ?? makeLocalId(),
     title: data.title.trim(),
     assessment_type: data.assessment_type,
     pass_mark: data.pass_mark ?? (data.assessment_type === "FINAL" ? 60 : 70),
@@ -115,6 +135,38 @@ export const createLocalAssessmentTemplate = (data: CreateTemplateData): LocalAs
 
   writeLocalTemplates([template, ...readLocalTemplates()]);
   return template;
+};
+
+const makeLocalQuestionId = () => `local-question-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+export const cloneAssessmentIntoLocalTemplate = (item: AssessmentLibraryItem): LocalAssessmentTemplate => {
+  const template = createLocalAssessmentTemplate({
+    title: item.title,
+    assessment_type: item.assessment_type,
+    pass_mark: item.pass_mark,
+    max_attempts: item.max_attempts,
+    duration: item.duration,
+    tab_switch_enabled: item.tab_switch_enabled,
+    tab_switch_limit: item.tab_switch_limit,
+    descriptions: item.descriptions,
+    instructions: item.instructions,
+  }, String(item.id));
+
+  const clonedQuestions = (item.questions || []).map((question) => ({
+    ...question,
+    id: question.id ?? makeLocalQuestionId(),
+  }));
+
+  // Persist questions and source metadata so backend-backed clones are recognized as course items
+  const updated = updateLocalAssessmentTemplate(template.id, {
+    questions: clonedQuestions,
+    courseId: item.courseId,
+    courseTitle: item.courseTitle,
+    moduleId: item.moduleId,
+    moduleTitle: item.moduleTitle,
+  });
+
+  return updated as LocalAssessmentTemplate;
 };
 
 export const updateLocalAssessmentTemplate = (
@@ -188,7 +240,48 @@ export const listAssessmentLibrary = async (): Promise<AssessmentLibraryItem[]> 
     )
   );
 
-  return [...localItems, ...extractAssessmentsFromCourses(detailedCourses)];
+  const courseItems = extractAssessmentsFromCourses(detailedCourses);
+
+  const unassignedResponse = await assessmentAPI.listAssessments({ unassigned: true });
+  const unassignedAssessments = Array.isArray(unassignedResponse?.data)
+    ? unassignedResponse.data
+    : [];
+
+  const unassignedItems: AssessmentLibraryItem[] = unassignedAssessments.map((assessment: any) => ({
+    ...assessment,
+    source: 'course',
+    courseId: assessment.course ?? undefined,
+    moduleId: assessment.module ?? undefined,
+    courseTitle: assessment.course ? assessment.course.title : undefined,
+    moduleTitle: assessment.module ? assessment.module.title : undefined,
+    questions: assessment.questions || [],
+  }));
+
+  // Merge and dedupe items: prefer course-backed items over local templates when ids collide
+  const byId = new Map<string, AssessmentLibraryItem>();
+
+  const pushItem = (it: AssessmentLibraryItem) => {
+    const key = String(it.id);
+    const existing = byId.get(key);
+    if (!existing) {
+      byId.set(key, it);
+      return;
+    }
+
+    // If existing is local but new is course, prefer course
+    if (existing.source === 'local' && it.source === 'course') {
+      byId.set(key, it);
+      return;
+    }
+
+    // Otherwise keep existing (local preferred if both local, or first wins)
+  };
+
+  localItems.forEach(pushItem);
+  courseItems.forEach(pushItem);
+  unassignedItems.forEach(pushItem);
+
+  return Array.from(byId.values());
 };
 
 const normalizeChoices = (question: QuizQuestion): Choice[] => {
