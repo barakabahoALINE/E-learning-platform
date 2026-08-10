@@ -38,8 +38,12 @@ urlpatterns = [
      # OTHER URLS
      path("levels/", LevelListAPIView.as_view(), name="level-list"),
      path("levels/create/", LevelCreateAPIView.as_view(), name="level-create"),
+     path("levels/bulk-create/", LevelBulkCreateAPIView.as_view(), name="level-bulk-create"),
      path("categories/", CategoryListAPIView.as_view(), name="category-list"),
      path("categories/create/", CategoryCreateAPIView.as_view(), name="category-create"),
+     path("categories/bulk-create/", CategoryBulkCreateAPIView.as_view(), name="category-bulk-create"),
+     path("categories/<int:pk>/update/", CategoryUpdateAPIView.as_view(), name="category-update"),
+     path("categories/<int:pk>/delete/", CategoryDeleteAPIView.as_view(), name="category-delete"),
      path("media/upload/", MediaUploadAPIView.as_view(), name="media-upload"),
      path("public-stats/", PublicStatsAPIView.as_view(), name="public-stats"),
 

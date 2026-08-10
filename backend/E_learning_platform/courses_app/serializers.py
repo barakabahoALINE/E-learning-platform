@@ -165,11 +165,29 @@ class SectionContentListSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class LevelSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(
+        validators=[
+            UniqueValidator(
+                queryset=Level.objects.all(),
+                message="Level name must be unique."
+            )
+        ]
+    )
+
     class Meta:
         model = Level
         fields = "__all__"
 
 class CategorySerializer(serializers.ModelSerializer):
+    name = serializers.CharField(
+        validators=[
+            UniqueValidator(
+                queryset=Category.objects.all(),
+                message="Category name must be unique."
+            )
+        ]
+    )
+
     class Meta:
         model = Category
         fields = "__all__"
