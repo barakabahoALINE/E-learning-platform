@@ -44,8 +44,9 @@ class Assessment(models.Model):
             ("start_assessment", "Can start assessment"),
         ]
 
-    def save(self, *args, **kwargs):
-        self.clean()
+    def save(self, *args, validate=True, **kwargs):
+        if validate:
+            self.clean()
         super().save(*args, **kwargs)
 
     def clean(self):

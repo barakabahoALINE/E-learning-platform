@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { X, Upload, Plus } from "lucide-react";
-import { createCourse, updateCourse, fetchLevels, fetchCategories, createCategory } from "../../../features/courses/courseSlice";
+import { X, Upload, Plus, Eye, Edit2, Trash2, Check } from "lucide-react";
+import { createCourse, updateCourse, fetchLevels, fetchCategories, createCategory, createLevel, updateCategory, deleteCategory, updateLevel, deleteLevel } from "../../../features/courses/courseSlice";
 import { Course } from "../../../features/courses/types";
 import StatusModal from "../ui/StatusModal";
 import { useAppDispatch, useAppSelector } from "../../../hooks/reduxHooks";
@@ -38,10 +38,53 @@ export function CourseCreationModal({
   const [thumbnailPreview, setThumbnailPreview] = useState<string>(editCourse?.thumbnail || "");
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categoryManageMode, setCategoryManageMode] = useState(false);
+  const [levelManageMode, setLevelManageMode] = useState(false);
+  const [addingCategoryName, setAddingCategoryName] = useState("");
+  const [addingLevelName, setAddingLevelName] = useState("");
+  const [showCategoryAddInput, setShowCategoryAddInput] = useState(false);
+  const [showLevelAddInput, setShowLevelAddInput] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [editingLevelId, setEditingLevelId] = useState<number | null>(null);
+  const [editingLevelName, setEditingLevelName] = useState("");
+  const [metaError, setMetaError] = useState("");
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [isCreatingCat, setIsCreatingCat] = useState(false);
   const [catError, setCatError] = useState("");
+
+  const exitCategoryManageMode = () => {
+    setCategoryManageMode(false);
+    setShowCategoryAddInput(false);
+    setAddingCategoryName("");
+    setEditingCategoryId(null);
+    setEditingCategoryName("");
+    setMetaError("");
+  };
+
+  const exitLevelManageMode = () => {
+    setLevelManageMode(false);
+    setShowLevelAddInput(false);
+    setAddingLevelName("");
+    setEditingLevelId(null);
+    setEditingLevelName("");
+    setMetaError("");
+  };
+
+  const resetMetaState = () => {
+    exitCategoryManageMode();
+    exitLevelManageMode();
+    setIsCategoryModalOpen(false);
+    setNewCategoryName("");
+    setIsCreatingCat(false);
+    setCatError("");
+  };
+
+  const handleClose = () => {
+    resetMetaState();
+    onClose();
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -49,6 +92,7 @@ export function CourseCreationModal({
       dispatch(fetchCategories());
       setStep(1);
       setStatus(null);
+      resetMetaState();
     }
   }, [isOpen, dispatch]);
 
@@ -154,6 +198,84 @@ export function CourseCreationModal({
     }
   };
 
+  const handleAddCategoryInline = async () => {
+    if (!addingCategoryName.trim()) return;
+    setMetaError("");
+    try {
+      const res = await dispatch(createCategory(addingCategoryName.trim())).unwrap();
+      const createdCat = res.data || res;
+      setFormData(prev => ({ ...prev, category: createdCat.id }));
+      setAddingCategoryName("");
+      setShowCategoryAddInput(false);
+    } catch (err: any) {
+      setMetaError(err || "Failed to add category");
+    }
+  };
+
+  const handleSaveCategory = async (categoryId: number | string, name: string) => {
+    if (!name.trim()) return;
+    setMetaError("");
+    try {
+      await dispatch(updateCategory({ categoryId, name: name.trim() })).unwrap();
+      setEditingCategoryId(null);
+      setEditingCategoryName("");
+    } catch (err: any) {
+      setMetaError(err || "Failed to update category");
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: number | string) => {
+    if (!window.confirm("Delete this category? This cannot be undone.")) return;
+    setMetaError("");
+    try {
+      await dispatch(deleteCategory(categoryId)).unwrap();
+      if (formData.category === categoryId) {
+        setFormData(prev => ({ ...prev, category: null }));
+      }
+    } catch (err: any) {
+      setMetaError(err || "Failed to delete category");
+    }
+  };
+
+  const handleAddLevelInline = async () => {
+    if (!addingLevelName.trim()) return;
+    setMetaError("");
+    try {
+      const res = await dispatch(createLevel(addingLevelName.trim())).unwrap();
+      const createdLevel = res.data || res;
+      setFormData(prev => ({ ...prev, level: createdLevel.id }));
+      setAddingLevelName("");
+      setShowLevelAddInput(false);
+    } catch (err: any) {
+      setMetaError(err || "Failed to add level");
+    }
+  };
+
+  const handleSaveLevel = async (levelId: number | string, name: string) => {
+    if (!name.trim()) return;
+    setMetaError("");
+    try {
+      await dispatch(updateLevel({ levelId, name: name.trim() })).unwrap();
+      setEditingLevelId(null);
+      setEditingLevelName("");
+    } catch (err: any) {
+      setMetaError(err || "Failed to update level");
+    }
+  };
+
+  const handleDeleteLevel = async (levelId: number | string) => {
+    if (!window.confirm("Delete this level? This cannot be undone.")) return;
+    setMetaError("");
+    try {
+      await dispatch(deleteLevel(levelId)).unwrap();
+      if (formData.level === levelId) {
+        setFormData(prev => ({ ...prev, level: null }));
+      }
+    } catch (err: any) {
+      setMetaError(err || "Failed to delete level");
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.title || !formData.category || !formData.level) {
       setStatus({ type: "error", message: "Please fill in all required fields" });
@@ -214,7 +336,7 @@ export function CourseCreationModal({
             {editCourse ? "Edit Course" : "Create New Course"}
           </h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 hover:bg-gray-100 rounded transition-colors"
           >
             <X className="w-5 h-5 text-gray-500" />
@@ -290,51 +412,281 @@ export function CourseCreationModal({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Category <span className="text-red-500">*</span>
                   </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={formData.category || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setFormData({ ...formData, category: val ? parseInt(val) : null })
-                      }}
-                      className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Select Category</option>
-                      {categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setIsCategoryModalOpen(true)}
-                      className="px-3 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 hover:text-blue-600 transition-colors flex items-center justify-center cursor-pointer"
-                      title="Add New Category"
-                    >
-                      <Plus className="w-5 h-5" />
-                    </button>
-                  </div>
+                  {categoryManageMode ? (
+                    <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-white">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-gray-900">Manage Categories</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowCategoryAddInput(true)}
+                          className="inline-flex items-center justify-center p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          title="Add category"
+                          aria-label="Add category"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {showCategoryAddInput && (
+                          <div className="grid grid-cols-[1fr_auto] gap-2">
+                            <input
+                              type="text"
+                              value={addingCategoryName}
+                              onChange={(e) => setAddingCategoryName(e.target.value)}
+                              placeholder="New category name"
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAddCategoryInline}
+                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                              title="Save new category"
+                              aria-label="Save new category"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                        {metaError && <p className="text-sm text-red-600">{metaError}</p>}
+                        <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                          {categories.length === 0 ? (
+                            <p className="text-sm text-gray-500">No categories available yet.</p>
+                          ) : (
+                            categories.map((cat) => (
+                              <div key={cat.id} className="flex items-center gap-2 p-2 border border-gray-100 rounded-lg bg-gray-50">
+                                {editingCategoryId === cat.id ? (
+                                  <>
+                                    <input
+                                      type="text"
+                                      value={editingCategoryName}
+                                      onChange={(e) => setEditingCategoryName(e.target.value)}
+                                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveCategory(cat.id, editingCategoryName)}
+                                      className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                                      title="Save"
+                                    >
+                                      <Check className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCategoryId(null);
+                                        setEditingCategoryName("");
+                                      }}
+                                      className="p-2 text-gray-500 hover:bg-gray-50 rounded-lg"
+                                      title="Cancel"
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="flex-1 text-sm text-gray-700 truncate">{cat.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCategoryId(cat.id);
+                                        setEditingCategoryName(cat.name);
+                                      }}
+                                      className="p-2 text-gray-500 hover:bg-gray-50 rounded-lg"
+                                      title="Edit category"
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteCategory(cat.id)}
+                                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                                      title="Delete category"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={exitCategoryManageMode}
+                          className="w-full text-sm text-blue-600 hover:text-blue-800 font-semibold"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2">
+                      <select
+                        value={formData.category || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({ ...formData, category: val ? parseInt(val) : null });
+                        }}
+                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Select Category</option>
+                        {categories.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setCategoryManageMode(true)}
+                        className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors flex items-center justify-center cursor-pointer"
+                        title="Manage categories"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Level <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={formData.level || ""}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFormData({ ...formData, level: val ? parseInt(val) : null })
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select Level</option>
-                    {levels.map((lvl) => (
-                      <option key={lvl.id} value={lvl.id}>
-                        {lvl.name}
-                      </option>
-                    ))}
-                  </select>
+                  {!levelManageMode ? (
+                    <div className="flex items-start gap-2">
+                      <select
+                        value={formData.level || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({ ...formData, level: val ? parseInt(val) : null });
+                        }}
+                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Select Level</option>
+                        {levels.map((lvl) => (
+                          <option key={lvl.id} value={lvl.id}>
+                            {lvl.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setLevelManageMode(true)}
+                        className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors flex items-center justify-center cursor-pointer"
+                        title="Manage levels"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-white">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-semibold text-gray-900">Manage Levels</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowLevelAddInput(true)}
+                              className="inline-flex items-center justify-center p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                              title="Add level"
+                              aria-label="Add level"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+                          {showLevelAddInput && (
+                            <div className="grid grid-cols-[1fr_auto] gap-2">
+                              <input
+                                type="text"
+                                value={addingLevelName}
+                                onChange={(e) => setAddingLevelName(e.target.value)}
+                                placeholder="New level name"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleAddLevelInline}
+                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                                title="Save new level"
+                                aria-label="Save new level"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                          {metaError && <p className="text-sm text-red-600">{metaError}</p>}
+                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                            {levels.length === 0 ? (
+                              <p className="text-sm text-gray-500">No levels available yet.</p>
+                            ) : (
+                              levels.map((lvl) => (
+                                <div key={lvl.id} className="flex items-center gap-2 p-2 border border-gray-100 rounded-lg bg-gray-50">
+                                  {editingLevelId === lvl.id ? (
+                                    <>
+                                      <input
+                                        type="text"
+                                        value={editingLevelName}
+                                        onChange={(e) => setEditingLevelName(e.target.value)}
+                                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveLevel(lvl.id, editingLevelName)}
+                                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                                        title="Save"
+                                      >
+                                        <Check className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingLevelId(null);
+                                          setEditingLevelName("");
+                                        }}
+                                        className="p-2 text-gray-500 hover:bg-gray-50 rounded-lg"
+                                        title="Cancel"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="flex-1 text-sm text-gray-700 truncate">{lvl.name}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingLevelId(lvl.id);
+                                          setEditingLevelName(lvl.name);
+                                        }}
+                                        className="p-2 text-gray-500 hover:bg-gray-50 rounded-lg"
+                                        title="Edit level"
+                                      >
+                                        <Edit2 className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteLevel(lvl.id)}
+                                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                                        title="Delete level"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={exitLevelManageMode}
+                            className="w-full text-sm text-blue-600 hover:text-blue-800 font-semibold"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -538,7 +890,7 @@ export function CourseCreationModal({
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
             >
               Cancel
