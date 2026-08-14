@@ -21,6 +21,8 @@ import {
   File as FileIcon,
   Clock,
   RefreshCw,
+  ShieldCheck,
+  Unlink2,
 } from "lucide-react";
 
 import StatusModal from "../components/ui/StatusModal";
@@ -46,12 +48,14 @@ import {
   deleteContent,
   unpublishCourse
 } from "../../features/courses/courseSlice";
-import { createAssessment, addQuestion, updateQuestion, deleteQuestionAction, deleteAssessmentAction, updateAssessmentSettings } from "../../features/assessments/assessmentSlice";
-import { cloneAssessmentIntoCourse, type AssessmentLibraryItem } from "../../features/assessments/assessmentLibraryAdapter";
+import { createLocalAssessmentTemplate, cloneAssessmentIntoLocalTemplate, getLocalAssessmentTemplates, updateLocalAssessmentTemplate, type AssessmentLibraryItem, type LocalAssessmentTemplate } from "../../features/assessments/assessmentLibraryAdapter";
 import {
   ContentItem,
   QuizQuestion
 } from "../../features/courses/types";
+import { addQuestion, createAssessment, attachAssessment, detachAssessment } from "../../features/assessments/assessmentSlice";
+import assessmentAPI from "../../features/assessments/assessmentAPI";
+import type { AssessmentCreateData } from "../../features/assessments/types";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 
 export function CourseBuilderPage() {
@@ -65,6 +69,10 @@ export function CourseBuilderPage() {
   const [expandedModules, setExpandedModules] = useState<Set<string | number>>(new Set());
   const [expandedSections, setExpandedSections] = useState<Set<string | number>>(new Set());
   const [expandedContentItems, setExpandedContentItems] = useState<Set<string | number>>(new Set());
+  const [pendingModuleQuizzes, setPendingModuleQuizzes] = useState<Record<string | number, LocalAssessmentTemplate>>({});
+  const [pendingFinalAssessment, setPendingFinalAssessment] = useState<LocalAssessmentTemplate | null>(null);
+
+  const makeLocalQuestionId = () => `local-question-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   // Keep a ref mirror so async callbacks can read & restore the expanded state
   // even after a fetchCourseDetails re-fetch resets the component.
@@ -92,6 +100,7 @@ export function CourseBuilderPage() {
   const [showAssessmentModal, setShowAssessmentModal] = useState<{
     type: 'module' | 'final';
     moduleId?: string | number;
+    assessmentId?: string | number;
     question?: QuizQuestion;
   } | null>(null);
 
@@ -199,7 +208,8 @@ export function CourseBuilderPage() {
     if (!module) return;
 
     try {
-      await dispatch(createAssessment({
+      // Create a backend assessment attached to this module
+      const payload: AssessmentCreateData = {
         course: course.id,
         module: moduleId,
         title: `Quiz: ${module.title}`,
@@ -207,59 +217,144 @@ export function CourseBuilderPage() {
         assessment_type: "QUIZ",
         pass_mark: 60,
         max_attempts: 3,
-        duration: 30
-      })).unwrap();
-      toast.success("Quiz enabled successfully for this module!");
+        duration: 30,
+      };
+
+      const response = await dispatch(createAssessment(payload)).unwrap();
+      const created = response?.data || response;
+
+      const template = createLocalAssessmentTemplate({
+        title: created.title || `Quiz: ${module.title}`,
+        assessment_type: "QUIZ",
+        pass_mark: created.pass_mark ?? 60,
+        max_attempts: created.max_attempts ?? 3,
+        duration: created.duration ?? 30,
+      }, String(created.id));
+
+      setPendingModuleQuizzes((prev) => ({
+        ...prev,
+        [moduleId]: template,
+      }));
+      setShowAssessmentModal({ type: 'module', moduleId, assessmentId: template.id });
+      toast.success("Quiz created on backend and ready to edit.");
       setShowAssessmentLibraryPicker(null);
-      refetchCourse(course.id);
     } catch (e: any) {
-      toast.error(e || "Failed to enable quiz");
+      toast.error(e?.message || e || "Failed to create quiz template");
     }
+  };
+
+  const ensureFinalAssessmentTemplate = (forceCreate = false): LocalAssessmentTemplate | null => {
+    if (pendingFinalAssessment && !forceCreate) return pendingFinalAssessment;
+    if (!course.final_assessment) return null;
+
+    const item: AssessmentLibraryItem = {
+      id: course.final_assessment.id,
+      title: course.final_assessment.title || "Final Assessment",
+      assessment_type: course.final_assessment.assessment_type || "FINAL",
+      pass_mark: course.final_assessment.pass_mark,
+      max_attempts: course.final_assessment.max_attempts,
+      duration: course.final_assessment.duration,
+      tab_switch_enabled: course.final_assessment.tab_switch_enabled,
+      tab_switch_limit: course.final_assessment.tab_switch_limit,
+      descriptions: course.final_assessment.descriptions,
+      instructions: course.final_assessment.instructions,
+      questions: course.final_assessment.questions || [],
+      source: "course",
+      courseId: course.id,
+      courseTitle: course.title,
+    };
+
+    const template = cloneAssessmentIntoLocalTemplate(item);
+    setPendingFinalAssessment(template);
+    return template;
+  };
+
+  const ensureModuleQuizTemplate = (moduleId: string | number): LocalAssessmentTemplate | null => {
+    const existing = pendingModuleQuizzes[moduleId];
+    if (existing) return existing;
+
+    const module = course.modules?.find((m) => m.id === moduleId);
+    if (!module?.quiz) return null;
+
+    const item: AssessmentLibraryItem = {
+      id: module.quiz.id,
+      title: module.quiz.title || `Quiz: ${module.title}`,
+      assessment_type: module.quiz.assessment_type || "QUIZ",
+      pass_mark: module.quiz.pass_mark,
+      max_attempts: module.quiz.max_attempts,
+      duration: module.quiz.duration,
+      descriptions: module.quiz.descriptions,
+      instructions: module.quiz.instructions,
+      questions: module.quiz.questions || [],
+      source: "course",
+      courseId: course.id,
+      courseTitle: course.title,
+      moduleId: module.id,
+      moduleTitle: module.title,
+    };
+
+    const template = cloneAssessmentIntoLocalTemplate(item);
+    setPendingModuleQuizzes((prev) => ({
+      ...prev,
+      [moduleId]: template,
+    }));
+    return template;
   };
 
   const toggleModuleQuiz = async (moduleId: string | number) => {
     const module = course.modules?.find(m => m.id === moduleId);
-    if (module) {
-      if (!module.quiz) {
-        setShowAssessmentLibraryPicker({ type: 'module', moduleId });
-      } else {
-        try {
-          await dispatch(deleteAssessmentAction(module.quiz.id)).unwrap();
-          toast.success("Quiz disabled successfully for this module!");
-          refetchCourse(course.id);
-        } catch (e: any) {
-          toast.error(e || "Failed to disable quiz");
-        }
+    const isEnabled = Boolean(pendingModuleQuizzes[moduleId] || module?.quiz);
+
+    if (isEnabled && module?.quiz) {
+      try {
+        await dispatch(detachAssessment({
+          assessmentId: module.quiz.id,
+          payload: { module_id: moduleId },
+        })).unwrap();
+        setPendingModuleQuizzes((prev) => {
+          const next = { ...prev };
+          delete next[moduleId];
+          return next;
+        });
+        await dispatch(fetchCourseDetails(course.id));
+        toast.success("Module quiz detached.");
+      } catch (e: any) {
+        toast.error(e?.message || "Failed to detach module quiz");
       }
+      return;
     }
+
+    setShowAssessmentLibraryPicker({ type: 'module', moduleId });
   };
 
   const handleUseAssessmentFromLibrary = async (item: AssessmentLibraryItem) => {
     if (!showAssessmentLibraryPicker) return;
 
     try {
-      if (showAssessmentLibraryPicker.type === 'module') {
-        const moduleId = showAssessmentLibraryPicker.moduleId;
-        const module = course.modules?.find(m => String(m.id) === String(moduleId));
-        await cloneAssessmentIntoCourse(item, {
-          courseId: course.id,
-          moduleId,
-          assessmentType: "QUIZ",
-          title: item.title || `Quiz: ${module?.title || "Module"}`
-        });
-        toast.success("Quiz copied into this module");
+      const template = cloneAssessmentIntoLocalTemplate(item);
+
+      if (showAssessmentLibraryPicker.type === 'module' && showAssessmentLibraryPicker.moduleId !== undefined) {
+        await dispatch(attachAssessment({
+          assessmentId: item.id,
+          payload: { module_id: showAssessmentLibraryPicker.moduleId },
+        })).unwrap();
+        await dispatch(fetchCourseDetails(course.id));
+        setPendingModuleQuizzes((prev) => ({
+          ...prev,
+          [showAssessmentLibraryPicker.moduleId!]: template,
+        }));
+        toast.success("Quiz attached to this module");
       } else {
-        await cloneAssessmentIntoCourse(item, {
-          courseId: course.id,
-          moduleId: null,
-          assessmentType: "FINAL",
-          title: item.title || "Final Assessment"
-        });
-        toast.success("Final assessment copied into this course");
+        await dispatch(attachAssessment({
+          assessmentId: item.id,
+          payload: { course_id: course.id },
+        })).unwrap();
+        await dispatch(fetchCourseDetails(course.id));
+        setPendingFinalAssessment(template);
+        toast.success("Final assessment attached to this course");
       }
 
       setShowAssessmentLibraryPicker(null);
-      refetchCourse(course.id);
     } catch (e: any) {
       toast.error(e?.message || e || "Failed to copy assessment");
     }
@@ -376,68 +471,133 @@ export function CourseBuilderPage() {
     if (!course) return;
 
     try {
-      let assessmentId: string | number | undefined;
+      let templateId: string | number | undefined = showAssessmentModal?.assessmentId;
 
-      if (showAssessmentModal?.type === "final") {
-        assessmentId = course.final_assessment?.id;
-        if (!assessmentId) {
-          const res = await dispatch(createAssessment({
-            course: course.id,
+      if (!templateId) {
+        if (showAssessmentModal?.type === "final") {
+          const template = createLocalAssessmentTemplate({
             title: "Final Assessment",
-            is_final: true,
             assessment_type: "FINAL",
             pass_mark: 60,
             max_attempts: 3,
-            duration: 60
-          })).unwrap();
-          assessmentId = res.data.id;
-        }
-      } else {
-        const moduleId = showAssessmentModal?.moduleId;
-        const module = course.modules?.find(m => m.id === moduleId);
-        assessmentId = module?.quiz?.id;
-        if (!assessmentId) {
-          const res = await dispatch(createAssessment({
-            course: course.id,
-            module: moduleId,
-            title: `Quiz: ${module?.title}`,
-            is_final: false,
+            duration: 60,
+          });
+          templateId = template.id;
+          setPendingFinalAssessment(template);
+        } else {
+          const moduleId = showAssessmentModal?.moduleId;
+          const module = course.modules?.find(m => m.id === moduleId);
+          const template = createLocalAssessmentTemplate({
+            title: `Quiz: ${module?.title || "New Quiz"}`,
             assessment_type: "QUIZ",
             pass_mark: 60,
             max_attempts: 3,
-            duration: 30
-          })).unwrap();
-          assessmentId = res.data.id;
+            duration: 30,
+          });
+          templateId = template.id;
+          if (moduleId) {
+            setPendingModuleQuizzes((prev) => ({
+              ...prev,
+              [moduleId]: template,
+            }));
+          }
         }
+        setShowAssessmentModal((prev) => prev ? { ...prev, assessmentId: templateId } : prev);
       }
 
-      if (assessmentId) {
-        const questionData: any = {
-          assessment: assessmentId,
-          question_text: data.question,
+      if (templateId) {
+        const questionId = data.id || makeLocalQuestionId();
+        let existingTemplate: AssessmentLibraryItem | LocalAssessmentTemplate | null = getLocalAssessmentTemplates().find((item) => String(item.id) === String(templateId)) || null;
+
+        if (!existingTemplate) {
+          if (showAssessmentModal?.type === 'final') {
+            const template = ensureFinalAssessmentTemplate(true);
+            if (template) {
+              templateId = template.id;
+              existingTemplate = template;
+              setShowAssessmentModal((prev) => prev ? { ...prev, assessmentId: templateId } : prev);
+            }
+          } else if (showAssessmentModal?.moduleId) {
+            const template = ensureModuleQuizTemplate(showAssessmentModal.moduleId);
+            if (template) {
+              templateId = template.id;
+              existingTemplate = template;
+              setShowAssessmentModal((prev) => prev ? { ...prev, assessmentId: templateId } : prev);
+            }
+          }
+        }
+
+        const existingQuestions = existingTemplate?.questions || [];
+        const nextQuestion = {
+          ...data,
+          id: questionId,
+          question_text: data.question || data.question_text,
           question_type: (data.question_type || "single") as any,
           marks: data.marks || 1,
+          options: data.question_type === "matching" ? [] : data.options || data.choices?.map((opt: any) => opt.text) || [],
+          choices: data.question_type === "matching" ? [] : data.choices || data.options?.map((opt: any) => ({ text: String(opt.text || ""), is_correct: Boolean(opt.is_correct) })) || [],
+          matching_pairs: data.question_type === "matching" ? data.matching_pairs || [] : undefined,
+          correctAnswer: data.question_type === "matching" ? -1 : data.choices ? data.choices.findIndex((choice: any) => choice.is_correct) : data.options ? data.options.findIndex((opt: any) => opt.isCorrect) : -1,
         };
 
-        if (data.question_type === "matching") {
-          questionData.matching_pairs = data.matching_pairs || [];
-          questionData.choices = [];
-        } else {
-          questionData.choices = data.choices || data.options.map((opt, idx) => ({
-            text: opt,
-            is_correct: idx === data.correctAnswer
-          }));
-        }
+        const nextQuestions = existingQuestions.some((item) => String(item.id) === String(questionId))
+          ? existingQuestions.map((item) => (String(item.id) === String(questionId) ? nextQuestion : item))
+          : [...existingQuestions, nextQuestion];
 
-        if (data.id && typeof data.id === 'number') {
-          await dispatch(updateQuestion({ questionId: data.id, data: questionData })).unwrap();
-        } else {
-          await dispatch(addQuestion(questionData)).unwrap();
-        }
+        // If the template id is a backend id (not a local- prefix), persist the question to backend
+        if (templateId && !String(templateId).startsWith("local-")) {
+          const payload: any = {
+            assessment: templateId,
+            question_text: nextQuestion.question_text,
+            question_type: nextQuestion.question_type === "multiple" ? "multiple" : nextQuestion.question_type === "matching" ? "matching" : "single",
+            marks: nextQuestion.marks || 1,
+          };
 
-        dispatch(fetchCourseDetails(course.id));
-        toast.success('Question saved successfully');
+          if (nextQuestion.question_type === "matching") {
+            payload.matching_pairs = nextQuestion.matching_pairs || [];
+          } else {
+            payload.choices = (nextQuestion.choices && nextQuestion.choices.length > 0)
+              ? nextQuestion.choices.map((choice: any) => ({ text: String(choice.text || ""), is_correct: Boolean(choice.is_correct) }))
+              : (nextQuestion.options || []).map((option: any, index: number) => ({ text: String(option || ""), is_correct: index === nextQuestion.correctAnswer }));
+          }
+
+          try {
+            const response = await dispatch(addQuestion(payload)).unwrap();
+            const savedQuestion = response.data || response;
+
+            const updatedTemplate = updateLocalAssessmentTemplate(String(templateId), {
+              questions: existingQuestions.some((item) => String(item.id) === String(savedQuestion.id))
+                ? existingQuestions.map((item) => (String(item.id) === String(savedQuestion.id) ? savedQuestion : item))
+                : [...existingQuestions, savedQuestion],
+            });
+
+            if (showAssessmentModal?.type === 'final') {
+              setPendingFinalAssessment(updatedTemplate as LocalAssessmentTemplate);
+            } else if (showAssessmentModal?.moduleId) {
+              setPendingModuleQuizzes((prev) => ({
+                ...prev,
+                [showAssessmentModal.moduleId!]: updatedTemplate as LocalAssessmentTemplate,
+              }));
+            }
+          } catch (err: any) {
+            toast.error(err?.message || 'Failed to save question');
+            return;
+          }
+        } else {
+          const updatedTemplate = updateLocalAssessmentTemplate(String(templateId), { questions: nextQuestions });
+
+          if (showAssessmentModal?.type === 'final') {
+            setPendingFinalAssessment(updatedTemplate as LocalAssessmentTemplate);
+          } else if (showAssessmentModal?.moduleId) {
+            setPendingModuleQuizzes((prev) => ({
+              ...prev,
+              [showAssessmentModal.moduleId!]: updatedTemplate as LocalAssessmentTemplate,
+            }));
+          }
+        }
       }
+
+      toast.success("Question saved successfully.");
     } catch (err: any) {
       console.error("Assessment Error:", err);
       toast.error(typeof err === 'string' ? err : 'Failed to save question');
@@ -451,8 +611,10 @@ export function CourseBuilderPage() {
    */
   const handleCreateFinalAssessmentWithSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number; tab_switch_enabled?: boolean; tab_switch_limit?: number }) => {
     try {
-      await dispatch(createAssessment({
+      // Create final assessment as a backend record attached to this course
+      const payload: AssessmentCreateData = {
         course: course.id,
+        module: null,
         title: "Final Assessment",
         is_final: true,
         assessment_type: "FINAL",
@@ -461,16 +623,29 @@ export function CourseBuilderPage() {
         duration: settings.duration,
         tab_switch_enabled: settings.tab_switch_enabled,
         tab_switch_limit: settings.tab_switch_limit,
-      })).unwrap();
-      dispatch(fetchCourseDetails(course.id));
-      toast.success("Final assessment created successfully!");
+      };
+
+      const response = await dispatch(createAssessment(payload)).unwrap();
+      const created = response?.data || response;
+
+      const template = createLocalAssessmentTemplate({
+        title: created.title || "Final Assessment",
+        assessment_type: "FINAL",
+        pass_mark: created.pass_mark ?? settings.pass_mark,
+        max_attempts: created.max_attempts ?? settings.max_attempts,
+        duration: created.duration ?? settings.duration,
+        tab_switch_enabled: created.tab_switch_enabled ?? settings.tab_switch_enabled,
+        tab_switch_limit: created.tab_switch_limit ?? settings.tab_switch_limit,
+      }, String(created.id));
+
+      setPendingFinalAssessment(template);
+      toast.success("Final assessment created on backend and ready to edit!");
+      setShowAssessmentModal({ type: 'final', assessmentId: template.id });
     } catch (e: any) {
-      toast.error(e || "Failed to create final assessment");
+      toast.error(e?.message || e || "Failed to create final assessment");
       throw e;
     } finally {
       setShowFinalAssessmentSettings(null);
-      // After creating, open the question editor
-      setShowAssessmentModal({ type: 'final' });
     }
   };
 
@@ -478,17 +653,33 @@ export function CourseBuilderPage() {
    * Called from FinalAssessmentSettingsModal when editing an existing final assessment's settings.
    */
   const handleUpdateFinalAssessmentSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number; tab_switch_enabled?: boolean; tab_switch_limit?: number }) => {
-    const assessmentId = course.final_assessment?.id;
-    if (!assessmentId) return;
-    try {
-      await dispatch(updateAssessmentSettings({ assessmentId, data: settings })).unwrap();
-      dispatch(fetchCourseDetails(course.id));
+    if (pendingFinalAssessment) {
+      const updatedTemplate = updateLocalAssessmentTemplate(String(pendingFinalAssessment.id), {
+        pass_mark: settings.pass_mark,
+        max_attempts: settings.max_attempts,
+        duration: settings.duration,
+        tab_switch_enabled: settings.tab_switch_enabled,
+        tab_switch_limit: settings.tab_switch_limit,
+      });
+      setPendingFinalAssessment(updatedTemplate as LocalAssessmentTemplate);
       toast.success("Assessment settings updated!");
       setShowFinalAssessmentSettings(null);
-    } catch (e: any) {
-      toast.error(e || "Failed to update settings");
-      throw e;
+      return;
     }
+
+    const template = ensureFinalAssessmentTemplate();
+    if (!template) return;
+
+    const updatedTemplate = updateLocalAssessmentTemplate(String(template.id), {
+      pass_mark: settings.pass_mark,
+      max_attempts: settings.max_attempts,
+      duration: settings.duration,
+      tab_switch_enabled: settings.tab_switch_enabled,
+      tab_switch_limit: settings.tab_switch_limit,
+    });
+    setPendingFinalAssessment(updatedTemplate as LocalAssessmentTemplate);
+    toast.success("Assessment settings updated!");
+    setShowFinalAssessmentSettings(null);
   };
 
   const handleUnpublish = async () => {
@@ -513,28 +704,61 @@ export function CourseBuilderPage() {
     if (!deleteQuestionTarget) return;
     const { type, questionId, moduleId } = deleteQuestionTarget;
     try {
-      if (typeof questionId === 'number') {
-        await dispatch(deleteQuestionAction(questionId)).unwrap();
-        dispatch(fetchCourseDetails(course.id));
+      const localFinalQuestionExists = pendingFinalAssessment?.questions.some((q) => String(q.id) === String(questionId));
+      const localModuleTemplate = moduleId ? pendingModuleQuizzes[moduleId] : undefined;
+      const localModuleQuestionExists = localModuleTemplate?.questions.some((q) => String(q.id) === String(questionId));
+
+      if (localFinalQuestionExists && type === 'final') {
+        setPendingFinalAssessment((prev) => prev ? {
+          ...prev,
+          questions: prev.questions.filter((q) => String(q.id) !== String(questionId)),
+        } : prev);
         toast.success('Question deleted successfully');
-      } else {
-        if (type === 'final') {
-          const newQuestions = course.final_assessment?.questions?.filter(q => q.id !== questionId) || [];
-          dispatch(updateCourse({
-            id: course.id,
-            data: { final_assessment: { ...(course.final_assessment || { id: '', title: '', questions: [] }), questions: newQuestions } }
-          }));
-        } else if (moduleId) {
-          const module = course.modules?.find(m => m.id === moduleId);
-          if (module && module.quiz) {
-            const newQuestions = module.quiz.questions.filter(q => q.id !== questionId);
-            dispatch(updateModule({
-              courseId: course.id,
-              moduleId,
-              data: { quiz: { ...module.quiz, questions: newQuestions } }
-            }));
+      } else if (localModuleQuestionExists && type === 'module' && moduleId) {
+        setPendingModuleQuizzes((prev) => {
+          const next = { ...prev };
+          const template = next[moduleId];
+          if (template) {
+            next[moduleId] = {
+              ...template,
+              questions: template.questions.filter((q) => String(q.id) !== String(questionId)),
+            };
           }
+          return next;
+        });
+        toast.success('Question deleted successfully');
+      } else if (type === 'final' && course.final_assessment?.questions.some((q) => String(q.id) === String(questionId))) {
+        const template = ensureFinalAssessmentTemplate(true);
+        if (template) {
+          setPendingFinalAssessment((prev) => prev ? {
+            ...prev,
+            questions: prev.questions.filter((q) => String(q.id) !== String(questionId)),
+          } : prev);
+          toast.success('Question deleted successfully');
+        } else {
+          toast.error('Failed to delete question');
         }
+      } else if (type === 'module' && moduleId) {
+        const module = course.modules?.find(m => m.id === moduleId);
+        if (module?.quiz?.questions.some((q) => String(q.id) === String(questionId))) {
+          const template = ensureModuleQuizTemplate(moduleId);
+          if (template) {
+            setPendingModuleQuizzes((prev) => ({
+              ...prev,
+              [moduleId]: {
+                ...template,
+                questions: template.questions.filter((q) => String(q.id) !== String(questionId)),
+              },
+            }));
+            toast.success('Question deleted successfully');
+          } else {
+            toast.error('Failed to delete question');
+          }
+        } else {
+          toast.error('Failed to delete question');
+        }
+      } else {
+        toast.error('Failed to delete question');
       }
     } catch (err: any) {
       toast.error('Failed to delete question');
@@ -543,11 +767,12 @@ export function CourseBuilderPage() {
   };
 
   const handlePublish = () => {
+    const finalAssessmentQuestionCount = pendingFinalAssessment?.questions.length ?? course.final_assessment?.questions?.length ?? 0;
     if (!course.modules || course.modules.length === 0) {
       setStatus({ type: 'error', message: 'Add at least one module before publishing.' });
       return;
     }
-    if (!course.final_assessment || course.final_assessment.questions.length === 0) {
+    if (finalAssessmentQuestionCount === 0) {
       setStatus({ type: 'error', message: 'Final Assessment is required.' });
       return;
     }
@@ -569,7 +794,9 @@ export function CourseBuilderPage() {
     }
   };
 
-  const canPublish = (course.modules?.length || 0) > 0 && (course.final_assessment?.questions?.length || 0) > 0;
+  const finalAssessmentQuestionCount = pendingFinalAssessment?.questions.length ?? course.final_assessment?.questions?.length ?? 0;
+  const activeFinalAssessment = pendingFinalAssessment || course.final_assessment || null;
+  const canPublish = (course.modules?.length || 0) > 0 && finalAssessmentQuestionCount > 0;
 
   return (
     <div className="max-w-[1200px] mx-auto pb-12 sm:px-6 lg:px-8">
@@ -673,7 +900,7 @@ export function CourseBuilderPage() {
               </h3>
               <ul className="text-xs text-yellow-800 space-y-1">
                 {(!course.modules || course.modules.length === 0) && <li>• Add at least one module</li>}
-                {(course.final_assessment?.questions?.length || 0) === 0 && (
+                {finalAssessmentQuestionCount === 0 && (
                   <li>• Create final assessment with at least one question</li>
                 )}
               </ul>
@@ -702,314 +929,174 @@ export function CourseBuilderPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {course.modules.map((module, mIndex) => (
-              <div key={module.id} className={`bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300 ${module.pending_delete ? 'opacity-65 border-red-200 bg-red-50/5' : ''}`}>
-                {/* Module Header */}
-                <div className="p-4 flex items-center gap-4">
-                  <button
-                    onClick={() => toggleModule(module.id)}
-                    className="p-1 hover:bg-gray-100 rounded transition-colors cursor-pointer"
-                  >
-                    {expandedModules.has(module.id) ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                  </button>
-                  <div className="flex-1 flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${module.pending_delete ? 'bg-red-50 text-red-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                      <BookOpen className="w-4 h-4" />
-                    </div>
-
-                    <div className={`flex-1 flex items-center gap-2 ${module.pending_delete ? 'line-through text-gray-400' : ''}`}>
-                      <EditableTitle
-                        initialTitle={module.title}
-                        onSave={(val) => handleUpdateModuleTitle(module.id, val)}
-                        prefix={`Module ${mIndex + 1}:`}
-                        className={module.pending_delete ? 'line-through text-gray-400 cursor-not-allowed pointer-events-none w-full flex-1 bg-transparent border border-transparent rounded-md outline-none px-1 py-1' : undefined}
-                      />
-                      {module.pending_delete ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 whitespace-nowrap">
-                          Pending Delete
-                        </span>
-                      ) : course.is_published && module.has_unpublished_changes ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
-                          Modified
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-gray-500">Quiz</span>
-                      <button
-                        onClick={() => toggleModuleQuiz(module.id)}
-                        disabled={!!module.pending_delete}
-                        className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all cursor-pointer ${module.quiz ? "bg-blue-600" : "bg-gray-200"
-                          } ${module.pending_delete ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        <span
-                          className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${module.quiz ? "translate-x-6" : "translate-x-1"
-                            }`}
+            {course.modules.map((module, mIndex) => {
+              const moduleQuizTemplate = pendingModuleQuizzes[module.id];
+              return (
+                <div key={module.id} className={`bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300 ${module.pending_delete ? 'opacity-65 border-red-200 bg-red-50/5' : ''}`}>
+                  <div className="p-4 flex items-center gap-4">
+                    <button
+                      onClick={() => toggleModule(module.id)}
+                      className="p-1 hover:bg-gray-100 rounded transition-colors cursor-pointer"
+                    >
+                      {expandedModules.has(module.id) ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                    </button>
+                    <div className="flex-1 flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${module.pending_delete ? 'bg-red-50 text-red-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                        <BookOpen className="w-4 h-4" />
+                      </div>
+                      <div className={`flex-1 flex items-center gap-2 ${module.pending_delete ? 'line-through text-gray-400' : ''}`}>
+                        <EditableTitle
+                          initialTitle={module.title}
+                          onSave={(val) => handleUpdateModuleTitle(module.id, val)}
+                          prefix={`Module ${mIndex + 1}:`}
                         />
+                        {module.pending_delete ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 whitespace-nowrap">
+                            Pending Delete
+                          </span>
+                        ) : course.is_published && module.has_unpublished_changes ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
+                            Modified
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-500">Quiz</span>
+                        <button
+                          onClick={() => toggleModuleQuiz(module.id)}
+                          disabled={!!module.pending_delete}
+                          className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all cursor-pointer ${(moduleQuizTemplate || module.quiz) ? "bg-blue-600" : "bg-gray-200"} ${module.pending_delete ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${(moduleQuizTemplate || module.quiz) ? "translate-x-6" : "translate-x-1"}`} />
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => handleAddSection(module.id)}
+                        disabled={!!module.pending_delete}
+                        className="p-2 text-gray-400 hover:text-indigo-600 rounded-lg disabled:opacity-30 disabled:hover:text-gray-400"
+                        title="Add Section"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteModule(module.id)}
+                        disabled={!!module.pending_delete}
+                        className="p-2 text-gray-400 hover:text-red-500 rounded-lg disabled:opacity-30 disabled:hover:text-gray-400"
+                        title="Delete Module"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                    <button
-                      onClick={() => handleAddSection(module.id)}
-                      disabled={!!module.pending_delete}
-                      className="p-2 text-gray-400 hover:text-indigo-600 rounded-lg disabled:opacity-30 disabled:hover:text-gray-400"
-                      title="Add Section"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteModule(module.id)}
-                      disabled={!!module.pending_delete}
-                      className="p-2 text-gray-400 hover:text-red-500 rounded-lg disabled:opacity-30 disabled:hover:text-gray-400"
-                      title="Delete Module"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
-                </div>
 
-                {/* Module Content */}
-                {expandedModules.has(module.id) && (
-                  <div className="p-4 bg-white space-y-4 border-t border-gray-50">
-                    {module.sections.length === 0 ? (
-                      <div className="text-center py-6 text-gray-400 italic text-sm border border-dashed border-gray-200 rounded-lg bg-gray-50/50">
-                        No sections in this module yet. Click the "+" icon to add a section.
-                      </div>
-                    ) : module.sections.map((section, sIndex) => (
-                      <div key={section.id} className={`border border-gray-100 rounded-lg overflow-hidden transition-all duration-300 ${section.pending_delete ? 'opacity-65 border-red-200 bg-red-50/5' : ''}`}>
-                        <div className="p-3 bg-gray-50/50 flex items-center gap-3">
-                          <button onClick={() => toggleSection(section.id)} className="p-1 hover:bg-gray-200 rounded transition-colors cursor-pointer">
-                            {expandedSections.has(section.id) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                          </button>
-                          <div className={`flex items-center flex-1 w-full gap-2 ${section.pending_delete ? 'line-through text-gray-400' : ''}`}>
-                            <EditableTitle
-                              initialTitle={section.title}
-                              onSave={(val) => handleUpdateSectionTitle(module.id, section.id, val)}
-                              prefix={`Section ${sIndex + 1}:`}
-                              className={section.pending_delete ? 'line-through text-gray-400 cursor-not-allowed pointer-events-none w-full flex-1 bg-transparent border border-transparent rounded-md outline-none px-1 py-1' : undefined}
-                            />
-                            {section.pending_delete ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 whitespace-nowrap">
-                                Pending Delete
-                              </span>
-                            ) : course.is_published && section.has_unpublished_changes ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
-                                Modified
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => openContentItemModal(module.id, section.id)}
-                              disabled={!!module.pending_delete || !!section.pending_delete}
-                              className="p-1.5 text-gray-400 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-gray-400"
-                              title="Add Content"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteSection(module.id, section.id)}
-                              disabled={!!module.pending_delete || !!section.pending_delete}
-                              className="p-1.5 text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-400"
-                              title="Delete Section"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                  {expandedModules.has(module.id) && (
+                    <div className="p-4 bg-white space-y-4 border-t border-gray-50">
+                      {module.sections.length === 0 ? (
+                        <div className="text-center py-6 text-gray-400 italic text-sm border border-dashed border-gray-200 rounded-lg bg-gray-50/50">
+                          No sections in this module yet. Click the "+" icon to add a section.
                         </div>
-
-                        {expandedSections.has(section.id) && (
-                          <div className="p-2 bg-white space-y-1">
-                            {(!section.contents || section.contents.length === 0) ? (
-                              <div className="text-center py-4 text-gray-400 italic text-xs">
-                                No items in this section. Click the "+" icon to add content.
-                              </div>
-                            ) : section.contents.map((item) => (
-                              <div key={item.id} className={`group flex flex-col p-2 hover:bg-gray-50 rounded-lg transition-all duration-300 ${item.pending_delete ? 'opacity-65 bg-red-50/5' : ''}`}>
-                                <div className="flex items-center justify-between">
-                                  <div
-                                    className="flex items-center gap-3 cursor-pointer"
-                                    onClick={() => toggleContentItem(item.id)}
-                                    title="Click to toggle content preview"
+                      ) : (
+                        <div className="space-y-2">
+                          {module.sections.map((section, sIndex) => (
+                            <div key={section.id} className={`border border-gray-100 rounded-lg overflow-hidden transition-all duration-300 ${section.pending_delete ? 'opacity-65 border-red-200 bg-red-50/5' : ''}`}>
+                              <div className="p-3 bg-gray-50/50 flex items-center gap-3">
+                                <div className={`flex items-center flex-1 w-full gap-2 ${section.pending_delete ? 'line-through text-gray-400' : ''}`}>
+                                  <EditableTitle
+                                    initialTitle={section.title}
+                                    onSave={(val) => handleUpdateSectionTitle(module.id, section.id, val)}
+                                    prefix={`Section ${sIndex + 1}:`}
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => openContentItemModal(module.id, section.id)}
+                                    disabled={!!module.pending_delete || !!section.pending_delete}
+                                    className="p-1.5 text-gray-400 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-gray-400"
+                                    title="Add Content"
                                   >
-                                    <FileText className={`w-4 h-4 ${item.pending_delete ? 'text-red-400' : 'text-gray-400'}`} />
-                                    <span className={`text-sm text-gray-700 hover:text-indigo-600 transition-colors font-medium ${item.pending_delete ? 'line-through text-gray-400' : ''}`}>{item.title}</span>
-                                    {item.pending_delete ? (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-red-100 text-red-800 border border-red-200 whitespace-nowrap">
-                                        Pending Delete
-                                      </span>
-                                    ) : course.is_published && item.has_unpublished_changes ? (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
-                                        Modified
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={() => toggleContentItem(item.id)}
-                                      className={`p-1.5 rounded transition-all ${expandedContentItems.has(item.id) ? 'text-indigo-600' : 'text-gray-400 hover:text-indigo-600'}`}
-                                      title={expandedContentItems.has(item.id) ? "Hide Content" : "View Content"}
-                                    >
-                                      {expandedContentItems.has(item.id) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                    </button>
-                                    <button
-                                      onClick={() => openContentItemModal(module.id, section.id, item)}
-                                      disabled={!!module.pending_delete || !!section.pending_delete || !!item.pending_delete}
-                                      className="p-1.5 text-gray-400 hover:text-indigo-600 rounded transition-all disabled:opacity-30 disabled:hover:text-gray-400"
-                                      title="Edit Content"
-                                    >
-                                      <Edit2 className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteContentItem(module.id, section.id, item.id)}
-                                      disabled={!!module.pending_delete || !!section.pending_delete || !!item.pending_delete}
-                                      className="p-1.5 text-gray-400 hover:text-red-500 rounded transition-all disabled:opacity-30 disabled:hover:text-gray-400"
-                                      title="Delete Content"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
+                                    <Plus className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSection(module.id, section.id)}
+                                    disabled={!!module.pending_delete || !!section.pending_delete}
+                                    className="p-1.5 text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-400"
+                                    title="Delete Section"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
                                 </div>
-                                {expandedContentItems.has(item.id) && (
-                                  <div className="mt-2 pl-7 space-y-2 py-2 border-t border-gray-50/50">
-                                    {(() => {
-                                      let blocks = item.contents || [];
-                                      if (blocks.length === 0) {
-                                        const legacyType = (item as any).content_type;
-                                        const legacyText = (item as any).text_content;
-                                        const legacyVideo = (item as any).video_url;
-                                        const legacyFile = (item as any).file;
-
-                                        if (legacyText && (legacyText.startsWith('[') || legacyText.startsWith('{'))) {
-                                          try {
-                                            const parsed = JSON.parse(legacyText);
-                                            blocks = Array.isArray(parsed) ? parsed : [parsed];
-                                          } catch (e) {
-                                            blocks = [{ id: 'fallback', type: legacyType || 'text', content: legacyText }];
-                                          }
-                                        } else if (legacyText || legacyVideo || legacyFile) {
-                                          blocks = [{
-                                            id: 'fallback',
-                                            type: legacyType || 'text',
-                                            content: legacyText || legacyVideo || legacyFile || ''
-                                          }];
-                                        }
-                                      }
-
-                                      if (blocks.length === 0) {
-                                        return <p className="text-[10px] italic text-gray-300">No content blocks added.</p>;
-                                      }
-
-                                      return blocks.map((block, bIdx) => (
-                                        <div key={bIdx} className="flex flex-col gap-1">
-                                          <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                            {block.type === 'text' && <Type className="w-3 h-3" />}
-                                            {block.type === 'video' && <Video className="w-3 h-3" />}
-                                            {block.type === 'image' && <ImageIcon className="w-3 h-3" />}
-                                            {block.type === 'file' && <FileIcon className="w-3 h-3" />}
-                                            {block.type}
-                                          </div>
-                                          {block.type === 'text' ? (
-                                            <div className="text-sm text-gray-700 leading-relaxed rich-text-content min-h-[1.5rem]" dangerouslySetInnerHTML={{ __html: block.content || '<span class="italic text-gray-400 text-[10px]">Empty block</span>' }} />
-                                          ) : block.type === 'image' ? (
-                                            <div className="relative w-24 h-16 rounded-lg overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
-                                              {block.content ? (
-                                                <img src={block.content} alt="Preview" className="w-full h-full object-cover" />
-                                              ) : (
-                                                <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-4 h-4 text-gray-300" /></div>
-                                              )}
-                                            </div>
-                                          ) : block.type === 'video' ? (
-                                            <div className="relative w-24 h-16 rounded-lg overflow-hidden border border-gray-200 shadow-sm bg-black flex items-center justify-center">
-                                              <div className="absolute inset-0 flex items-center justify-center bg-black/20"><Video className="w-5 h-5 text-white/80" /></div>
-                                            </div>
-                                          ) : (
-                                            <div className="text-[10px] text-blue-500 truncate bg-blue-50/30 p-1.5 rounded border border-blue-100/50">
-                                              {block.content || 'No URL/File provided'}
-                                            </div>
-                                          )}
-                                        </div>
-                                      ));
-                                    })()}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    {/* Module Quiz Section */}
-                    {module.quiz && (
-                      <div className="mt-6 pt-6 border-t border-gray-100">
-                        <div className="bg-gray-50/50 rounded-xl border border-gray-100 p-5">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center">
-                                <CircleCheckBig className="w-4 h-4 text-amber-600" />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h4 className={`text-sm font-bold ${module.quiz.pending_delete ? 'line-through text-gray-400' : 'text-gray-900'}`}>Module Quiz</h4>
-                                  {module.quiz.pending_delete ? (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">Removed</span>
-                                  ) : course.is_published && module.quiz.has_unpublished_changes ? (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">Modified</span>
-                                  ) : null}
-                                </div>
-                                <p className="text-[10px] text-gray-500">Assess students' understanding of this module</p>
                               </div>
                             </div>
-                            <button
-                              onClick={() => setShowAssessmentModal({ type: 'module', moduleId: module.id })}
-                              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-bold transition-all cursor-pointer"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              Add Question
-                            </button>
-                          </div>
-
-                          {(!module.quiz || module.quiz.questions.length === 0) ? (
-                            <div className="text-center py-6 bg-white/50 rounded-lg border border-dashed border-gray-200">
-                              <p className="text-xs text-gray-400 italic">No questions added to this quiz yet.</p>
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {module.quiz.questions.map((q, qIdx) => (
-                                <div key={q.id || qIdx} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 group">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded flex-shrink-0">{qIdx + 1}</span>
-                                    <span className="text-xs text-gray-700 truncate">{q.question_text || q.question}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 transition-all">
-                                    <button
-                                      onClick={() => setShowAssessmentModal({ type: 'module', moduleId: module.id, question: q })}
-                                      className="p-1.5 text-gray-400 hover:text-blue-500"
-                                      title="Edit Question"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      onClick={() => deleteQuestion('module', q.id, module.id)}
-                                      className="p-1.5 text-gray-400 hover:text-red-500"
-                                      title="Delete Question"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          ))}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+                      )}
+
+                      {(moduleQuizTemplate || module.quiz) && (
+                        <div className="mt-6 pt-6 border-t border-gray-100">
+                          <div className="bg-gray-50/50 rounded-xl border border-gray-100 p-5">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center">
+                                  <CircleCheckBig className="w-4 h-4 text-amber-600" />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className={`text-sm font-bold ${module.quiz?.pending_delete ? 'line-through text-gray-400' : 'text-gray-900'}`}>Module Quiz</h4>
+                                  </div>
+                                  <p className="text-[10px] text-gray-500">Assess students' understanding of this module</p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setShowAssessmentModal({ type: 'module', moduleId: module.id, assessmentId: moduleQuizTemplate?.id })}
+                                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-bold transition-all cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                Add Question
+                              </button>
+                            </div>
+
+                            {(!(moduleQuizTemplate || module.quiz) || (moduleQuizTemplate || module.quiz).questions.length === 0) ? (
+                              <div className="text-center py-6 bg-white/50 rounded-lg border border-dashed border-gray-200">
+                                <p className="text-xs text-gray-400 italic">No questions added to this quiz yet.</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {(moduleQuizTemplate || module.quiz).questions.map((q, qIdx) => (
+                                  <div key={q.id || qIdx} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 group">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded flex-shrink-0">{qIdx + 1}</span>
+                                      <span className="text-xs text-gray-700 truncate">{q.question_text || q.question}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 transition-all">
+                                      <button
+                                        onClick={() => setShowAssessmentModal({ type: 'module', moduleId: module.id, assessmentId: moduleQuizTemplate?.id, question: q })}
+                                        className="p-1.5 text-gray-400 hover:text-blue-500"
+                                        title="Edit Question"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => deleteQuestion('module', q.id, module.id)}
+                                        className="p-1.5 text-gray-400 hover:text-red-500"
+                                        title="Delete Question"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1025,23 +1112,29 @@ export function CourseBuilderPage() {
               </span>
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              {course.final_assessment?.questions?.length || 0} question{(course.final_assessment?.questions?.length || 0) !== 1 ? "s" : ""} added
+              {activeFinalAssessment?.questions?.length || 0} question{(activeFinalAssessment?.questions?.length || 0) !== 1 ? "s" : ""} added
             </p>
           </div>
           <div className="flex items-center gap-2">
             {/* Show settings badges if final assessment exists */}
-            {course.final_assessment && (
+            {activeFinalAssessment && (
               <div className="flex items-center gap-1.5 mr-1">
-                {course.final_assessment.duration != null && (
+                {activeFinalAssessment.duration != null && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
                     <Clock className="w-3 h-3" />
-                    {course.final_assessment.duration}m
+                    {activeFinalAssessment.duration}m
                   </span>
                 )}
-                {course.final_assessment.max_attempts != null && (
+                {activeFinalAssessment.max_attempts != null && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
                     <RefreshCw className="w-3 h-3" />
-                    {course.final_assessment.max_attempts}x
+                    {activeFinalAssessment.max_attempts}x
+                  </span>
+                )}
+                {activeFinalAssessment.tab_switch_enabled && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-50 text-orange-700 border border-orange-200">
+                    <ShieldCheck className="w-3 h-3 text-orange-500" />
+                    {activeFinalAssessment.tab_switch_limit ?? 0}
                   </span>
                 )}
                 <button
@@ -1053,22 +1146,47 @@ export function CourseBuilderPage() {
                 </button>
               </div>
             )}
+            {activeFinalAssessment && (
+              <button
+                onClick={async () => {
+                  const finalAssessmentToDetach = pendingFinalAssessment || course.final_assessment;
+                  if (!finalAssessmentToDetach) return;
+
+                  try {
+                    await dispatch(detachAssessment({
+                      assessmentId: finalAssessmentToDetach.id,
+                      payload: { course_id: course.id },
+                    })).unwrap();
+                    setPendingFinalAssessment(null);
+                    await dispatch(fetchCourseDetails(course.id));
+                    toast.success("Final assessment detached from this course.");
+                  } catch (e: any) {
+                    toast.error(e?.message || "Failed to detach final assessment");
+                  }
+                }}
+                className="p-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                title="Detach final assessment"
+                aria-label="Detach final assessment"
+              >
+                <Unlink2 className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => {
-                if (!course.final_assessment) {
-                  // No assessment yet — configure settings first
+                if (!activeFinalAssessment) {
+                  // No assessment record exists yet — create one first
                   setShowFinalAssessmentSettings('create');
                 } else {
-                  // Assessment exists — go straight to adding a question
-                  setShowAssessmentModal({ type: 'final' });
+                  // Assessment record already exists, even if it has no questions yet
+                  setShowAssessmentModal({ type: 'final', assessmentId: activeFinalAssessment.id });
                 }
               }}
               className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
             >
               <Plus className="w-5 h-5" />
-              {(course.final_assessment?.questions?.length || 0) === 0 ? "Create Assessment" : "Add Question"}
+              {activeFinalAssessment ? "Add Question" : "Create Assessment"}
             </button>
-            {!course.final_assessment && (
+            {!activeFinalAssessment && (
               <button
                 onClick={() => setShowAssessmentLibraryPicker({ type: 'final' })}
                 className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
@@ -1080,7 +1198,7 @@ export function CourseBuilderPage() {
           </div>
         </div>
 
-        {(!course.final_assessment || (course.final_assessment?.questions?.length || 0) === 0) ? (
+        {(!activeFinalAssessment || (activeFinalAssessment?.questions?.length || 0) === 0) ? (
           <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
             <CheckCircle2 className="w-12 h-12 text-gray-400 mx-auto mb-3" />
             <p className="text-gray-600 font-medium mb-1">
@@ -1092,12 +1210,12 @@ export function CourseBuilderPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {course.final_assessment?.questions?.map((q, idx) => (
+            {activeFinalAssessment?.questions?.map((q, idx) => (
               <div key={q.id || idx} className="group flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-white border border-transparent hover:border-amber-100 transition-all">
                 <span className="text-sm text-gray-700 truncate pr-4">{idx + 1}. {q.question_text || q.question}</span>
                 <div className="flex items-center gap-1 transition-all">
                   <button
-                    onClick={() => setShowAssessmentModal({ type: 'final', question: q })}
+                    onClick={() => setShowAssessmentModal({ type: 'final', assessmentId: activeFinalAssessment?.id, question: q })}
                     className="p-1.5 text-gray-400 hover:text-blue-500"
                     title="Edit Question"
                   >
@@ -1186,11 +1304,11 @@ export function CourseBuilderPage() {
       {showFinalAssessmentSettings === 'edit' && (
         <FinalAssessmentSettingsModal
           initialValues={{
-            duration: course.final_assessment?.duration,
-            max_attempts: course.final_assessment?.max_attempts,
-            pass_mark: course.final_assessment?.pass_mark,
-            tab_switch_enabled: course.final_assessment?.tab_switch_enabled,
-            tab_switch_limit: course.final_assessment?.tab_switch_limit,
+            duration: activeFinalAssessment?.duration,
+            max_attempts: activeFinalAssessment?.max_attempts,
+            pass_mark: activeFinalAssessment?.pass_mark,
+            tab_switch_enabled: pendingFinalAssessment?.tab_switch_enabled,
+            tab_switch_limit: pendingFinalAssessment?.tab_switch_limit,
           }}
           onClose={() => setShowFinalAssessmentSettings(null)}
           onConfirm={handleUpdateFinalAssessmentSettings}

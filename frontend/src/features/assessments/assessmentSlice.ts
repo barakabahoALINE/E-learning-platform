@@ -77,6 +77,40 @@ export const deleteAssessmentAction = createAsyncThunk(
   }
 );
 
+export const attachAssessment = createAsyncThunk(
+  'assessments/attachAssessment',
+  async (
+    { assessmentId, payload }: {
+      assessmentId: number | string;
+      payload: { module_id?: number | string; course_id?: number | string; module_ids?: Array<number | string>; course_ids?: Array<number | string> };
+    },
+    { rejectWithValue }
+  ) => {
+    try {
+      return await assessmentAPI.attachAssessment(assessmentId, payload);
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.error || 'Failed to attach assessment');
+    }
+  }
+);
+
+export const detachAssessment = createAsyncThunk(
+  'assessments/detachAssessment',
+  async (
+    { assessmentId, payload }: {
+      assessmentId: number | string;
+      payload?: { module_id?: number | string; course_id?: number | string };
+    },
+    { rejectWithValue }
+  ) => {
+    try {
+      return await assessmentAPI.detachAssessment(assessmentId, payload);
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.error || 'Failed to detach assessment');
+    }
+  }
+);
+
 export const updateAssessmentSettings = createAsyncThunk(
   'assessments/updateSettings',
   async ({ assessmentId, data }: { assessmentId: number | string; data: { duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string; tab_switch_enabled?: boolean; tab_switch_limit?: number } }, { rejectWithValue }) => {

@@ -1,4 +1,6 @@
+from django.db.models import Q
 from rest_framework import serializers
+from courses_app.models import Course, Module
 from .models import *
 from .services.rules import RuleError, validate_unique_assessment
 import random
@@ -12,12 +14,17 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
     tab_switch_enabled = serializers.BooleanField(required=False, default=False)
     tab_switch_limit = serializers.IntegerField(required=False, default=0, min_value=0)
 
+    courses = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all(), many=True, required=False)
+    modules = serializers.PrimaryKeyRelatedField(queryset=Module.objects.all(), many=True, required=False)
+
     class Meta:
         model = Assessment
         fields = [
             'id',
             'course',
             'module',
+            'courses',
+            'modules',
             'assessment_type',
             'is_final',
             'title',
@@ -54,6 +61,20 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         if data.get('tab_switch_limit') is None:
             data['tab_switch_limit'] = 0
 
+        course = data.get('course')
+        module = data.get('module')
+
+        if module and not course:
+            data['course'] = module.course
+            course = module.course
+
+        if data['assessment_type'] == 'FINAL':
+            if module is not None or data.get('modules'):
+                raise serializers.ValidationError("Final assessment cannot be linked to a module.")
+
+        if data['assessment_type'] == 'QUIZ' and module is None and not data.get('modules') and course is not None:
+            raise serializers.ValidationError("Quiz must be linked to a module when a course is provided.")
+
         assessment = Assessment(
             course=data.get('course'),
             module=data.get('module'),
@@ -73,7 +94,68 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         except RuleError as exc:
             raise serializers.ValidationError(str(exc.message))
 
+        if data.get('courses'):
+            selected_courses = data['courses']
+            for course in selected_courses:
+                existing_final = Assessment.objects.filter(
+                    Q(course=course) | Q(courses=course),
+                    assessment_type='FINAL'
+                )
+                if self.instance:
+                    existing_final = existing_final.exclude(pk=self.instance.pk)
+                if existing_final.exists():
+                    raise serializers.ValidationError(
+                        f"A final assessment already exists for course {course.id}."
+                    )
+
+        if data.get('modules'):
+            selected_modules = data['modules']
+            for module in selected_modules:
+                existing_quiz = Assessment.objects.filter(
+                    Q(module=module) | Q(modules=module),
+                    assessment_type='QUIZ'
+                )
+                if self.instance:
+                    existing_quiz = existing_quiz.exclude(pk=self.instance.pk)
+                if existing_quiz.exists():
+                    raise serializers.ValidationError(
+                        f"A quiz already exists for module {module.id}."
+                    )
+
         return data
+
+    def create(self, validated_data):
+        courses = validated_data.pop('courses', [])
+        modules = validated_data.pop('modules', [])
+
+        assessment = Assessment.objects.create(
+            course=validated_data.get('course'),
+            module=validated_data.get('module'),
+            assessment_type=validated_data.get('assessment_type'),
+            title=validated_data.get('title'),
+            pass_mark=validated_data.get('pass_mark'),
+            max_attempts=validated_data.get('max_attempts'),
+            duration=validated_data.get('duration'),
+            tab_switch_enabled=validated_data.get('tab_switch_enabled', False),
+            tab_switch_limit=validated_data.get('tab_switch_limit', 0),
+            descriptions=validated_data.get('descriptions'),
+            instructions=validated_data.get('instructions')
+        )
+
+        if courses:
+            assessment.courses.set(courses)
+            if not assessment.course:
+                assessment.course = courses[0]
+
+        if modules:
+            assessment.modules.set(modules)
+            if not assessment.module:
+                assessment.module = modules[0]
+            if not assessment.course:
+                assessment.course = modules[0].course
+
+        assessment.save()
+        return assessment
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -90,7 +172,6 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         elif instance.assessment_type == "FINAL":
             data.pop("descriptions", None)
 
-        data.pop("module", None)
         return data
 
 
@@ -284,11 +365,17 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
     ModuleSerializer to embed quiz/final-assessment data in course responses.
     """
     questions = QuestionSerializer(many=True, read_only=True)
+    course_attachments = serializers.SerializerMethodField()
+    module_attachments = serializers.SerializerMethodField()
 
     class Meta:
         model = Assessment
         fields = [
             'id',
+            'course',
+            'module',
+            'course_attachments',
+            'module_attachments',
             'title',
             'assessment_type',
             'pass_mark',
@@ -302,4 +389,30 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
             'has_unpublished_changes',
             'pending_delete',
             'questions',
+        ]
+
+    def get_course_attachments(self, obj):
+        courses = list(obj.courses.all())
+        if not courses and obj.course is not None:
+            courses = [obj.course]
+        return [
+            {
+                'id': course.id,
+                'title': course.title,
+            }
+            for course in courses
+        ]
+
+    def get_module_attachments(self, obj):
+        modules = list(obj.modules.all())
+        if not modules and obj.module is not None:
+            modules = [obj.module]
+        return [
+            {
+                'id': module.id,
+                'title': module.title,
+                'course_id': module.course_id,
+                'course_title': module.course.title if module.course else None,
+            }
+            for module in modules
         ]

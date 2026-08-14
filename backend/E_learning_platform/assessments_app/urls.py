@@ -2,8 +2,14 @@ from django.urls import path
 from .views import *
 
 urlpatterns = [
-    path('<int:assessment_id>/questions/', GetAssessmentQuestionsAPIView.as_view(), name="assessment-questions"),
+    path('list/', ListAssessmentsAPIView.as_view(), name="list-assessments"),
     path('create/', CreateAssessmentAPIView.as_view(), name="create-assessment"),
+    path('<int:assessment_id>/update/', UpdateAssessmentAPIView.as_view(), name="update-assessment"),
+    path('<int:assessment_id>/delete/', DeleteAssessmentAPIView.as_view(), name="delete-assessment"),
+    path('<int:assessment_id>/attach/', AttachAssessmentAPIView.as_view(), name="attach-assessment"),
+    path('<int:assessment_id>/detach/', DetachAssessmentAPIView.as_view(), name="detach-assessment"),
+    path('<int:assessment_id>/', RetrieveAssessmentAPIView.as_view(), name="retrieve-assessment"),
+    path('<int:assessment_id>/questions/', GetAssessmentQuestionsAPIView.as_view(), name="assessment-questions"),
     path('questions/create/', CreateQuestionAPIView.as_view(), name="create-question"),
     path('questions/<int:question_id>/update/', UpdateQuestionAPIView.as_view(), name="update-question"),
     path('questions/<int:question_id>/delete/', DeleteQuestionAPIView.as_view(), name="delete-question"),

@@ -56,6 +56,8 @@ export interface Quiz {
   duration?: number;
   descriptions?: string;
   instructions?: string;
+  tab_switch_enabled?: boolean;
+  tab_switch_limit?: number;
   questions: QuizQuestion[];
   is_published?: boolean;
   has_unpublished_changes?: boolean;
