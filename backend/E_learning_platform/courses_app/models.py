@@ -88,7 +88,7 @@ class Module(models.Model):
     # STATUS
     has_unpublished_changes = models.BooleanField(default=False)
     pending_delete = models.BooleanField(default=False)
-    
+
     class Meta:
         unique_together = ("course", "order")
 
@@ -178,6 +178,16 @@ class Content(models.Model):
     # STATUS
     has_unpublished_changes = models.BooleanField(default=False)
     pending_delete = models.BooleanField(default=False)
+
+    # Optional Key Concept Flip Cards (published data)
+    key_concept_enabled = models.BooleanField(default=False)
+    require_key_concept_review = models.BooleanField(default=False)
+    key_concept_cards = models.JSONField(null=True, blank=True)
+
+    # Draft Key Concept Flip Cards
+    draft_key_concept_enabled = models.BooleanField(default=False)
+    draft_require_key_concept_review = models.BooleanField(default=False)
+    draft_key_concept_cards = models.JSONField(null=True, blank=True)
     
     # METADATA
     created_at = models.DateTimeField(auto_now_add=True)

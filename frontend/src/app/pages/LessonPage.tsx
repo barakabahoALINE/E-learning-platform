@@ -16,6 +16,7 @@ import {
 import {
   ChevronRight,
   ChevronDown,
+  Check,
   CheckCircle2,
   Circle,
   FileText,
@@ -1116,7 +1117,8 @@ export const LessonPage: React.FC = () => {
                             </div>
                           </CollapsibleTrigger>
 
-                          <CollapsibleContent className="pl-8 pr-2 space-y-0.5 pt-1">
+                          <CollapsibleContent className="relative pl-7 pr-2 space-y-2 pt-1 pb-1">
+                            <div className="pointer-events-none absolute left-[9px] top-2 bottom-2 w-px bg-emerald-200/70 dark:bg-emerald-500/20" />
                             {section.contents.map((item, iIdx) => {
                               const isActiveItem =
                                 String(item.id) === String(activeItemId);
@@ -1139,25 +1141,38 @@ export const LessonPage: React.FC = () => {
                                     }
                                   }}
                                   className={cn(
-                                    "w-full flex items-start gap-2 p-2 rounded text-left transition-colors mb-1 last:mb-0 border border-transparent",
+                                    "relative w-full flex items-start gap-3 pl-7 pr-1 py-2 text-left transition-colors duration-200 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-50 dark:focus-visible:ring-offset-[#111827]",
                                     isActiveItem
-                                      ? "active-lesson-card"
-                                      : "hover:bg-gray-100 dark:hover:bg-[#1F2937]/45",
-                                    isCompleted &&
-                                      !isActiveItem &&
-                                      "opacity-85",
+                                      ? "bg-emerald-50/40 dark:bg-emerald-500/5"
+                                      : "hover:bg-accent/40 dark:hover:bg-white/[0.03]",
                                   )}
+                                  aria-current={
+                                    isActiveItem ? "step" : undefined
+                                  }
                                 >
-                                  <div className="flex-shrink-0 mt-0.5">
-                                    {getStatusIcon(isCompleted, isActiveItem)}
-                                  </div>
+                                  <span
+                                    aria-hidden="true"
+                                    className={cn(
+                                      "absolute left-0 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded-full transition-all",
+                                      isCompleted
+                                        ? "bg-emerald-600 border border-emerald-600"
+                                        : isActiveItem
+                                          ? "bg-emerald-50 dark:bg-emerald-500/10 border-2 border-emerald-600"
+                                          : "bg-white dark:bg-[#111827] border border-emerald-500/60 dark:border-emerald-400/50",
+                                    )}
+                                  >
+                                    {isCompleted ? (
+                                      <Check className="h-3 w-3 text-white" />
+                                    ) : null}
+                                  </span>
+
                                   <div className="flex-1 min-w-0">
                                     <p
                                       className={cn(
-                                        "text-[14px] font-medium leading-tight",
+                                        "text-[14px] leading-tight truncate",
                                         isActiveItem
-                                          ? "text-foreground dark:text-white"
-                                          : "text-muted-foreground dark:text-slate-200 group-hover:text-foreground dark:group-hover:text-white",
+                                          ? "font-semibold text-foreground dark:text-white"
+                                          : "font-medium text-foreground dark:text-slate-200",
                                       )}
                                     >
                                       {item.title}

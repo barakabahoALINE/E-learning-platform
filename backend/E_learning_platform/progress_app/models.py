@@ -38,6 +38,32 @@ class ContentProgress(models.Model):
         if self.enrollment:
             _refresh_section_progress(self.student, self.content.section, self.enrollment)
 
+
+# Track per-card review state for key concept cards
+class ConceptCardProgress(models.Model):
+    student = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="concept_card_progress"
+    )
+    content = models.ForeignKey(
+        Content, on_delete=models.CASCADE, related_name="concept_card_progress"
+    )
+    enrollment = models.ForeignKey(
+        Enrollment,
+        on_delete=models.CASCADE,
+        related_name="concept_card_progress",
+        null=True,
+        blank=True,
+    )
+    card_index = models.PositiveIntegerField()
+    reviewed = models.BooleanField(default=False)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ["student", "content", "card_index"]
+
+    def __str__(self):
+        return f"{self.student} - {self.content} card {self.card_index} ({'reviewed' if self.reviewed else 'not reviewed'})"
+
 # SECTION PROGRESS
 class SectionProgress(models.Model):
     student = models.ForeignKey(
@@ -188,12 +214,32 @@ def _refresh_section_progress(student, section, enrollment):
     if total == 0:
         return
 
-    done = ContentProgress.objects.filter(
-        student=student,
-        content__section=section,
-        content__is_published=True,
-        completed=True,
-    ).count()
+    # Count completed contents, taking into account optional key concept review
+    done = 0
+    contents = Content.objects.filter(section=section, is_published=True)
+    for content in contents:
+        # standard completed flag
+        cp = ContentProgress.objects.filter(student=student, content=content, completed=True).first()
+        if cp:
+            done += 1
+            continue
+
+        # if content requires key concept review, check per-card progress
+        try:
+            if getattr(content, "require_key_concept_review", False):
+                cards = content.key_concept_cards or []
+                if len(cards) == 0:
+                    # no cards, treat as not completed
+                    continue
+                reviewed_count = ConceptCardProgress.objects.filter(
+                    student=student, content=content, reviewed=True
+                ).count()
+                if reviewed_count >= len(cards):
+                    done += 1
+                    continue
+        except Exception:
+            # defensive: ignore and treat as not completed
+            pass
 
     section_prog, _ = SectionProgress.objects.get_or_create(
         student=student,

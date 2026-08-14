@@ -17,7 +17,24 @@ class ContentDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Content
-        fields = ["id", "section", "title", "content_type", "description", "video_url", "text_content", "file", "is_preview", "order", "has_unpublished_changes", "pending_delete"]
+        fields = [
+            "id",
+            "section",
+            "title",
+            "content_type",
+            "description",
+            "video_url",
+            "text_content",
+            "file",
+            "is_preview",
+            "order",
+            "has_unpublished_changes",
+            "pending_delete",
+            # Key concept cards
+            "key_concept_enabled",
+            "require_key_concept_review",
+            "key_concept_cards",
+        ]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -52,7 +69,15 @@ class ContentCreateUpdateSerializer(serializers.ModelSerializer):
             "is_preview",
             "has_unpublished_changes",
             "pending_delete",
-            "is_published"
+            "is_published",
+            # Key concept cards (published)
+            "key_concept_enabled",
+            "require_key_concept_review",
+            "key_concept_cards",
+            # Draft key concept fields
+            "draft_key_concept_enabled",
+            "draft_require_key_concept_review",
+            "draft_key_concept_cards",
         ]
 
     def validate(self, attrs):
@@ -75,6 +100,14 @@ class ContentCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"file": "File is required for file content."}
             )
+
+        # ensure key concept cards provided when enabled
+        kc_enabled = attrs.get("key_concept_enabled") or attrs.get("draft_key_concept_enabled")
+        kc_cards = attrs.get("key_concept_cards") or attrs.get("draft_key_concept_cards")
+        if kc_enabled and (not kc_cards or not isinstance(kc_cards, (list, tuple)) or len(kc_cards) == 0):
+            raise serializers.ValidationError({
+                "key_concept_cards": "At least one key concept card is required when key_concept_enabled is true."
+            })
 
         return attrs
 

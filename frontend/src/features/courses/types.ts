@@ -8,21 +8,58 @@ export interface Category {
   name: string;
 }
 
-export type ContentType = "text" | "video" | "image" | "file";
+export type ContentType =
+  | "text"
+  | "video"
+  | "image"
+  | "file"
+  | "flip_card"
+  | "key_concepts"
+  | "expandable_section";
+
+export type FlipCardSideType = "text" | "image" | "image_text";
+
+export interface ExpandableSectionItem {
+  id: string | number;
+  title: string;
+  content: string;
+}
+
+export interface ExpandableSectionSettings {
+  defaultOpen?: "collapsed" | "first-expanded";
+  allowMultiple?: boolean;
+  showNumbering?: boolean;
+}
+
+export interface FlipCardSide {
+  type: FlipCardSideType;
+  text?: string;
+  image?: string;
+  imageAlt?: string;
+}
+
+export type FlipCardCard = {
+  front: FlipCardSide | string;
+  back: FlipCardSide | string;
+};
 
 export interface ContentBlock {
   id: string | number;
   type: ContentType;
   content: string;
+  cards?: FlipCardCard[];
   link?: string;
+  items?: ExpandableSectionItem[];
+  settings?: ExpandableSectionSettings;
 }
 
 export interface ContentItem {
   id: string | number;
   title: string;
   order: number;
-  contents?: ContentBlock[];
-  has_unpublished_changes?: boolean;
+  contents?: ContentBlock[];  key_concept_enabled?: boolean;
+  require_key_concept_review?: boolean;
+  key_concept_cards?: Array<{ front: string; back: string }>;  has_unpublished_changes?: boolean;
   pending_delete?: boolean;
 }
 

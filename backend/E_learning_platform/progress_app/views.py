@@ -11,6 +11,7 @@ from rest_framework import status
 from assessments_app.models import Assessment, Attempt
 from .permissions import CanViewProgress, CanCompleteProgress, IsEnrolled
 from .models import ContentProgress, SectionProgress, ModuleProgress, CourseProgress, LearningSession
+from .models import ConceptCardProgress
 from courses_app.models import Content, Section, Module, Course
 from enrollments_app.models import Enrollment
 from .serializers import *
@@ -305,6 +306,57 @@ class CompleteContentAPIView(APIView):
                 "completed_at": course_prog.completed_at if course_prog else None,
             },
         })
+
+
+# 1b. Mark a concept card reviewed
+class ConceptCardReviewAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsEnrolled]
+
+    def post(self, request, course_id, section_id, content_id, card_index):
+        content = get_object_or_404(
+            Content,
+            id=content_id,
+            section__module__course_id=course_id,
+            section__module__is_published=True,
+            section__is_published=True,
+            is_published=True,
+        )
+
+        enrollment = get_object_or_404(
+            Enrollment,
+            student=request.user,
+            course_id=course_id,
+            status__in=["active", "completed"],
+        )
+
+        # ensure index within bounds
+        cards = content.key_concept_cards or []
+        if card_index < 0 or card_index >= len(cards):
+            return Response({"status": "error", "message": "Card index out of range."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cp, created = ConceptCardProgress.objects.get_or_create(
+            student=request.user,
+            content=content,
+            card_index=card_index,
+            defaults={"enrollment": enrollment},
+        )
+        cp.reviewed = True
+        cp.reviewed_at = timezone.now()
+        cp.enrollment = enrollment
+        cp.save()
+
+        # if all cards reviewed and content requires review, optionally mark content complete
+        if getattr(content, "require_key_concept_review", False):
+            total_cards = len(cards)
+            reviewed_count = ConceptCardProgress.objects.filter(student=request.user, content=content, reviewed=True).count()
+            if reviewed_count >= total_cards:
+                cprog, _ = ContentProgress.objects.get_or_create(student=request.user, content=content, defaults={"enrollment": enrollment})
+                cprog.completed = True
+                cprog.completed_at = timezone.now()
+                cprog.enrollment = enrollment
+                cprog.save()
+
+        return Response({"status": "success", "message": "Card marked reviewed.", "card_index": card_index})
 # ═══════════════════════════════════════════════════════════════
 # 2. List contents with progress for a section
 #    GET /progress/courses/{course_id}/sections/{section_id}/contents/

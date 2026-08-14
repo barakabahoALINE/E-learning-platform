@@ -249,6 +249,11 @@ const courseAPI = {
     return response.data;
   },
 
+  reviewConceptCard: async (courseId: number | string, sectionId: number | string, contentId: number | string, cardIndex: number): Promise<any> => {
+    const response = await api.post(`progress/courses/${courseId}/sections/${sectionId}/contents/${contentId}/cards/${cardIndex}/review/`);
+    return response.data;
+  },
+
   fetchSectionContentsProgress: async (courseId: number | string, sectionId: number | string): Promise<SectionContentsProgressResponse> => {
     const response = await api.get(`progress/courses/${courseId}/sections/${sectionId}/contents/`);
     return response.data;

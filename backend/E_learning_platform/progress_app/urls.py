@@ -23,6 +23,7 @@ urlpatterns = [
     
     # Content APIS
     path("courses/<int:course_id>/sections/<int:section_id>/contents/<int:content_id>/complete/",CompleteContentAPIView.as_view(), name="complete-content"),
+    path("courses/<int:course_id>/sections/<int:section_id>/contents/<int:content_id>/cards/<int:card_index>/review/", ConceptCardReviewAPIView.as_view(), name="review-concept-card"),
     path("courses/<int:course_id>/sections/<int:section_id>/contents/",SectionContentsProgressAPIView.as_view(), name="section-contents-progress"),
 
     # Section APIS
