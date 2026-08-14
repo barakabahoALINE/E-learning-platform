@@ -641,4 +641,3 @@ class PublishCourseChangesSerializer(serializers.Serializer):
         if value is not True:
             raise serializers.ValidationError("You must confirm publishing changes.")
         return value
-

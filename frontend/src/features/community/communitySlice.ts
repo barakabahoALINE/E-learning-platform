@@ -275,7 +275,7 @@ const communitySlice = createSlice({
         state.discussionById[normalized.id] = normalized;
       })
       .addCase(deleteCommunityDiscussion.fulfilled, (state, action: PayloadAction<any>) => {
-        const deletedId = action.meta.arg as string;
+        const deletedId = (action as any).meta?.arg as string;
         state.discussions = state.discussions.filter((discussion) => discussion.id !== deletedId);
         delete state.discussionById[deletedId];
         state.replies = state.replies.filter((reply) => reply.discussionId !== deletedId);
@@ -301,7 +301,7 @@ const communitySlice = createSlice({
         );
       })
       .addCase(deleteCommunityReply.fulfilled, (state, action: PayloadAction<any>) => {
-        const deletedId = action.meta.arg as string;
+        const deletedId = (action as any).meta?.arg as string;
         const reply = state.replies.find((replyItem) => replyItem.id === deletedId);
         if (reply) {
           state.replies = state.replies.filter((item) => item.id !== deletedId);
@@ -324,7 +324,7 @@ const communitySlice = createSlice({
         }
       })
       .addCase(deleteCommunityLike.fulfilled, (state, action: PayloadAction<any>) => {
-        const deletedId = action.meta.arg as string;
+        const deletedId = (action as any).meta?.arg as string;
         state.likes = state.likes.filter((like) => like.id !== deletedId);
       })
       .addMatcher(
@@ -336,7 +336,7 @@ const communitySlice = createSlice({
       )
       .addMatcher(
         (action) => action.type.startsWith('community/') && action.type.endsWith('/rejected'),
-        (state, action) => {
+        (state, action: any) => {
           state.isLoading = false;
           state.status = 'failed';
           state.error = action.payload as string;

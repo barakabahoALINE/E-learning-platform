@@ -174,6 +174,13 @@ class Content(models.Model):
     draft_text_content = models.TextField(null=True, blank=True)
     draft_file = models.FileField(upload_to="draft_content_files/",null=True,blank=True)
     draft_order = models.PositiveIntegerField(null=True, blank=True)
+    # Key concept fields (added by migration 0003)
+    draft_key_concept_cards = models.JSONField(blank=True, null=True)
+    draft_key_concept_enabled = models.BooleanField(default=False)
+    draft_require_key_concept_review = models.BooleanField(default=False)
+    key_concept_cards = models.JSONField(blank=True, null=True)
+    key_concept_enabled = models.BooleanField(default=False)
+    require_key_concept_review = models.BooleanField(default=False)
     
     # STATUS
     has_unpublished_changes = models.BooleanField(default=False)

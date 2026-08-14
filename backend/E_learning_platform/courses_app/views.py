@@ -2073,5 +2073,3 @@ class PublicStatsAPIView(APIView):
                 "total_courses": total_courses,
             }
         })
-
-
