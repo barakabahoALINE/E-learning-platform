@@ -50,6 +50,19 @@ def forwards(apps, schema_editor):
             "ADD COLUMN `item_id` varchar(64) NOT NULL DEFAULT ''"
         )
 
+    if column_exists(cursor, 'community_app_communitylike', 'discussion_id') or column_exists(cursor, 'community_app_communitylike', 'reply_id'):
+        cursor.execute(
+            "UPDATE community_app_communitylike "
+            "SET item_type = CASE "
+            "WHEN discussion_id IS NOT NULL THEN 'discussion' "
+            "WHEN reply_id IS NOT NULL THEN 'reply' "
+            "ELSE 'discussion' END, "
+            "item_id = CASE "
+            "WHEN discussion_id IS NOT NULL THEN CAST(discussion_id AS CHAR) "
+            "WHEN reply_id IS NOT NULL THEN CAST(reply_id AS CHAR) "
+            "ELSE '' END"
+        )
+
 
 def reverse(apps, schema_editor):
     pass

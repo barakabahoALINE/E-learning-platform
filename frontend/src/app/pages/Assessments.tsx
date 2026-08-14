@@ -155,25 +155,13 @@ export function AssessmentsPage() {
       }
 
       const isUpdate = Boolean(question.id);
-      const response = isUpdate
-        ? await dispatch(updateQuestion({ questionId: question.id, data: payload })).unwrap()
-        : await dispatch(addQuestion(payload)).unwrap();
+      if (isUpdate) {
+        await dispatch(updateQuestion({ questionId: question.id, data: payload })).unwrap();
+      } else {
+        await dispatch(addQuestion(payload)).unwrap();
+      }
 
-      const savedQuestion = response.data || response;
-      setItems((prev) =>
-        prev.map((item) =>
-          item.source === "course" && String(item.id) === String(questionTarget.id)
-            ? {
-                ...item,
-                questions: item.questions
-                  ? item.questions.some((q) => String(q.id) === String(savedQuestion.id))
-                    ? item.questions.map((q) => (String(q.id) === String(savedQuestion.id) ? savedQuestion : q))
-                    : [...item.questions, savedQuestion]
-                  : [savedQuestion],
-              }
-            : item
-        )
-      );
+      await loadLibrary();
 
       setQuestionTarget(null);
       setEditingQuestion(null);
@@ -207,6 +195,7 @@ export function AssessmentsPage() {
 
     try {
       const payload = {
+        title: createForm.title.trim(),
         duration: Number(createForm.duration) || 0,
         max_attempts: Number(createForm.max_attempts) || 0,
         pass_mark: Number(createForm.pass_mark) || 0,
@@ -288,16 +277,7 @@ export function AssessmentsPage() {
 
     try {
       await dispatch(deleteQuestionAction(question.id)).unwrap();
-      setItems((prev) =>
-        prev.map((existing) =>
-          existing.source === "course" && String(existing.id) === String(item.id)
-            ? {
-                ...existing,
-                questions: (existing.questions || []).filter((candidate) => String(candidate.id) !== String(question.id)),
-              }
-            : existing
-        )
-      );
+      await loadLibrary();
       toast.success("Question deleted");
     } catch (error: any) {
       toast.error(error?.message || "Failed to delete question");

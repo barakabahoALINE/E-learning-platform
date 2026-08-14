@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from django.test import TestCase
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from courses_app.models import Course, Module
 from courses_app.serializers import ModuleSerializer, CourseDetailSerializer
@@ -16,9 +16,11 @@ from .views import (
     DeleteQuestionAPIView,
     DetachAssessmentAPIView,
     AttachAssessmentAPIView,
+    DeleteAssessmentAPIView,
     UpdateQuestionAPIView,
+    UpdateAssessmentAPIView,
 )
-from courses_app.views import apply_assessment_attachment_drafts, apply_question_draft_changes
+from courses_app.views import apply_assessment_attachment_drafts, apply_question_draft_changes, CoursePublishAPIView
 
 
 class AssessmentSerializerTests(TestCase):
@@ -161,6 +163,42 @@ class AssessmentSerializerTests(TestCase):
 
         self.assertIsNone(course_data.get("final_assessment"))
 
+    def test_course_detail_serializer_hides_pending_final_detachment_for_admin(self):
+        assessment = Assessment.objects.create(
+            title="Pending Detach Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            duration=60,
+            max_attempts=3,
+            course=self.course,
+        )
+        assessment.draft_course_removals = [str(self.course.id)]
+        assessment.save(update_fields=["draft_course_removals"])
+
+        request = APIRequestFactory().get("/api/courses/1/")
+        request.user = SimpleNamespace(is_superuser=True)
+        course_data = CourseDetailSerializer(self.course, context={"request": request}).data
+
+        self.assertIsNone(course_data.get("final_assessment"))
+
+    def test_course_detail_serializer_shows_pending_final_attachment_for_admin(self):
+        assessment = Assessment.objects.create(
+            title="Pending Attached Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            duration=60,
+            max_attempts=3,
+        )
+        assessment.draft_course_additions = [str(self.course.id)]
+        assessment.save(update_fields=["draft_course_additions"])
+
+        request = APIRequestFactory().get("/api/courses/1/")
+        request.user = SimpleNamespace(is_superuser=True)
+        course_data = CourseDetailSerializer(self.course, context={"request": request}).data
+
+        self.assertIsNotNone(course_data.get("final_assessment"))
+        self.assertEqual(course_data["final_assessment"]["id"], assessment.id)
+
     def test_assessment_detail_serializer_unifies_fk_and_m2m_course_attachments(self):
         other_course = Course.objects.create(
             title="Second Course",
@@ -208,9 +246,7 @@ class AssessmentSerializerTests(TestCase):
             },
             format="json",
         )
-
         response = CreateQuestionAPIView().post(request)
-
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["status"], "success")
         self.assertEqual(assessment.questions.count(), 1)
@@ -327,6 +363,7 @@ class AssessmentSerializerTests(TestCase):
             course=self.course,
             is_published=True,
         )
+        assessment.courses.add(self.course)
 
         request = SimpleNamespace(data={"course_id": self.course.id})
 
@@ -336,6 +373,7 @@ class AssessmentSerializerTests(TestCase):
         assessment.refresh_from_db()
         self.assertEqual(assessment.course_id, self.course.id)
         self.assertIn(str(self.course.id), assessment.draft_course_removals)
+        self.assertTrue(assessment.courses.filter(id=self.course.id).exists())
         self.course.refresh_from_db()
         self.assertTrue(self.course.has_unpublished_changes)
         self.assertIn("queued", response.data["message"].lower())
@@ -343,6 +381,11 @@ class AssessmentSerializerTests(TestCase):
         apply_assessment_attachment_drafts(self.course)
         assessment.refresh_from_db()
         self.assertIsNone(assessment.course_id)
+        self.assertFalse(assessment.courses.filter(id=self.course.id).exists())
+
+        request = SimpleNamespace(user=SimpleNamespace(is_superuser=True))
+        detail = AssessmentDetailSerializer(assessment, context={"request": request}).data
+        self.assertNotIn(self.course.id, [item["id"] for item in detail["course_attachments"]])
 
     def test_published_course_detach_removes_module_quiz_relation_and_marks_course_dirty(self):
         self.course.is_published = True
@@ -357,6 +400,7 @@ class AssessmentSerializerTests(TestCase):
             course=self.course,
             is_published=True,
         )
+        assessment.modules.add(self.module)
 
         request = SimpleNamespace(data={"module_id": self.module.id})
 
@@ -366,6 +410,7 @@ class AssessmentSerializerTests(TestCase):
         assessment.refresh_from_db()
         self.assertEqual(assessment.module_id, self.module.id)
         self.assertIn(str(self.module.id), assessment.draft_module_removals)
+        self.assertTrue(assessment.modules.filter(id=self.module.id).exists())
         self.course.refresh_from_db()
         self.assertTrue(self.course.has_unpublished_changes)
         self.assertIn("queued", response.data["message"].lower())
@@ -373,6 +418,7 @@ class AssessmentSerializerTests(TestCase):
         apply_assessment_attachment_drafts(self.course)
         assessment.refresh_from_db()
         self.assertIsNone(assessment.module_id)
+        self.assertFalse(assessment.modules.filter(id=self.module.id).exists())
 
     def test_published_course_attach_updates_relation_and_marks_course_dirty(self):
         self.course.is_published = True
@@ -397,11 +443,191 @@ class AssessmentSerializerTests(TestCase):
         self.assertIn(str(self.course.id), assessment.draft_course_additions)
         self.course.refresh_from_db()
         self.assertTrue(self.course.has_unpublished_changes)
-        self.assertIn("queued", response.data["message"].lower())
+        self.assertIn("publish", response.data["message"].lower())
 
         apply_assessment_attachment_drafts(self.course)
         assessment.refresh_from_db()
         self.assertTrue(assessment.courses.filter(id=self.course.id).exists())
+
+    def test_unpublished_course_attach_and_detach_updates_m2m_relation_immediately(self):
+        assessment = Assessment.objects.create(
+            title="Draft Final Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            duration=60,
+            max_attempts=3,
+        )
+
+        attach_response = AttachAssessmentAPIView().post(
+            SimpleNamespace(data={"course_id": self.course.id}), assessment.id
+        )
+        self.assertEqual(attach_response.status_code, 200)
+        assessment.refresh_from_db()
+        self.assertTrue(assessment.courses.filter(id=self.course.id).exists())
+
+        detach_response = DetachAssessmentAPIView().post(
+            SimpleNamespace(data={"course_id": self.course.id}), assessment.id
+        )
+        self.assertEqual(detach_response.status_code, 200)
+        assessment.refresh_from_db()
+        self.assertFalse(assessment.courses.filter(id=self.course.id).exists())
+
+    def test_quiz_settings_and_title_update_are_persisted(self):
+        assessment = Assessment.objects.create(
+            title="Original Quiz",
+            assessment_type="QUIZ",
+            pass_mark=60,
+            max_attempts=0,
+            duration=0,
+        )
+
+        response = UpdateAssessmentAPIView().patch(SimpleNamespace(data={
+            "title": "Updated Quiz",
+            "pass_mark": 75,
+            "max_attempts": 2,
+            "duration": 20,
+        }), assessment.id)
+
+        self.assertEqual(response.status_code, 200)
+        assessment.refresh_from_db()
+        self.assertEqual(assessment.title, "Updated Quiz")
+        self.assertEqual(assessment.pass_mark, 75)
+        self.assertEqual(assessment.max_attempts, 2)
+        self.assertEqual(assessment.duration, 20)
+
+    def test_published_m2m_assessment_delete_removes_database_record_immediately(self):
+        self.course.is_published = True
+        self.course.save(update_fields=["is_published"])
+        assessment = Assessment.objects.create(
+            title="M2M Final To Delete",
+            assessment_type="FINAL",
+            pass_mark=70,
+            duration=60,
+            max_attempts=3,
+            is_published=True,
+        )
+        assessment.courses.add(self.course)
+        self.course.final_assessment = {"id": assessment.id, "assessment_type": "FINAL"}
+        self.course.save(update_fields=["final_assessment"])
+
+        response = DeleteAssessmentAPIView().delete(SimpleNamespace(), assessment.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Assessment.objects.filter(id=assessment.id).exists())
+        self.course.refresh_from_db()
+        self.assertIsNone(self.course.final_assessment)
+
+    def test_course_publish_accepts_attached_unpublished_final_assessment(self):
+        user = get_user_model().objects.create_superuser(
+            email="publisher@example.com",
+            password="Str0ngP@ssword!",
+        )
+        assessment = Assessment.objects.create(
+            title="New Final Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            duration=60,
+            max_attempts=3,
+            is_published=False,
+        )
+        assessment.courses.add(self.course)
+
+        request = APIRequestFactory().post(
+            f"/api/courses/{self.course.id}/publish/",
+            {"confirm": True},
+            format="json",
+        )
+        force_authenticate(request, user=user)
+        response = CoursePublishAPIView.as_view()(request, pk=self.course.id)
+
+        self.assertEqual(response.status_code, 200)
+        assessment.refresh_from_db()
+        self.assertTrue(assessment.is_published)
+        self.course.refresh_from_db()
+        self.assertTrue(self.course.is_published)
+
+    def test_replacement_final_can_attach_after_previous_published_final_is_detached(self):
+        self.course.is_published = True
+        self.course.save(update_fields=["is_published"])
+        previous_assessment = Assessment.objects.create(
+            title="Previous Final Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            duration=60,
+            max_attempts=3,
+            course=self.course,
+            is_published=True,
+        )
+        replacement_assessment = Assessment.objects.create(
+            title="Replacement Final Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            duration=60,
+            max_attempts=3,
+            is_published=True,
+        )
+
+        detach_response = DetachAssessmentAPIView().post(
+            SimpleNamespace(data={"course_id": self.course.id}),
+            previous_assessment.id,
+        )
+        self.assertEqual(detach_response.status_code, 200)
+
+        attach_response = AttachAssessmentAPIView().post(
+            SimpleNamespace(data={"course_id": self.course.id}),
+            replacement_assessment.id,
+        )
+
+        self.assertEqual(attach_response.status_code, 200)
+        previous_assessment.refresh_from_db()
+        replacement_assessment.refresh_from_db()
+        self.assertEqual(previous_assessment.course_id, self.course.id)
+        self.assertIn(str(self.course.id), previous_assessment.draft_course_removals)
+        self.assertFalse(replacement_assessment.courses.filter(id=self.course.id).exists())
+        self.assertIn(str(self.course.id), replacement_assessment.draft_course_additions)
+
+        apply_assessment_attachment_drafts(self.course)
+        previous_assessment.refresh_from_db()
+        replacement_assessment.refresh_from_db()
+        self.assertIsNone(previous_assessment.course_id)
+        self.assertFalse(previous_assessment.courses.filter(id=self.course.id).exists())
+        self.assertTrue(replacement_assessment.courses.filter(id=self.course.id).exists())
+
+    def test_attach_keeps_valid_selected_courses_when_another_selected_course_has_pending_removal(self):
+        other_course = Course.objects.create(
+            title="Other Published Course",
+            description="Another published course.",
+            duration="1h",
+            is_published=True,
+        )
+        previous_assessment = Assessment.objects.create(
+            title="Previous Assessment",
+            assessment_type="FINAL",
+            course=other_course,
+            is_published=True,
+        )
+        replacement_assessment = Assessment.objects.create(
+            title="Replacement Assessment",
+            assessment_type="FINAL",
+            is_published=True,
+        )
+        replacement_assessment.courses.add(self.course)
+
+        detach_response = DetachAssessmentAPIView().post(
+            SimpleNamespace(data={"course_id": other_course.id}),
+            previous_assessment.id,
+        )
+        self.assertEqual(detach_response.status_code, 200)
+
+        attach_response = AttachAssessmentAPIView().post(
+            SimpleNamespace(data={"course_ids": [self.course.id, other_course.id]}),
+            replacement_assessment.id,
+        )
+
+        self.assertEqual(attach_response.status_code, 200)
+        replacement_assessment.refresh_from_db()
+        self.assertIn(str(self.course.id), replacement_assessment.draft_course_additions)
+        self.assertIn(str(other_course.id), replacement_assessment.draft_course_additions)
 
 
 class FinalAssessmentCooldownTests(TestCase):

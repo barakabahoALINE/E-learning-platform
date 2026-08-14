@@ -243,14 +243,29 @@ class ModuleSerializer(serializers.ModelSerializer):
 
         quizzes = Assessment.objects.filter(
             assessment_type="QUIZ"
-        ).filter(
-            Q(module=obj) | Q(modules=obj)
         )
+
+        live_quiz_ids = quizzes.filter(
+            Q(module=obj) | Q(modules=obj)
+        ).values_list("id", flat=True)
+        draft_quiz_ids = [
+            quiz.id for quiz in quizzes
+            if str(obj.id) in {str(value) for value in (quiz.draft_module_additions or [])}
+        ] if is_admin else []
+        quizzes = quizzes.filter(Q(id__in=live_quiz_ids) | Q(id__in=draft_quiz_ids))
 
         if request is not None and user is not None and not is_admin:
             quizzes = quizzes.filter(is_published=True)
 
-        quiz = quizzes.distinct().first()
+        quiz = next(
+            (
+                candidate for candidate in quizzes.distinct()
+                if not is_admin or str(obj.id) not in {
+                    str(value) for value in (candidate.draft_module_removals or [])
+                }
+            ),
+            None,
+        )
         if quiz:
             return AssessmentDetailSerializer(quiz, context=self.context).data
         return None
@@ -514,16 +529,28 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             getattr(user, 'role', None) in ['admin', 'instructor']
         )
 
-        finals = Assessment.objects.filter(
-            assessment_type="FINAL"
-        ).filter(
+        finals = Assessment.objects.filter(assessment_type="FINAL")
+        live_final_ids = finals.filter(
             Q(course=obj) | Q(courses=obj)
-        )
+        ).values_list("id", flat=True)
+        draft_final_ids = [
+            final.id for final in finals
+            if str(obj.id) in {str(value) for value in (final.draft_course_additions or [])}
+        ] if is_admin else []
+        finals = finals.filter(Q(id__in=live_final_ids) | Q(id__in=draft_final_ids))
 
         if request is not None and user is not None and not is_admin:
             finals = finals.filter(is_published=True)
 
-        final = finals.distinct().first()
+        final = next(
+            (
+                candidate for candidate in finals.distinct()
+                if not is_admin or str(obj.id) not in {
+                    str(value) for value in (candidate.draft_course_removals or [])
+                }
+            ),
+            None,
+        )
         if final:
             return AssessmentDetailSerializer(final, context=self.context).data
 
@@ -536,6 +563,10 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             return None
 
         live_final = Assessment.objects.filter(id=candidate_id, assessment_type="FINAL").first()
+        if is_admin and live_final and str(obj.id) in {
+            str(value) for value in (live_final.draft_course_removals or [])
+        }:
+            return None
         if live_final:
             return AssessmentDetailSerializer(live_final, context=self.context).data
         return None

@@ -96,7 +96,7 @@ const assessmentAPI = {
 
   updateAssessmentSettings: async (
     assessmentId: number | string,
-    data: { duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string; tab_switch_enabled?: boolean; tab_switch_limit?: number }
+    data: { title?: string; duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string; tab_switch_enabled?: boolean; tab_switch_limit?: number }
   ) => {
     const response = await api.patch(`assessments/${assessmentId}/update/`, data);
     return response.data;
