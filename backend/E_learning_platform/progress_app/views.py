@@ -69,11 +69,12 @@ def _calculate_course_progress_percentage(course, student):
         if assessment.module and has_passed_module_quiz(student, assessment.module):
             passed_quiz_count += 1
 
-    # Check if final assessment is passed
+    # Check if final assessment is passed for this course
     final_passed = False
     if final_assessment:
         final_passed = Attempt.objects.filter(
             student=student,
+            course=course,
             assessment=final_assessment,
             is_submitted=True,
             is_passed=True,

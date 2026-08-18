@@ -190,8 +190,8 @@ export const QuizPage: React.FC = () => {
     setIsAttemptLoading(true);
     setLockedMessage(null);
     try {
-      await assessmentAPI.startAssessment(quizData.id);
-      const attemptResponse = await assessmentAPI.startAttempt(quizData.id);
+      await assessmentAPI.startAssessment(quizData.id, numericCourseId);
+      const attemptResponse = await assessmentAPI.startAttempt(quizData.id, numericCourseId);
       const attempt = attemptResponse.data;
       setAttemptId(Number(attempt.id));
       setHasStarted(true);

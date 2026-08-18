@@ -31,17 +31,21 @@ def check_course_completion(user, course):
 
 
 # ATTEMPT LIMIT RULE
-def check_attempt_limit(user, assessment):
+def check_attempt_limit(user, assessment, course=None):
+
+    if course is None:
+        course = getattr(assessment, "course", None)
 
     # QUIZ = unlimited attempts
     if assessment.assessment_type == "QUIZ":
         return True
 
-    # FINAL: if already passed, don't allow any more attempts
+    # FINAL: if already passed in this course, don't allow any more attempts
     if assessment.assessment_type == "FINAL":
         if Attempt.objects.filter(
             student=user,
             assessment=assessment,
+            course=course,
             is_submitted=True,
             is_passed=True
         ).exists():
@@ -52,6 +56,7 @@ def check_attempt_limit(user, assessment):
     submitted_attempts = Attempt.objects.filter(
         student=user,
         assessment=assessment,
+        course=course,
         is_submitted=True
     ).order_by("-submitted_at")
 

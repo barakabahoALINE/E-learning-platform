@@ -53,7 +53,7 @@ import {
   ContentItem,
   QuizQuestion
 } from "../../features/courses/types";
-import { addQuestion, createAssessment, attachAssessment, detachAssessment } from "../../features/assessments/assessmentSlice";
+import { addQuestion, updateQuestion, createAssessment, attachAssessment, detachAssessment, deleteQuestionAction } from "../../features/assessments/assessmentSlice";
 import assessmentAPI from "../../features/assessments/assessmentAPI";
 import type { AssessmentCreateData } from "../../features/assessments/types";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
@@ -71,6 +71,7 @@ export function CourseBuilderPage() {
   const [expandedContentItems, setExpandedContentItems] = useState<Set<string | number>>(new Set());
   const [pendingModuleQuizzes, setPendingModuleQuizzes] = useState<Record<string | number, LocalAssessmentTemplate>>({});
   const [pendingFinalAssessment, setPendingFinalAssessment] = useState<LocalAssessmentTemplate | null>(null);
+  const [hasLocalUnpublishedChanges, setHasLocalUnpublishedChanges] = useState(false);
 
   const makeLocalQuestionId = () => `local-question-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -331,18 +332,17 @@ export function CourseBuilderPage() {
     if (!showAssessmentLibraryPicker) return;
 
     try {
-      const template = cloneAssessmentIntoLocalTemplate(item);
-
       if (showAssessmentLibraryPicker.type === 'module' && showAssessmentLibraryPicker.moduleId !== undefined) {
         await dispatch(attachAssessment({
           assessmentId: item.id,
           payload: { module_id: showAssessmentLibraryPicker.moduleId },
         })).unwrap();
         await dispatch(fetchCourseDetails(course.id));
-        setPendingModuleQuizzes((prev) => ({
-          ...prev,
-          [showAssessmentLibraryPicker.moduleId!]: template,
-        }));
+        setPendingModuleQuizzes((prev) => {
+          const next = { ...prev };
+          delete next[showAssessmentLibraryPicker.moduleId!];
+          return next;
+        });
         toast.success("Quiz attached to this module");
       } else {
         await dispatch(attachAssessment({
@@ -350,7 +350,7 @@ export function CourseBuilderPage() {
           payload: { course_id: course.id },
         })).unwrap();
         await dispatch(fetchCourseDetails(course.id));
-        setPendingFinalAssessment(template);
+        setPendingFinalAssessment(null);
         toast.success("Final assessment attached to this course");
       }
 
@@ -562,22 +562,25 @@ export function CourseBuilderPage() {
           }
 
           try {
-            const response = await dispatch(addQuestion(payload)).unwrap();
-            const savedQuestion = response.data || response;
+            const isExistingQuestion = !String(questionId).startsWith("local-")
+              && existingQuestions.some((item) => String(item.id) === String(questionId));
+            const response = isExistingQuestion
+              ? await dispatch(updateQuestion({ questionId, data: payload })).unwrap()
+              : await dispatch(addQuestion(payload)).unwrap();
 
-            const updatedTemplate = updateLocalAssessmentTemplate(String(templateId), {
-              questions: existingQuestions.some((item) => String(item.id) === String(savedQuestion.id))
-                ? existingQuestions.map((item) => (String(item.id) === String(savedQuestion.id) ? savedQuestion : item))
-                : [...existingQuestions, savedQuestion],
-            });
+            if (isExistingQuestion && course.is_published) {
+              setHasLocalUnpublishedChanges(true);
+            }
 
+            await refetchCourse(course.id);
             if (showAssessmentModal?.type === 'final') {
-              setPendingFinalAssessment(updatedTemplate as LocalAssessmentTemplate);
+              setPendingFinalAssessment(null);
             } else if (showAssessmentModal?.moduleId) {
-              setPendingModuleQuizzes((prev) => ({
-                ...prev,
-                [showAssessmentModal.moduleId!]: updatedTemplate as LocalAssessmentTemplate,
-              }));
+              setPendingModuleQuizzes((prev) => {
+                const next = { ...prev };
+                delete next[showAssessmentModal.moduleId!];
+                return next;
+              });
             }
           } catch (err: any) {
             toast.error(err?.message || 'Failed to save question');
@@ -708,6 +711,26 @@ export function CourseBuilderPage() {
       const localModuleTemplate = moduleId ? pendingModuleQuizzes[moduleId] : undefined;
       const localModuleQuestionExists = localModuleTemplate?.questions.some((q) => String(q.id) === String(questionId));
 
+      if (!String(questionId).startsWith('local-')) {
+        await dispatch(deleteQuestionAction(questionId)).unwrap();
+        setHasLocalUnpublishedChanges(true);
+        await refetchCourse(course.id);
+
+        if (type === 'final') {
+          setPendingFinalAssessment(null);
+        } else if (moduleId) {
+          setPendingModuleQuizzes((prev) => {
+            const next = { ...prev };
+            delete next[moduleId];
+            return next;
+          });
+        }
+
+        toast.success('Question deleted successfully');
+        setDeleteQuestionTarget(null);
+        return;
+      }
+
       if (localFinalQuestionExists && type === 'final') {
         setPendingFinalAssessment((prev) => prev ? {
           ...prev,
@@ -780,6 +803,7 @@ export function CourseBuilderPage() {
     if (course.is_published) {
       dispatch(publishCourseChanges(course.id)).then((res) => {
         if (res.meta.requestStatus === 'fulfilled') {
+          setHasLocalUnpublishedChanges(false);
           setStatus({ type: 'success', message: 'Course changes published successfully!' });
           dispatch(fetchCourseDetails(course.id));
         }
@@ -863,14 +887,14 @@ export function CourseBuilderPage() {
             >
               <CheckCircle2 className="w-5 h-5" />
               {course.is_published
-                ? (course.has_unpublished_changes ? "Update Live Course" : "Published")
+                ? (course.has_unpublished_changes || hasLocalUnpublishedChanges ? "Update Live Course" : "Published")
                 : "Publish Course"}
             </button>
           </div>
         </div>
       </div>
 
-      {course.is_published && course.has_unpublished_changes && (
+      {course.is_published && (course.has_unpublished_changes || hasLocalUnpublishedChanges) && (
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-2 duration-300">
           <div className="flex gap-3 items-center">
             <div className="flex-shrink-0 w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">

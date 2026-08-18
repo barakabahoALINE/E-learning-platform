@@ -34,6 +34,7 @@ from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from .models import Content, Section, Module, Course
 from .serializers import *
+from assessments_app.models import Assessment, Choice
 
 
 def _is_admin_user(user):
@@ -623,6 +624,103 @@ def apply_draft_changes(course):
                     content.save()
         return False
 
+
+def apply_question_draft_changes(assessment):
+    for question in assessment.questions.filter(has_unpublished_changes=True):
+        if question.draft_question_text is not None:
+            question.question_text = question.draft_question_text
+        if question.draft_question_type is not None:
+            question.question_type = question.draft_question_type
+        if question.draft_marks is not None:
+            question.marks = question.draft_marks
+        if question.draft_matching_pairs is not None:
+            question.matching_pairs = question.draft_matching_pairs
+        if question.draft_choices is not None:
+            question.choices.all().delete()
+            Choice.objects.bulk_create([
+                Choice(
+                    question=question,
+                    text=choice["text"],
+                    is_correct=choice["is_correct"],
+                )
+                for choice in question.draft_choices
+            ])
+
+        question.draft_question_text = None
+        question.draft_question_type = None
+        question.draft_marks = None
+        question.draft_matching_pairs = None
+        question.draft_choices = None
+        question.has_unpublished_changes = False
+        question.save(update_fields=[
+            "question_text",
+            "question_type",
+            "marks",
+            "matching_pairs",
+            "draft_question_text",
+            "draft_question_type",
+            "draft_marks",
+            "draft_matching_pairs",
+            "draft_choices",
+            "has_unpublished_changes",
+        ])
+
+
+def apply_assessment_attachment_drafts(course):
+    course_id = str(course.id)
+    module_ids = {str(value) for value in course.modules.values_list("id", flat=True)}
+
+    for assessment in Assessment.objects.all():
+        course_additions = set(assessment.draft_course_additions or [])
+        course_removals = set(assessment.draft_course_removals or [])
+        module_additions = set(assessment.draft_module_additions or [])
+        module_removals = set(assessment.draft_module_removals or [])
+        changed = False
+
+        if course_id in course_additions:
+            assessment.courses.add(course)
+            if assessment.course_id is None:
+                assessment.course = course
+            course_additions.discard(course_id)
+            changed = True
+        if course_id in course_removals:
+            assessment.courses.remove(course)
+            if assessment.course_id == course.id:
+                assessment.course = assessment.courses.first()
+            course_removals.discard(course_id)
+            changed = True
+
+        for module_id in module_ids & (module_additions | module_removals):
+            module = course.modules.filter(id=module_id).first()
+            if not module:
+                continue
+            if module_id in module_additions:
+                assessment.modules.add(module)
+                if assessment.module_id is None and assessment.assessment_type == "QUIZ":
+                    assessment.module = module
+                    if assessment.course_id is None:
+                        assessment.course = course
+                module_additions.discard(module_id)
+                changed = True
+            if module_id in module_removals:
+                assessment.modules.remove(module)
+                if assessment.module_id == module.id:
+                    assessment.module = assessment.modules.first()
+                    if assessment.module is None and assessment.course_id == course.id:
+                        assessment.course = None
+                module_removals.discard(module_id)
+                changed = True
+
+        if changed:
+            assessment.draft_course_additions = list(course_additions)
+            assessment.draft_course_removals = list(course_removals)
+            assessment.draft_module_additions = list(module_additions)
+            assessment.draft_module_removals = list(module_removals)
+            assessment.save(update_fields=[
+                "course", "module", "draft_course_additions", "draft_course_removals",
+                "draft_module_additions", "draft_module_removals",
+            ], validate=False)
+
 class CoursePublishAPIView(generics.GenericAPIView):
 
     permission_classes = [IsAuthenticated, CanPublishCourse]
@@ -631,6 +729,7 @@ class CoursePublishAPIView(generics.GenericAPIView):
     def get_queryset(self):
         return _same_institution_queryset(super().get_queryset(), self.request.user)
 
+    @transaction.atomic
     def post(self, request, pk):
 
         course = self.get_object()
@@ -639,6 +738,28 @@ class CoursePublishAPIView(generics.GenericAPIView):
             return Response(
                 {
                     "error": "Course must have a price before publishing."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        final_assessment = (
+            course.assessments.filter(
+                assessment_type="FINAL",
+                is_published=True,
+                pending_delete=False,
+            ).first()
+            or course.attached_assessments.filter(
+                assessment_type="FINAL",
+                is_published=True,
+                pending_delete=False,
+            ).first()
+        )
+
+        if final_assessment is None:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Course must have a final assessment before publishing. Create or attach a final assessment first.",
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -653,11 +774,25 @@ class CoursePublishAPIView(generics.GenericAPIView):
 
         # Apply all draft changes and clear has_unpublished_changes flags
         apply_draft_changes(course)
+        apply_assessment_attachment_drafts(course)
 
         for assessment in course.assessments.all():
             if assessment.pending_delete:
                 assessment.delete()
                 continue
+            assessment.questions.filter(pending_delete=True).delete()
+            apply_question_draft_changes(assessment)
+            assessment.has_unpublished_changes = False
+            assessment.pending_delete = False
+            assessment.is_published = True
+            assessment.save(validate=False)
+
+        for assessment in course.attached_assessments.exclude(id__in=course.assessments.values("id")):
+            if assessment.pending_delete:
+                assessment.delete()
+                continue
+            assessment.questions.filter(pending_delete=True).delete()
+            apply_question_draft_changes(assessment)
             assessment.has_unpublished_changes = False
             assessment.pending_delete = False
             assessment.is_published = True
@@ -695,6 +830,7 @@ class CourseUnpublishAPIView(generics.GenericAPIView):
             assessment.has_unpublished_changes = False
             assessment.is_published = False
             assessment.save()
+            assessment.questions.update(pending_delete=False, has_unpublished_changes=False)
 
         # =========================
         # UNPUBLISH MODULES

@@ -68,7 +68,11 @@ class ListAssessmentsAPIView(APIView):
             )
 
         assessments = assessments.distinct()
-        serializer = AssessmentDetailSerializer(assessments, many=True)
+        serializer = AssessmentDetailSerializer(
+            assessments,
+            many=True,
+            context={"request": request},
+        )
         return Response({
             "success": True,
             "data": serializer.data
@@ -174,10 +178,57 @@ class AttachAssessmentAPIView(APIView):
         if not module_ids and not course_ids:
             return Response({"success": False, "error": "course_ids or module_ids is required."}, status=400)
 
+        if module_ids is not None and assessment.assessment_type != "QUIZ":
+            return Response({"success": False, "error": "Only quizzes can be attached to modules."}, status=400)
+        if course_ids is not None and assessment.assessment_type != "FINAL":
+            return Response({"success": False, "error": "Only final assessments can be attached to courses."}, status=400)
+
+        impacted_courses = set()
+
+        published_targets = set()
         if module_ids is not None:
-            if assessment.assessment_type != "QUIZ":
-                return Response({"success": False, "error": "Only quizzes can be attached to modules."}, status=400)
+            published_targets.update(
+                module.course for module in Module.objects.filter(id__in=module_ids)
+                if module.course.is_published
+            )
+        if course_ids is not None:
+            published_targets.update(
+                Course.objects.filter(id__in=course_ids, is_published=True)
+            )
+
+        if published_targets:
+            additions_modules = set(assessment.draft_module_additions or [])
+            removals_modules = set(assessment.draft_module_removals or [])
+            additions_courses = set(assessment.draft_course_additions or [])
+            removals_courses = set(assessment.draft_course_removals or [])
+            if module_ids is not None:
+                additions_modules.update(str(value) for value in module_ids)
+                removals_modules.difference_update(str(value) for value in module_ids)
+            if course_ids is not None:
+                additions_courses.update(str(value) for value in course_ids)
+                removals_courses.difference_update(str(value) for value in course_ids)
+            assessment.draft_module_additions = list(additions_modules)
+            assessment.draft_module_removals = list(removals_modules)
+            assessment.draft_course_additions = list(additions_courses)
+            assessment.draft_course_removals = list(removals_courses)
+            assessment.has_unpublished_changes = True
+            assessment.save(update_fields=[
+                "draft_module_additions", "draft_module_removals",
+                "draft_course_additions", "draft_course_removals",
+                "has_unpublished_changes",
+            ])
+            for course in published_targets:
+                mark_course_unpublished_change(course)
+            return Response({
+                "success": True,
+                "message": "Assessment attachment queued. Publish course changes to apply it live.",
+                "data": AssessmentDetailSerializer(assessment, context={"request": request}).data,
+            })
+
+        if module_ids is not None:
             modules = Module.objects.filter(id__in=module_ids)
+            impacted_courses.update({module.course for module in modules})
+
             assessment.modules.add(*modules)
             if not assessment.module and modules:
                 assessment.module = modules.first()
@@ -185,9 +236,9 @@ class AttachAssessmentAPIView(APIView):
                     assessment.course = modules.first().course
 
         if course_ids is not None:
-            if assessment.assessment_type != "FINAL":
-                return Response({"success": False, "error": "Only final assessments can be attached to courses."}, status=400)
             courses = Course.objects.filter(id__in=course_ids)
+            impacted_courses.update(courses)
+
             assessment.courses.add(*courses)
             if not assessment.course and courses:
                 assessment.course = courses.first()
@@ -202,7 +253,14 @@ class AttachAssessmentAPIView(APIView):
                 course.save(update_fields=["has_unpublished_changes"])
                 mark_course_unpublished_change(course)
 
-        return Response({"success": True, "message": "Assessment attached successfully", "data": AssessmentDetailSerializer(assessment).data})
+        return Response({
+            "success": True,
+            "message": "Assessment attached successfully",
+            "data": AssessmentDetailSerializer(
+                assessment,
+                context={"request": request},
+            ).data,
+        })
 
 
 class DetachAssessmentAPIView(APIView):
@@ -213,8 +271,60 @@ class DetachAssessmentAPIView(APIView):
         module_id = request.data.get("module_id")
         course_id = request.data.get("course_id")
 
-        previous_courses = set(assessment.courses.all())
+        previous_courses = set(filter(None, [assessment.course]))
+        previous_courses.update(assessment.courses.all())
         previous_courses.update({module.course for module in assessment.modules.all()})
+        if assessment.module:
+            previous_courses.add(assessment.module.course)
+
+        published_courses = {course for course in previous_courses if course.is_published}
+        published_courses.update(
+            Course.objects.filter(
+                id__in=[value for value in (assessment.draft_course_additions or [])],
+                is_published=True,
+            )
+        )
+        if module_id is not None:
+            target_module = get_object_or_404(Module, id=module_id)
+            if target_module.course.is_published:
+                published_courses.add(target_module.course)
+        if published_courses:
+            additions_modules = set(assessment.draft_module_additions or [])
+            removals_modules = set(assessment.draft_module_removals or [])
+            additions_courses = set(assessment.draft_course_additions or [])
+            removals_courses = set(assessment.draft_course_removals or [])
+            if module_id is not None:
+                value = str(module_id)
+                additions_modules.discard(value)
+                removals_modules.add(value)
+            if course_id is not None:
+                value = str(course_id)
+                additions_courses.discard(value)
+                removals_courses.add(value)
+            if module_id is None and course_id is None:
+                removals_modules.update(str(value) for value in assessment.modules.values_list("id", flat=True))
+                removals_courses.update(str(value) for value in assessment.courses.values_list("id", flat=True))
+                if assessment.module_id:
+                    removals_modules.add(str(assessment.module_id))
+                if assessment.course_id:
+                    removals_courses.add(str(assessment.course_id))
+            assessment.draft_module_additions = list(additions_modules)
+            assessment.draft_module_removals = list(removals_modules)
+            assessment.draft_course_additions = list(additions_courses)
+            assessment.draft_course_removals = list(removals_courses)
+            assessment.has_unpublished_changes = True
+            assessment.save(update_fields=[
+                "draft_module_additions", "draft_module_removals",
+                "draft_course_additions", "draft_course_removals",
+                "has_unpublished_changes",
+            ])
+            for course in published_courses:
+                mark_course_unpublished_change(course)
+            return Response({
+                "success": True,
+                "message": "Assessment detachment queued. Publish course changes to apply it live.",
+                "data": CreateAssessmentSerializer(assessment).data,
+            })
 
         if module_id is None and course_id is None:
             assessment.modules.clear()
@@ -236,13 +346,19 @@ class DetachAssessmentAPIView(APIView):
                     assessment.course = assessment.courses.first()
 
         assessment.has_unpublished_changes = True
-        assessment.save()
+        assessment.save(update_fields=["module", "course", "has_unpublished_changes"])
 
         for course in previous_courses:
             if course.is_published:
                 mark_course_unpublished_change(course)
 
-        return Response({"success": True, "message": "Assessment detached successfully", "data": CreateAssessmentSerializer(assessment).data})
+        message = (
+            "Published course changes queued. Reattach the final assessment and click Update Live Course to publish the change."
+            if any(course.is_published for course in previous_courses)
+            else "Assessment detached successfully"
+        )
+
+        return Response({"success": True, "message": message, "data": CreateAssessmentSerializer(assessment).data})
 
 
 # ✅ Create Question API (Admin only)
@@ -253,7 +369,10 @@ class RetrieveAssessmentAPIView(APIView):
         assessment = get_object_or_404(Assessment, id=assessment_id)
         return Response({
             "success": True,
-            "data": AssessmentDetailSerializer(assessment).data
+            "data": AssessmentDetailSerializer(
+                assessment,
+                context={"request": request},
+            ).data
         })
 
 
@@ -317,14 +436,25 @@ class StartAssessmentAPIView(APIView):
                 "message": "Assessment is not published"
             }, status=404)
 
-        # check enrollment
-        if not assessment.course:
+        course_id = request.query_params.get("course_id")
+        course = None
+
+        if course_id:
+            course = get_object_or_404(Course, id=course_id)
+        elif assessment.module:
+            course = assessment.module.course
+        elif assessment.course:
+            course = assessment.course
+        elif assessment.courses.exists():
+            course = assessment.courses.first()
+
+        if not course:
             return Response({
                 "status": "failed",
                 "message": "Assessment is not attached to a course yet.",
             }, status=403)
 
-        if not is_student_enrolled(request.user, assessment.course):
+        if not is_student_enrolled(request.user, course):
             return Response({
                 "status": "failed",
                 "message": "Not enrolled in this course"
@@ -332,6 +462,11 @@ class StartAssessmentAPIView(APIView):
 
         # Quiz rule
         if assessment.assessment_type == "QUIZ":
+            if not assessment.module:
+                return Response({
+                    "status": "failed",
+                    "message": "Quiz is not attached to a module yet."
+                }, status=403)
             if not has_completed_module_sections(request.user, assessment.module):
                 return Response({
                     "status": "failed",
@@ -368,7 +503,7 @@ class GetAssessmentQuestionsAPIView(APIView):
             is_published=True
         )
 
-        questions = assessment.questions.all()
+        questions = assessment.questions.filter(pending_delete=False)
 
         return Response({
             "status": "success",
@@ -376,7 +511,11 @@ class GetAssessmentQuestionsAPIView(APIView):
             "assessment_type": (
                 assessment.assessment_type
             ),
-            "data": QuestionSerializer(questions, many=True).data
+            "data": QuestionSerializer(
+                questions,
+                many=True,
+                context={"request": request},
+            ).data
         })
 
 class UpdateQuestionAPIView(APIView):
@@ -384,17 +523,119 @@ class UpdateQuestionAPIView(APIView):
 
     def put(self, request, question_id):
         question = get_object_or_404(Question, id=question_id)
+        assessment = question.assessment
+
+        related_courses = set(assessment.courses.all())
+        if assessment.course is not None:
+            related_courses.add(assessment.course)
+        if assessment.module is not None:
+            related_courses.add(assessment.module.course)
+        related_courses.update(module.course for module in assessment.modules.all())
+        published_courses = [course for course in related_courses if course.is_published]
+
         serializer = QuestionCreateSerializer(question, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"status": "success", "data": QuestionSerializer(question).data})
-        return Response({"status": "failed", "errors": serializer.errors}, status=400)
+        if not serializer.is_valid():
+            return Response({"status": "failed", "errors": serializer.errors}, status=400)
+
+        if published_courses:
+            validated_data = serializer.validated_data
+            choices = validated_data.get("choices")
+            matching_pairs = validated_data.get("matching_pairs")
+            draft_question_type = validated_data.get(
+                "question_type",
+                question.draft_question_type or question.question_type,
+            )
+            if draft_question_type == Question.QuestionType.MATCHING:
+                draft_choices = []
+            elif choices is not None:
+                draft_choices = [
+                    {"text": choice["text"], "is_correct": choice["is_correct"]}
+                    for choice in choices
+                ]
+            else:
+                draft_choices = (
+                    question.draft_choices
+                    if question.draft_choices is not None
+                    else list(question.choices.values("text", "is_correct"))
+                )
+            draft_updates = {
+                "draft_question_text": validated_data.get(
+                    "question_text",
+                    question.draft_question_text or question.question_text,
+                ),
+                "draft_question_type": validated_data.get(
+                    "question_type",
+                    question.draft_question_type or question.question_type,
+                ),
+                "draft_marks": validated_data.get(
+                    "marks",
+                    question.draft_marks if question.draft_marks is not None else question.marks,
+                ),
+                "draft_matching_pairs": matching_pairs if "matching_pairs" in validated_data else (
+                    question.draft_matching_pairs
+                    if question.draft_matching_pairs is not None
+                    else question.matching_pairs
+                ),
+                "draft_choices": draft_choices,
+                "has_unpublished_changes": True,
+            }
+            for field, value in draft_updates.items():
+                setattr(question, field, value)
+            question.save(update_fields=list(draft_updates.keys()))
+
+            assessment.has_unpublished_changes = True
+            assessment.save(update_fields=["has_unpublished_changes"])
+            for course in published_courses:
+                course.has_unpublished_changes = True
+                course.save(update_fields=["has_unpublished_changes"])
+            return Response({
+                "status": "success",
+                "message": "Question update queued. Publish the course to apply it to learners.",
+                "data": {
+                    **QuestionSerializer(
+                        question,
+                        context={"request": request},
+                    ).data,
+                    "question_text": draft_updates["draft_question_text"],
+                    "question_type": draft_updates["draft_question_type"],
+                    "marks": draft_updates["draft_marks"],
+                    "choices": draft_updates["draft_choices"] or [],
+                    "matching_pairs": draft_updates["draft_matching_pairs"] or [],
+                },
+            })
+
+        serializer.save()
+        return Response({"status": "success", "data": QuestionSerializer(question).data})
 
 class DeleteQuestionAPIView(APIView):
     permission_classes = [IsAuthenticated, CanDeleteAssessment]
 
     def delete(self, request, question_id):
         question = get_object_or_404(Question, id=question_id)
+        assessment = question.assessment
+
+        related_courses = set(assessment.courses.all())
+        if assessment.course is not None:
+            related_courses.add(assessment.course)
+        if assessment.module is not None:
+            related_courses.add(assessment.module.course)
+        related_courses.update(module.course for module in assessment.modules.all())
+
+        published_courses = [course for course in related_courses if course.is_published]
+        if published_courses:
+            question.pending_delete = True
+            question.has_unpublished_changes = True
+            question.save(update_fields=["pending_delete", "has_unpublished_changes"])
+            assessment.has_unpublished_changes = True
+            assessment.save(update_fields=["has_unpublished_changes"])
+            for course in published_courses:
+                course.has_unpublished_changes = True
+                course.save(update_fields=["has_unpublished_changes"])
+            return Response({
+                "status": "success",
+                "message": "Question deletion queued. Publish the course to apply it to learners.",
+            })
+
         question.delete()
         return Response({"status": "success", "message": "Question deleted"})
 
@@ -408,6 +649,7 @@ class StartAttemptAPIView(APIView):
     def post(self, request, assessment_id):
 
         user = request.user
+        course_id = request.data.get("course_id") or request.query_params.get("course_id")
 
         try:
             assessment = Assessment.objects.get(
@@ -423,12 +665,34 @@ class StartAttemptAPIView(APIView):
                 "data": None
             }, status=404)
 
+        course = None
+        if course_id:
+            course = get_object_or_404(Course, id=course_id)
+        else:
+            if assessment.course:
+                course = assessment.course
+            elif assessment.courses.exists():
+                matching_enrollment = Enrollment.objects.filter(
+                    student=user,
+                    course__in=assessment.courses.all(),
+                    status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED],
+                ).first()
+                course = matching_enrollment.course if matching_enrollment else assessment.courses.first()
+
+        if course and not is_student_enrolled(user, course):
+            return Response({
+                "status": "failed",
+                "message": "Not enrolled in this course",
+                "data": None
+            }, status=403)
+
         try:
 
             # RESUME ACTIVE ATTEMPT
             existing = Attempt.objects.filter(
                 student=user,
                 assessment=assessment,
+                course=course,
                 is_submitted=False
             ).first()
 
@@ -455,7 +719,8 @@ class StartAttemptAPIView(APIView):
             # ATTEMPT LIMIT RULE
             check_attempt_limit(
                 user,
-                assessment
+                assessment,
+                course=course,
             )
 
         except RuleError as e:
@@ -470,10 +735,12 @@ class StartAttemptAPIView(APIView):
         attempt = Attempt.objects.create(
             student=user,
             assessment=assessment,
+            course=course,
             attempt_number=(
                 Attempt.objects.filter(
                     student=user,
-                    assessment=assessment
+                    assessment=assessment,
+                    course=course,
                 ).count() + 1
             )
         )
