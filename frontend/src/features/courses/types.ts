@@ -93,6 +93,7 @@ export interface Quiz {
   duration?: number;
   descriptions?: string;
   instructions?: string;
+  // Tab-switch settings for proctored assessments
   tab_switch_enabled?: boolean;
   tab_switch_limit?: number;
   questions: QuizQuestion[];

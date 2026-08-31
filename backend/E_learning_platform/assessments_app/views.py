@@ -1,6 +1,5 @@
 import json
 from urllib import request
-from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.views import APIView
@@ -9,9 +8,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .models import Assessment,StudentAnswer, Question, Choice, Attempt
 from .serializers import *
-from courses_app.models import Course, Module
+from courses_app.models import Course
 from progress_app.models import (ModuleProgress, SectionProgress, _refresh_course_progress, _refresh_module_progress)
 from enrollments_app.models import Enrollment
+from progress_app.models import (_refresh_course_progress, _refresh_module_progress)
 from .permissions import *
 from .utils import *
 from .services.rules import (
@@ -28,235 +28,118 @@ from progress_app.models import (
 
 
 
-def mark_course_unpublished_change(course):
-    if course and course.is_published:
-        course.has_unpublished_changes = True
-        course.save(update_fields=["has_unpublished_changes"])
-
-
-class ListAssessmentsAPIView(APIView):
-    permission_classes = [IsAuthenticated, CanAddAssessment]
-
-    def get(self, request):
-        """List assessments with optional filters."""
-        assessment_type = request.query_params.get('assessment_type')
-        course_id = request.query_params.get('course_id')
-        module_id = request.query_params.get('module_id')
-        unassigned = request.query_params.get('unassigned')
-
-        assessments = Assessment.objects.all()
-
-        if assessment_type:
-            assessments = assessments.filter(assessment_type=assessment_type)
-
-        if course_id:
-            assessments = assessments.filter(
-                Q(course_id=course_id) | Q(courses__id=course_id)
-            )
-
-        if module_id:
-            assessments = assessments.filter(
-                Q(module_id=module_id) | Q(modules__id=module_id)
-            )
-
-        if unassigned == 'true':
-            assessments = assessments.filter(
-                course__isnull=True,
-                courses__isnull=True,
-                module__isnull=True,
-                modules__isnull=True
-            )
-
-        assessments = assessments.distinct()
-        serializer = AssessmentDetailSerializer(assessments, many=True)
-        return Response({
-            "success": True,
-            "data": serializer.data
-        })
-
-
+# ADMIN: CREATE ASSESSMENT
 class CreateAssessmentAPIView(APIView):
+
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
     def post(self, request):
-        data = apply_assessment_rules(request.data.copy())
+        data = apply_assessment_rules(
+            request.data.copy()
+            )
+
         serializer = CreateAssessmentSerializer(data=data)
 
         if serializer.is_valid():
+
             try:
+                course = Course.objects.get(id=data.get('course'))
+                # If course is published, mark assessment as having unpublished changes
+                # If course is not published yet, has_unpublished_changes should be false
+                has_unpublished = course.is_published
+                
                 assessment = serializer.save(
                     is_published=False,
-                    has_unpublished_changes=False
+                    has_unpublished_changes=has_unpublished
                 )
 
-                if assessment.course and assessment.course.is_published:
-                    assessment.has_unpublished_changes = True
-                    assessment.save(update_fields=['has_unpublished_changes'])
-                    mark_course_unpublished_change(assessment.course)
+                # Mark course as having unpublished changes only if it's already published
+                if course.is_published:
+                    course.has_unpublished_changes = True
+                    course.save(update_fields=['has_unpublished_changes'])
 
                 return Response({
                     "success": True,
                     "message": "Assessment created successfully",
-                    "data": CreateAssessmentSerializer(assessment).data
+                    "data": serializer.data
                 }, status=status.HTTP_201_CREATED)
+
             except Exception as e:
-                return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({"success": False, "error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({
+                    "success": False,
+                    "error": str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
 
+        return Response({
+            "success": False,
+            "error": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
-class UpdateAssessmentAPIView(APIView):
-    permission_classes = [IsAuthenticated, CanAddAssessment]
+    def delete(self, request):
+        assessment_id = request.data.get("assessment_id") or request.query_params.get("assessment_id")
+        module_id = request.data.get("module_id") or request.query_params.get("module_id")
 
-    def patch(self, request, assessment_id):
+        if assessment_id:
+            assessment = get_object_or_404(Assessment, id=assessment_id)
+            if assessment.course.is_published and assessment.is_published:
+                assessment.pending_delete = True
+                assessment.has_unpublished_changes = True
+                assessment.save(update_fields=["pending_delete", "has_unpublished_changes"])
+                assessment.course.has_unpublished_changes = True
+                assessment.course.save(update_fields=["has_unpublished_changes"])
+                return Response({"success": True, "message": "Assessment marked for deletion. Publish changes to apply deletion."})
+            assessment.delete()
+            return Response({"success": True, "message": "Assessment deleted successfully"})
+        elif module_id:
+            quizzes = Assessment.objects.filter(module_id=module_id, assessment_type="QUIZ")
+            quiz = quizzes.first()
+            if quiz and quiz.course.is_published and quiz.is_published:
+                quizzes.update(pending_delete=True, has_unpublished_changes=True)
+                quiz.course.has_unpublished_changes = True
+                quiz.course.save(update_fields=["has_unpublished_changes"])
+                return Response({"success": True, "message": "Module quiz marked for deletion. Publish changes to apply deletion."})
+            quizzes.delete()
+            return Response({"success": True, "message": "Module quiz deleted successfully"})
+
+        return Response({"success": False, "error": "Assessment ID or Module ID is required"}, status=400)
+
+    def patch(self, request):
+        """Update assessment settings (duration, max_attempts, pass_mark, instructions)."""
+        assessment_id = request.data.get("assessment_id")
+        if not assessment_id:
+            return Response({"success": False, "error": "assessment_id is required"}, status=400)
+
         assessment = get_object_or_404(Assessment, id=assessment_id)
 
-        allowed_fields = [
-            "duration",
-            "max_attempts",
-            "pass_mark",
-            "instructions",
-            "title",
-            "tab_switch_enabled",
-            "tab_switch_limit",
-        ]
+        allowed_fields = ["duration", "max_attempts", "pass_mark", "instructions", "title", "tab_switch_enabled", "tab_switch_limit"]
         update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
 
         for field, value in update_data.items():
             setattr(assessment, field, value)
 
-        assessment.save()
+        assessment.save(update_fields=list(update_data.keys()))
 
-        if assessment.course and assessment.course.is_published:
+        # Mark course as having unpublished changes if already published
+        if assessment.course.is_published:
             assessment.has_unpublished_changes = True
             assessment.save(update_fields=["has_unpublished_changes"])
-            mark_course_unpublished_change(assessment.course)
+            assessment.course.has_unpublished_changes = True
+            assessment.course.save(update_fields=["has_unpublished_changes"])
 
         return Response({
             "success": True,
             "message": "Assessment settings updated successfully",
-            "data": CreateAssessmentSerializer(assessment).data
+            "data": {
+                "id": assessment.id,
+                "duration": assessment.duration,
+                "max_attempts": assessment.max_attempts,
+                "pass_mark": assessment.pass_mark,
+                "instructions": assessment.instructions,
+            }
         })
-
-
-class DeleteAssessmentAPIView(APIView):
-    permission_classes = [IsAuthenticated, CanAddAssessment]
-
-    def delete(self, request, assessment_id):
-        assessment = get_object_or_404(Assessment, id=assessment_id)
-
-        if assessment.course and assessment.course.is_published and assessment.is_published:
-            assessment.pending_delete = True
-            assessment.has_unpublished_changes = True
-            assessment.save(update_fields=["pending_delete", "has_unpublished_changes"])
-            mark_course_unpublished_change(assessment.course)
-            return Response({"success": True, "message": "Assessment marked for deletion. Publish changes to apply deletion."})
-
-        assessment.delete()
-        return Response({"success": True, "message": "Assessment deleted successfully"})
-
-
-class AttachAssessmentAPIView(APIView):
-    permission_classes = [IsAuthenticated, CanAddAssessment]
-
-    def post(self, request, assessment_id):
-        assessment = get_object_or_404(Assessment, id=assessment_id)
-        module_ids = request.data.get("module_ids")
-        course_ids = request.data.get("course_ids")
-        attach_module_id = request.data.get("module_id")
-        attach_course_id = request.data.get("course_id")
-
-        if attach_module_id is not None and module_ids is None:
-            module_ids = [attach_module_id]
-        if attach_course_id is not None and course_ids is None:
-            course_ids = [attach_course_id]
-
-        if not module_ids and not course_ids:
-            return Response({"success": False, "error": "course_ids or module_ids is required."}, status=400)
-
-        if module_ids is not None:
-            if assessment.assessment_type != "QUIZ":
-                return Response({"success": False, "error": "Only quizzes can be attached to modules."}, status=400)
-            modules = Module.objects.filter(id__in=module_ids)
-            assessment.modules.add(*modules)
-            if not assessment.module and modules:
-                assessment.module = modules.first()
-                if not assessment.course:
-                    assessment.course = modules.first().course
-
-        if course_ids is not None:
-            if assessment.assessment_type != "FINAL":
-                return Response({"success": False, "error": "Only final assessments can be attached to courses."}, status=400)
-            courses = Course.objects.filter(id__in=course_ids)
-            assessment.courses.add(*courses)
-            if not assessment.course and courses:
-                assessment.course = courses.first()
-
-        assessment.save()
-
-        impacted_courses = set(assessment.courses.all())
-        impacted_courses.update({module.course for module in assessment.modules.all()})
-        for course in impacted_courses:
-            if course.is_published:
-                course.has_unpublished_changes = True
-                course.save(update_fields=["has_unpublished_changes"])
-                mark_course_unpublished_change(course)
-
-        return Response({"success": True, "message": "Assessment attached successfully", "data": AssessmentDetailSerializer(assessment).data})
-
-
-class DetachAssessmentAPIView(APIView):
-    permission_classes = [IsAuthenticated, CanAddAssessment]
-
-    def post(self, request, assessment_id):
-        assessment = get_object_or_404(Assessment, id=assessment_id)
-        module_id = request.data.get("module_id")
-        course_id = request.data.get("course_id")
-
-        previous_courses = set(assessment.courses.all())
-        previous_courses.update({module.course for module in assessment.modules.all()})
-
-        if module_id is None and course_id is None:
-            assessment.modules.clear()
-            assessment.courses.clear()
-            assessment.module = None
-            assessment.course = None
-        else:
-            if module_id is not None:
-                module = get_object_or_404(Module, id=module_id)
-                assessment.modules.remove(module)
-                if assessment.module and str(assessment.module.id) == str(module_id):
-                    assessment.module = assessment.modules.first()
-                    assessment.course = assessment.module.course if assessment.module else None
-
-            if course_id is not None:
-                course = get_object_or_404(Course, id=course_id)
-                assessment.courses.remove(course)
-                if assessment.course and str(assessment.course.id) == str(course_id):
-                    assessment.course = assessment.courses.first()
-
-        assessment.has_unpublished_changes = True
-        assessment.save()
-
-        for course in previous_courses:
-            if course.is_published:
-                mark_course_unpublished_change(course)
-
-        return Response({"success": True, "message": "Assessment detached successfully", "data": CreateAssessmentSerializer(assessment).data})
-
 
 # ✅ Create Question API (Admin only)
-class RetrieveAssessmentAPIView(APIView):
-    permission_classes = [IsAuthenticated, CanAddAssessment]
-
-    def get(self, request, assessment_id):
-        assessment = get_object_or_404(Assessment, id=assessment_id)
-        return Response({
-            "success": True,
-            "data": AssessmentDetailSerializer(assessment).data
-        })
-
-
 class CreateQuestionAPIView(APIView):
 
     permission_classes = [IsAuthenticated, CanAddAssessment]
@@ -271,21 +154,12 @@ class CreateQuestionAPIView(APIView):
 
             question = serializer.save()
             assessment = question.assessment
-
-            related_course = assessment.course
-            if related_course is None and assessment.module is not None:
-                related_course = assessment.module.course
-            if related_course is None and assessment.modules.exists():
-                related_course = assessment.modules.first().course
-            if related_course is None and assessment.courses.exists():
-                related_course = assessment.courses.first()
-
-            # Mark as having unpublished changes only if a real course is published
-            if related_course and related_course.is_published:
+            # Mark as having unpublished changes only if course is published
+            if assessment.course.is_published:
                 assessment.has_unpublished_changes = True
                 assessment.save(update_fields=['has_unpublished_changes'])
-                related_course.has_unpublished_changes = True
-                related_course.save(update_fields=['has_unpublished_changes'])
+                assessment.course.has_unpublished_changes = True
+                assessment.course.save(update_fields=['has_unpublished_changes'])
 
             return Response({
                 "status": "success",
@@ -318,12 +192,6 @@ class StartAssessmentAPIView(APIView):
             }, status=404)
 
         # check enrollment
-        if not assessment.course:
-            return Response({
-                "status": "failed",
-                "message": "Assessment is not attached to a course yet.",
-            }, status=403)
-
         if not is_student_enrolled(request.user, assessment.course):
             return Response({
                 "status": "failed",

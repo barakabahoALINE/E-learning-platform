@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, FileQuestion, Link2, RefreshCw, Search, X } from "lucide-react";
+import { CheckCircle2, Clock, Copy, FileQuestion, RefreshCw, Search, X } from "lucide-react";
 import {
   AssessmentLibraryItem,
   listAssessmentLibrary,
@@ -32,9 +32,7 @@ export function AssessmentLibraryPickerModal({
       try {
         setIsLoading(true);
         const library = await listAssessmentLibrary();
-        // Only show backend course assessments (not local templates)
-        const courseItems = Array.isArray(library) ? library.filter((it) => it.source === 'course') : [];
-        if (active) setItems(courseItems);
+        if (active) setItems(library);
       } catch (err: any) {
         if (active) setError(err?.message || "Unable to load assessments");
       } finally {
@@ -128,8 +126,14 @@ export function AssessmentLibraryPickerModal({
               {filteredItems.map((item) => (
                 <div key={`${item.source}-${item.id}`} className="border border-gray-100 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-4">
                   <div className="flex-1 min-w-0">
-                    <div className="mb-1">
+                    <div className="flex items-center gap-2 mb-1">
                       <h4 className="text-sm font-bold text-gray-900 truncate">{item.title}</h4>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${item.source === "local"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                          : "bg-gray-50 text-gray-600 border-gray-100"
+                        }`}>
+                        {item.source === "local" ? "Template" : "Course"}
+                      </span>
                     </div>
                     <p className="text-xs text-gray-500 truncate">
                       {item.source === "local"
@@ -159,8 +163,8 @@ export function AssessmentLibraryPickerModal({
                     disabled={selectedId === item.id}
                     className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60"
                   >
-                    <Link2 className="w-4 h-4" />
-                    {selectedId === item.id ? "Selecting..." : "Attach"}
+                    <Copy className="w-4 h-4" />
+                    {selectedId === item.id ? "Selecting..." : "Use Quiz"}
                   </button>
                 </div>
               ))}

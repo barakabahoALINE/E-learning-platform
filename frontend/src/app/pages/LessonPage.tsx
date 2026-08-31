@@ -852,24 +852,24 @@ export const LessonPage: React.FC = () => {
 
             {/* Module Completion / Quiz Section */}
             <div className="pt-20 pb-10" id="module-quiz-banner">
-              <div className="relative rounded-3xl overflow-hidden bg-card text-card-foreground border p-8">
-                <div className="relative flex flex-col md:flex-row items-center gap-8">
+              <div className="mx-auto max-w-5xl rounded-2xl border border-slate-200 bg-card p-4 text-card-foreground shadow-sm dark:border-slate-700 sm:p-6">
+                <div className="flex flex-col items-center gap-4 md:flex-row md:items-center">
                   {currentModule.quiz ? (
                     <>
-                      <div className="w-20 h-20 rounded-2xl bg-blue-500/20 flex items-center justify-center flex-shrink-0 border border-blue-500/30">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10">
                         {isCurrentModuleCompleted ? (
-                          <CheckCircle2 className="w-10 h-10 text-green-500" />
+                          <CheckCircle2 className="h-7 w-7 text-green-500" />
                         ) : (
-                          <FileText className="w-10 h-10 text-blue-400" />
+                          <FileText className="h-7 w-7 text-blue-500" />
                         )}
                       </div>
                       <div className="flex-1 text-center md:text-left">
-                        <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">
+                        <h3 className="text-xl font-bold text-foreground dark:text-white">
                           {isCurrentModuleCompleted
                             ? "Module Review Complete"
                             : "Module Review"}
                         </h3>
-                        <p className="text-muted-foreground dark:text-gray-300 text-lg">
+                        <p className="mt-1 text-sm text-muted-foreground dark:text-gray-300">
                           {isCurrentModuleCompleted
                             ? "Your quiz result is saved. You can continue learning."
                             : "Test your knowledge with the module quiz to proceed."}
@@ -884,7 +884,7 @@ export const LessonPage: React.FC = () => {
                                 `/learning/${courseId}/quiz/${currentModule.id}`,
                               )
                         }
-                        className="h-14 px-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300"
+                        className="h-11 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700"
                       >
                         {isCurrentModuleCompleted
                           ? nextModule
@@ -895,21 +895,21 @@ export const LessonPage: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <div className="w-20 h-20 rounded-2xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0 border border-emerald-500/30">
-                        <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10">
+                        <CheckCircle2 className="h-7 w-7 text-emerald-500" />
                       </div>
                       <div className="flex-1 text-center md:text-left">
-                        <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">
+                        <h3 className="text-xl font-bold text-foreground dark:text-white">
                           Well Done!
                         </h3>
-                        <p className="text-muted-foreground dark:text-gray-300 text-lg">
-                          You've completed all lessons in this module.
+                        <p className="mt-1 text-sm text-muted-foreground dark:text-gray-300">
+                          You&apos;ve completed all lessons in this module.
                         </p>
                       </div>
                       <Button
                         size="lg"
                         onClick={handleNextModule}
-                        className="h-14 px-8 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-semibold transition-colors"
+                        className="h-11 rounded-xl bg-emerald-500 px-5 text-sm font-semibold text-white hover:bg-emerald-600"
                       >
                         {nextModule ? "Next Module" : "Finish Course"}
                       </Button>

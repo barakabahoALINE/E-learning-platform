@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAppDispatch } from "../../hooks/reduxHooks";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -7,7 +6,6 @@ import {
   Edit2,
   FileQuestion,
   Info,
-  Paperclip,
   Plus,
   RefreshCw,
   Search,
@@ -16,22 +14,14 @@ import {
   X,
 } from "lucide-react";
 import { AssessmentModal } from "./course-builder/AssessmentModal";
-import { AssessmentsAttachmentModal } from "./AssessmentsAttachmentModal";
 import DeleteModal from "../components/ui/DeleteModal";
 import {
   AssessmentLibraryItem,
+  createLocalAssessmentTemplate,
+  deleteLocalAssessmentTemplate,
   listAssessmentLibrary,
+  updateLocalAssessmentTemplate,
 } from "../../features/assessments/assessmentLibraryAdapter";
-import {
-  addQuestion,
-  createAssessment,
-  deleteAssessmentAction,
-  deleteQuestionAction,
-  attachAssessment,
-  detachAssessment,
-  updateQuestion,
-  updateAssessmentSettings,
-} from "../../features/assessments/assessmentSlice";
 import type { AssessmentType } from "../../features/assessments/types";
 import type { QuizQuestion } from "../../features/courses/types";
 
@@ -44,6 +34,8 @@ interface CreateTemplateForm {
   tab_switch_enabled?: boolean;
   tab_switch_limit?: string;
 }
+
+const makeLocalQuestionId = () => `local-question-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const emptyForm = (type: AssessmentType): CreateTemplateForm => ({
   title: type === "FINAL" ? "Final Assessment" : "New Quiz",
@@ -67,16 +59,11 @@ export function AssessmentsPage() {
     item: AssessmentLibraryItem;
     question: QuizQuestion;
   } | null>(null);
-  const [attachmentTarget, setAttachmentTarget] = useState<AssessmentLibraryItem | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AssessmentLibraryItem | null>(null);
-  const [editingAssessment, setEditingAssessment] = useState<AssessmentLibraryItem | null>(null);
-  const dispatch = useAppDispatch();
 
   const loadLibrary = async () => {
     try {
       setIsLoading(true);
-      const libraryItems = await listAssessmentLibrary();
-      setItems(libraryItems.filter((item) => item.source === "course"));
+      setItems(await listAssessmentLibrary());
     } catch (error: any) {
       toast.error(error?.message || "Failed to load assessments");
     } finally {
@@ -100,210 +87,68 @@ export function AssessmentsPage() {
       });
   }, [activeTab, items, query]);
 
-  const handleCreateAssessment = async () => {
+  const handleCreateTemplate = () => {
     if (!createForm?.title.trim()) {
       toast.error("Title is required");
       return;
     }
 
-    const isFinalAssessment = createForm.assessment_type === "FINAL";
+    createLocalAssessmentTemplate({
+      title: createForm.title,
+      assessment_type: createForm.assessment_type,
+      pass_mark: Number(createForm.pass_mark) || 60,
+      max_attempts: Number(createForm.max_attempts) || 3,
+      duration: Number(createForm.duration) || 30,
+      tab_switch_enabled: Boolean(createForm.tab_switch_enabled),
+      tab_switch_limit: Number(createForm.tab_switch_limit) || 0,
+    });
 
-    try {
-      const payload = {
-        course: null,
-        module: null,
-        title: createForm.title.trim(),
-        is_final: isFinalAssessment,
-        assessment_type: createForm.assessment_type,
-        pass_mark: Number(createForm.pass_mark) || 60,
-        max_attempts: Number(createForm.max_attempts) || 3,
-        duration: Number(createForm.duration) || 30,
-        tab_switch_enabled: isFinalAssessment && Boolean(createForm.tab_switch_enabled),
-        tab_switch_limit: isFinalAssessment ? Number(createForm.tab_switch_limit) || 0 : 0,
-      };
-
-      const response = await dispatch(createAssessment(payload)).unwrap();
-      if (response?.success && response.data) {
-        setCreateForm(null);
-        await loadLibrary();
-        toast.success("Assessment created successfully");
-      } else {
-        throw new Error(response?.error || "Failed to create assessment");
-      }
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to create assessment");
-    }
+    setCreateForm(null);
+    loadLibrary();
+    toast.success("Assessment template created");
   };
 
-  const handleSaveQuestion = async (question: QuizQuestion) => {
-    if (!questionTarget || questionTarget.source !== "course") return;
+  const handleDeleteLocalTemplate = (item: AssessmentLibraryItem) => {
+    deleteLocalAssessmentTemplate(String(item.id));
+    loadLibrary();
+    toast.success("Assessment template deleted");
+  };
 
-    try {
-      const payload: any = {
-        assessment: questionTarget.id,
-        question_text: question.question_text || question.question,
-        question_type: question.question_type === "multiple" ? "multiple" : question.question_type === "matching" ? "matching" : "single",
-        marks: question.marks || 1,
-      };
+  const handleSaveLocalQuestion = (question: QuizQuestion) => {
+    if (!questionTarget || questionTarget.source !== "local") return;
 
-      if (question.question_type === "matching") {
-        payload.matching_pairs = question.matching_pairs || [];
-      } else {
-        payload.choices = (question.choices && question.choices.length > 0)
-          ? question.choices.map((choice) => ({ text: String(choice.text || ""), is_correct: Boolean(choice.is_correct) }))
-          : (question.options || []).map((option, index) => ({ text: String(option || ""), is_correct: index === question.correctAnswer }));
-      }
+    const nextQuestion = {
+      ...question,
+      id: question.id || makeLocalQuestionId(),
+    };
+    const existingQuestions = questionTarget.questions || [];
+    const nextQuestions = existingQuestions.some((item) => String(item.id) === String(nextQuestion.id))
+      ? existingQuestions.map((item) => (String(item.id) === String(nextQuestion.id) ? nextQuestion : item))
+      : [...existingQuestions, nextQuestion];
 
-      const isUpdate = Boolean(question.id);
-      const response = isUpdate
-        ? await dispatch(updateQuestion({ questionId: question.id, data: payload })).unwrap()
-        : await dispatch(addQuestion(payload)).unwrap();
-
-      const savedQuestion = response.data || response;
-      setItems((prev) =>
-        prev.map((item) =>
-          item.source === "course" && String(item.id) === String(questionTarget.id)
-            ? {
-                ...item,
-                questions: item.questions
-                  ? item.questions.some((q) => String(q.id) === String(savedQuestion.id))
-                    ? item.questions.map((q) => (String(q.id) === String(savedQuestion.id) ? savedQuestion : q))
-                    : [...item.questions, savedQuestion]
-                  : [savedQuestion],
-              }
-            : item
-        )
-      );
-
-      setQuestionTarget(null);
-      setEditingQuestion(null);
-      toast.success("Question saved");
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to save question");
-    }
+    updateLocalAssessmentTemplate(String(questionTarget.id), { questions: nextQuestions });
+    setQuestionTarget(null);
+    setEditingQuestion(null);
+    loadLibrary();
+    toast.success("Question saved");
   };
 
   const openQuestionEditor = (item: AssessmentLibraryItem, question?: QuizQuestion) => {
+    if (item.source !== "local") return;
     setQuestionTarget(item);
     setEditingQuestion(question || null);
   };
 
-  const handleEditAssessment = (item: AssessmentLibraryItem) => {
-    // Open the assessment settings modal (reuse create form) for editing
-    setEditingAssessment(item);
-    setCreateForm({
-      title: item.title || (item.assessment_type === "FINAL" ? "Final Assessment" : "New Quiz"),
-      assessment_type: item.assessment_type,
-      pass_mark: String(item.pass_mark ?? (item.assessment_type === "FINAL" ? 60 : 70)),
-      max_attempts: String(item.max_attempts ?? 3),
-      duration: String(item.duration ?? (item.assessment_type === "FINAL" ? 60 : 30)),
-      tab_switch_enabled: Boolean(item.tab_switch_enabled),
-      tab_switch_limit: String(item.tab_switch_limit ?? 0),
-    });
-  };
-
-  const handleUpdateAssessment = async () => {
-    if (!editingAssessment || !createForm) return;
-
-    try {
-      const payload = {
-        duration: Number(createForm.duration) || 0,
-        max_attempts: Number(createForm.max_attempts) || 0,
-        pass_mark: Number(createForm.pass_mark) || 0,
-        tab_switch_enabled: createForm.assessment_type === 'FINAL' ? Boolean(createForm.tab_switch_enabled) : false,
-        tab_switch_limit: createForm.assessment_type === 'FINAL' ? Number(createForm.tab_switch_limit) || 0 : 0,
-      } as any;
-
-      await dispatch(updateAssessmentSettings({ assessmentId: editingAssessment.id, data: payload })).unwrap();
-      await loadLibrary();
-      toast.success("Assessment updated successfully");
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to update assessment");
-    } finally {
-      setEditingAssessment(null);
-      setCreateForm(null);
-    }
-  };
-
-  const handleOpenAttachmentModal = (item: AssessmentLibraryItem) => {
-    if (item.source !== "course") {
-      toast.error("Only backend course assessments can be attached or detached.");
-      return;
-    }
-    setAttachmentTarget(item);
-  };
-
-  const handleDeleteAssessment = (item: AssessmentLibraryItem) => {
-    if (item.source !== "course") return;
-    setDeleteTarget(item);
-  };
-
-  const confirmDeleteAssessment = async () => {
-    if (!deleteTarget) return;
-    try {
-      await dispatch(deleteAssessmentAction(deleteTarget.id)).unwrap();
-      setItems((prev) => prev.filter((existing) => !(existing.source === "course" && String(existing.id) === String(deleteTarget.id))));
-      toast.success("Assessment deleted successfully.");
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to delete assessment");
-    } finally {
-      setDeleteTarget(null);
-    }
-  };
-
-  const handleToggleAttachment = async (item: AssessmentLibraryItem) => {
-    handleOpenAttachmentModal(item);
-  };
-
-  const handleAttachAssessment = async (payload: { module_ids?: Array<number | string>; course_ids?: Array<number | string> }) => {
-    if (!attachmentTarget) return;
-
-    try {
-      await dispatch(attachAssessment({ assessmentId: attachmentTarget.id, payload })).unwrap();
-      await loadLibrary();
-    } catch (error: any) {
-      throw error;
-    }
-  };
-
-  const handleDetachAttachment = async (payload: { module_id?: number | string; course_id?: number | string }) => {
-    if (!attachmentTarget) return;
-
-    try {
-      await dispatch(detachAssessment({ assessmentId: attachmentTarget.id, payload })).unwrap();
-      await loadLibrary();
-    } catch (error: any) {
-      throw error;
-    }
-  };
-
-  const handleDeleteQuestion = async () => {
-    if (!deleteQuestionTarget) return;
+  const handleDeleteLocalQuestion = () => {
+    if (!deleteQuestionTarget || deleteQuestionTarget.item.source !== "local") return;
 
     const { item, question } = deleteQuestionTarget;
-    if (item.source !== "course") {
-      setDeleteQuestionTarget(null);
-      return;
-    }
+    const nextQuestions = (item.questions || []).filter((candidate) => String(candidate.id) !== String(question.id));
 
-    try {
-      await dispatch(deleteQuestionAction(question.id)).unwrap();
-      setItems((prev) =>
-        prev.map((existing) =>
-          existing.source === "course" && String(existing.id) === String(item.id)
-            ? {
-                ...existing,
-                questions: (existing.questions || []).filter((candidate) => String(candidate.id) !== String(question.id)),
-              }
-            : existing
-        )
-      );
-      toast.success("Question deleted");
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to delete question");
-    } finally {
-      setDeleteQuestionTarget(null);
-    }
+    updateLocalAssessmentTemplate(String(item.id), { questions: nextQuestions });
+    setDeleteQuestionTarget(null);
+    loadLibrary();
+    toast.success("Question deleted");
   };
 
   const label = activeTab === "QUIZ" ? "Quiz" : "Final Assessment";
@@ -374,33 +219,28 @@ export function AssessmentsPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="text-base font-bold text-gray-900 truncate">{item.title}</h3>
-                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${item.source === "local"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                      : "bg-gray-50 text-gray-600 border-gray-100"
+                      }`}>
+                      {item.source === "local" ? "Template" : "Course"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 truncate">
+                    {item.source === "local"
+                      ? "Local template"
+                      : [item.courseTitle, item.moduleTitle].filter(Boolean).join(" / ")}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
+                {item.source === "local" && (
                   <button
-                    type="button"
-                    onClick={() => handleEditAssessment(item)}
-                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    title="Edit assessment"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleAttachment(item)}
-                    className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                    title={item.assessment_type === "QUIZ" ? (item.moduleId ? "Manage module attachments" : "Attach to modules") : (item.courseId ? "Manage course attachments" : "Attach to courses")}
-                  >
-                    <Paperclip className="w-4 h-4" />
-                  </button>
-                      <button
-                    onClick={() => handleDeleteAssessment(item)}
+                    onClick={() => handleDeleteLocalTemplate(item)}
                     className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    title="Delete assessment"
+                    title="Delete template"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
-                </div>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-2 mb-4">
@@ -419,12 +259,6 @@ export function AssessmentsPage() {
                     {item.max_attempts}x
                   </span>
                 )}
-                {item.tab_switch_enabled && (
-                  <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-orange-50 text-orange-700 border border-orange-200">
-                    <ShieldCheck className="w-3 h-3 text-orange-500" />
-                    {item.tab_switch_limit ?? 0}
-                  </span>
-                )}
               </div>
 
               {item.questions.length > 0 && (
@@ -434,6 +268,7 @@ export function AssessmentsPage() {
                       <span className="min-w-0 truncate">
                         {index + 1}. {question.question_text || question.question}
                       </span>
+                      {item.source === "local" && (
                         <span className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
@@ -452,12 +287,13 @@ export function AssessmentsPage() {
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </span>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
 
-              {item.source === "course" && (
+              {item.source === "local" && (
                 <button
                   onClick={() => openQuestionEditor(item)}
                   className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
@@ -471,41 +307,31 @@ export function AssessmentsPage() {
         </div>
       )}
 
-      {attachmentTarget && (
-        <AssessmentsAttachmentModal
-          item={attachmentTarget}
-          onClose={() => setAttachmentTarget(null)}
-          onAttach={handleAttachAssessment}
-          onDetach={handleDetachAttachment}
-        />
-      )}
       {createForm && (
         <div className="fixed inset-0 bg-gray-900/30 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-[560px] max-h-[calc(100vh-2rem)] shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-base font-semibold text-gray-900">
-                  {editingAssessment ? `Edit ${createForm.assessment_type === "QUIZ" ? "Quiz" : "Assessment"}` : `Create ${createForm.assessment_type === "QUIZ" ? "Quiz" : "Final Assessment"}`}
+                  Create {createForm.assessment_type === "QUIZ" ? "Quiz" : "Final Assessment"}
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
                   Set the rules for how students will take this assessment
                 </p>
               </div>
               <div className="flex items-center gap-4">
-                {createForm.assessment_type === "FINAL" && (
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <span className="text-sm">Tab switch</span>
-                    <button
-                      type="button"
-                      onClick={() => setCreateForm({ ...createForm, tab_switch_enabled: !createForm.tab_switch_enabled })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${createForm.tab_switch_enabled ? 'bg-blue-600' : 'bg-gray-200'}`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${createForm.tab_switch_enabled ? 'translate-x-5' : 'translate-x-1'}`} />
-                    </button>
-                  </label>
-                )}
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <span className="text-sm">Tab switch</span>
+                  <button
+                    type="button"
+                    onClick={() => setCreateForm({ ...createForm, tab_switch_enabled: !createForm.tab_switch_enabled })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${createForm.tab_switch_enabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${createForm.tab_switch_enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                </label>
                 <button
-                  onClick={() => { setCreateForm(null); setEditingAssessment(null); }}
+                  onClick={() => setCreateForm(null)}
                   className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <X className="w-4 h-4 text-gray-500" />
@@ -513,7 +339,7 @@ export function AssessmentsPage() {
               </div>
             </div>
 
-            <div className="p-5 space-y-5 overflow-y-auto max-h-[calc(100vh-15rem)]">
+            <div className="p-5 space-y-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Title</label>
                 <input
@@ -573,10 +399,10 @@ export function AssessmentsPage() {
                 <p className="text-[11px] text-gray-400 mt-1">Time limit students have to complete the assessment.</p>
               </div>
 
-              {createForm.assessment_type === "FINAL" && createForm.tab_switch_enabled && (
+              {createForm.tab_switch_enabled && (
                 <div>
                   <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-                    <ShieldCheck className="w-4 h-4 text-orange-500" />
+                    <ShieldCheck className="w-4 h-4 text-amber-500" />
                     tabswitch
                   </label>
                   <input
@@ -601,36 +427,22 @@ export function AssessmentsPage() {
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
                   <Info className="w-3 h-3" /> Pass: {createForm.pass_mark}%
                 </span>
-                {createForm.assessment_type === "FINAL" && createForm.tab_switch_enabled && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-orange-500 border border-gray-200">
-                    <ShieldCheck className="w-3 h-3 text-orange-500" /> {Number(createForm.tab_switch_limit || 0)} switch{Number(createForm.tab_switch_limit || 0) === 1 ? "" : "es"}
-                  </span>
-                )}
               </div>
             </div>
 
-            <div className="p-5 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0">
+            <div className="p-5 border-t border-gray-100 flex items-center justify-end gap-3">
               <button
-                onClick={() => { setCreateForm(null); setEditingAssessment(null); }}
+                onClick={() => setCreateForm(null)}
                 className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Cancel
               </button>
-              {editingAssessment ? (
-                <button
-                  onClick={handleUpdateAssessment}
-                  className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Update
-                </button>
-              ) : (
-                <button
-                  onClick={handleCreateAssessment}
-                  className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Create
-                </button>
-              )}
+              <button
+                onClick={handleCreateTemplate}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Create
+              </button>
             </div>
           </div>
         </div>
@@ -642,7 +454,7 @@ export function AssessmentsPage() {
             setQuestionTarget(null);
             setEditingQuestion(null);
           }}
-          onSave={handleSaveQuestion}
+          onSave={handleSaveLocalQuestion}
           initialQuestion={editingQuestion || undefined}
         />
       )}
@@ -650,16 +462,9 @@ export function AssessmentsPage() {
       <DeleteModal
         isOpen={deleteQuestionTarget !== null}
         title="Delete Question"
-        description="Are you sure you want to delete this question from the assessment? This action cannot be undone."
-        onConfirm={handleDeleteQuestion}
+        description="Are you sure you want to delete this question from the assessment template?"
+        onConfirm={handleDeleteLocalQuestion}
         onCancel={() => setDeleteQuestionTarget(null)}
-      />
-      <DeleteModal
-        isOpen={deleteTarget !== null}
-        title={`Delete Assessment`}
-        description={`Are you sure you want to delete this assessment? This action cannot be undone.`}
-        onConfirm={confirmDeleteAssessment}
-        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );

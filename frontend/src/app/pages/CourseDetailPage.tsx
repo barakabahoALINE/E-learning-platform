@@ -51,6 +51,7 @@ import {
 } from "../../features/progress/progressSlice";
 import {
   normalizeCourseId,
+  useCommunity,
   formatRelativeTime,
 } from "../data/community-data";
 import { useLikeState } from "../data/like-data";
@@ -59,10 +60,6 @@ import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { getMediaUrl } from "../utils/media";
 import AskDiscussionModal from "../components/AskDiscussionModal";
-import {
-  createCommunityDiscussion,
-  fetchCommunityDiscussions,
-} from "../../features/community/communitySlice";
 
 export const CourseDetailPage: React.FC = () => {
   const { courseId } = useParams();
@@ -85,9 +82,7 @@ export const CourseDetailPage: React.FC = () => {
   );
   const { user } = useAppSelector((state) => state.auth);
 
-  const { discussions: communityDiscussions } = useAppSelector(
-    (state) => state.community,
-  );
+  const { discussions, addDiscussion } = useCommunity();
   const { getSummary } = useLikeState(user ? String(user.id) : undefined);
   const [showAskModal, setShowAskModal] = React.useState(false);
 
@@ -109,7 +104,7 @@ export const CourseDetailPage: React.FC = () => {
   const normalizedCourseId = normalizeCourseId(
     String(course?.id ?? numericCourseId),
   );
-  const courseDiscussions = communityDiscussions
+  const courseDiscussions = discussions
     .filter(
       (discussion) =>
         normalizeCourseId(String(discussion.courseId)) === normalizedCourseId,
@@ -120,7 +115,7 @@ export const CourseDetailPage: React.FC = () => {
     );
   const discussionCount = courseDiscussions.length;
 
-  const handlePostCourseDiscussion = async (
+  const handlePostCourseDiscussion = (
     courseIdValue: string,
     courseTitle: string,
     title: string,
@@ -131,26 +126,16 @@ export const CourseDetailPage: React.FC = () => {
       return;
     }
 
-    try {
-      const result = await dispatch(
-        createCommunityDiscussion({
-          course_id: courseIdValue,
-          course_title: courseTitle,
-          title,
-          description,
-        }),
-      ).unwrap();
-
-      const newDiscussionId = String(result.data.id);
-      setShowAskModal(false);
-      navigate(`/community/${newDiscussionId}`);
-    } catch (error) {
-      toast.error(
-        typeof error === "string"
-          ? error
-          : error?.message || "Unable to post discussion. Please try again.",
-      );
-    }
+    const newDiscussionId = addDiscussion(
+      courseIdValue,
+      courseTitle,
+      title,
+      description,
+      String(user.id),
+      user.full_name || user.email?.split("@")[0] || "User",
+    );
+    setShowAskModal(false);
+    navigate(`/community/${newDiscussionId}`);
   };
 
   const enrolledCoursesForModal = course
@@ -162,7 +147,6 @@ export const CourseDetailPage: React.FC = () => {
       dispatch(fetchCourseDetails(numericCourseId));
       dispatch(fetchCourseProgress(numericCourseId));
       dispatch(fetchCourseModulesProgress(numericCourseId));
-      dispatch(fetchCommunityDiscussions());
     }
   }, [dispatch, numericCourseId]);
 

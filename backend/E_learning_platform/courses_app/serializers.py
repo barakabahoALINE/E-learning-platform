@@ -198,29 +198,11 @@ class SectionContentListSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class LevelSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(
-        validators=[
-            UniqueValidator(
-                queryset=Level.objects.all(),
-                message="Level name must be unique."
-            )
-        ]
-    )
-
     class Meta:
         model = Level
         fields = "__all__"
 
 class CategorySerializer(serializers.ModelSerializer):
-    name = serializers.CharField(
-        validators=[
-            UniqueValidator(
-                queryset=Category.objects.all(),
-                message="Category name must be unique."
-            )
-        ]
-    )
-
     class Meta:
         model = Category
         fields = "__all__"
@@ -263,13 +245,9 @@ class ModuleSerializer(serializers.ModelSerializer):
         return SectionSerializer(list(sections), many=True, context=self.context).data
 
     def get_quiz(self, obj):
-        from django.db.models import Q
         from assessments_app.models import Assessment
         from assessments_app.serializers import AssessmentDetailSerializer
-        quizzes = Assessment.objects.filter(
-            Q(module=obj) | Q(modules=obj),
-            assessment_type="QUIZ"
-        )
+        quizzes = Assessment.objects.filter(module=obj, assessment_type="QUIZ")
         request = self.context.get('request')
         user = request.user if request else None
         is_admin = user and (
@@ -279,7 +257,7 @@ class ModuleSerializer(serializers.ModelSerializer):
         )
         if not is_admin:
             quizzes = quizzes.filter(is_published=True)
-        quiz = quizzes.distinct().first()
+        quiz = quizzes.first()
         if quiz:
             return AssessmentDetailSerializer(quiz).data
         return None
@@ -532,13 +510,9 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         return self.get_creator_name(obj)
 
     def get_final_assessment(self, obj):
-        from django.db.models import Q
         from assessments_app.models import Assessment
         from assessments_app.serializers import AssessmentDetailSerializer
-        finals = Assessment.objects.filter(
-            Q(course=obj) | Q(courses=obj),
-            assessment_type="FINAL"
-        )
+        finals = Assessment.objects.filter(course=obj, assessment_type="FINAL")
         request = self.context.get('request')
         user = request.user if request else None
         is_admin = user and (
@@ -548,7 +522,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         )
         if not is_admin:
             finals = finals.filter(is_published=True)
-        final = finals.distinct().first()
+        final = finals.first()
         if final:
             return AssessmentDetailSerializer(final).data
         return obj.final_assessment if obj.final_assessment else None

@@ -5,13 +5,13 @@ User = settings.AUTH_USER_MODEL
 
 
 class Level(models.Model):
-    name = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
 
     def __str__(self):
         return self.name
 
 class Category(models.Model):
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
 
     def __str__(self):
         return self.name
@@ -53,7 +53,6 @@ class Course(models.Model):
         permissions = [
             ("publish_course", "Can publish courses"),
             ("view_published_course", "Can view published courses"),
-            ("manage_meta", "Can manage course metadata levels and categories"),
         ]
 
         indexes = [

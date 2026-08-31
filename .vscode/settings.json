@@ -39,6 +39,7 @@
         "urllib",
         "weasyprint",
         "webencodings",
-        "zopfli"
+        "zopfli",
+        "Unpublishing",
     ]
 }

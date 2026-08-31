@@ -28,7 +28,7 @@ from django.shortcuts import get_object_or_404
 from .models import Content, Section, Module, Course, Level, Category
 from .permissions import (
     CanViewCourses, CanAddCourse, CanChangeCourse, CanDeleteCourse, 
-    CanPublishCourse, CanViewPublishedCourse, CanManageMeta
+    CanPublishCourse, CanViewPublishedCourse
 )
 from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model
@@ -93,56 +93,23 @@ class CourseListAPIView(generics.ListAPIView):
 
         if user.is_authenticated:
             if _is_unrestricted_user(user):
-                queryset = queryset.distinct()
-            elif _is_instructor_user(user):
-                queryset = queryset.filter(created_by=user).distinct()
-            elif _is_admin_user(user):
-                queryset = queryset.filter(
+                return queryset.distinct()
+
+            if _is_instructor_user(user):
+                return queryset.filter(created_by=user).distinct()
+
+            if _is_admin_user(user):
+                return queryset.filter(
                     models.Q(created_by__institution=user.institution) |
                     models.Q(created_by__isnull=True) |
                     models.Q(created_by__institution__isnull=True) |
                     models.Q(is_published=True)
                 ).distinct()
-            else:
-                queryset = queryset.filter(is_published=True).distinct()
-        else:
-            queryset = queryset.filter(is_published=True).distinct()
 
-        category = self.request.query_params.get("category")
-        level = self.request.query_params.get("level")
-        search = self.request.query_params.get("search") or self.request.query_params.get("q")
+            return queryset.filter(is_published=True).distinct()
 
-        if category:
-            if category.isdigit():
-                queryset = queryset.filter(
-                    models.Q(category_id=category) |
-                    models.Q(draft_category_id=category)
-                )
-            else:
-                queryset = queryset.filter(
-                    models.Q(category__name__icontains=category) |
-                    models.Q(draft_category__name__icontains=category)
-                )
 
-        if level:
-            if level.isdigit():
-                queryset = queryset.filter(
-                    models.Q(level_id=level) |
-                    models.Q(draft_level_id=level)
-                )
-            else:
-                queryset = queryset.filter(
-                    models.Q(level__name__icontains=level) |
-                    models.Q(draft_level__name__icontains=level)
-                )
-
-        if search:
-            queryset = queryset.filter(
-                models.Q(title__icontains=search) |
-                models.Q(description__icontains=search)
-            )
-
-        return queryset.distinct()
+        return queryset.filter(is_published=True).distinct()
     
     
 class CourseCreateAPIView(generics.CreateAPIView):
@@ -661,9 +628,57 @@ class CoursePublishAPIView(generics.GenericAPIView):
             assessment.has_unpublished_changes = False
             assessment.pending_delete = False
             assessment.is_published = True
-            assessment.save(validate=False)
+            assessment.save()
 
         return Response({"success": True, "message": "Course published successfully."})
+
+        # =========================
+        # PUBLISH ASSESSMENTS
+        # =========================
+        assessments = course.assessments.all()
+
+        for assessment in assessments:
+            assessment.has_unpublished_changes = False
+            assessment.is_published = True
+            assessment.save()
+
+        # =========================
+        # PUBLISH MODULES
+        # =========================
+        modules = course.modules.all()
+
+        for module in modules:
+
+            module.has_unpublished_changes = False
+            module.is_published = True
+            module.save()
+
+            # =========================
+            # PUBLISH SECTIONS
+            # =========================
+            sections = module.sections.all()
+
+            for section in sections:
+
+                section.has_unpublished_changes = False
+                section.is_published = True
+                section.save()
+
+                # =========================
+                # PUBLISH CONTENTS
+                # =========================
+                contents = section.contents.all()
+
+                for content in contents:
+
+                    content.has_unpublished_changes = False
+                    content.is_published = True
+                    content.save()
+
+        return Response({
+            "success": True,
+            "message": "Course and all related items published successfully."
+        })
         
 class CourseUnpublishAPIView(generics.GenericAPIView):
 
@@ -1424,6 +1439,19 @@ class PublishCourseChangesAPIView(APIView):
             course.save()
 
             # =========================
+            # 2.5 APPLY ASSESSMENTS
+            # =========================
+            assessments = list(course.assessments.all())
+            for assessment in assessments:
+                if assessment.pending_delete:
+                    assessment.delete()
+                    continue
+                assessment.has_unpublished_changes = False
+                assessment.pending_delete = False
+                assessment.is_published = True
+                assessment.save()
+
+            # =========================
             # 3. APPLY MODULES
             # =========================
             modules = list(course.modules.all())
@@ -1544,7 +1572,7 @@ class LevelListAPIView(generics.ListAPIView):
 
 class LevelCreateAPIView(generics.CreateAPIView):
     serializer_class = LevelSerializer
-    permission_classes = [IsAuthenticated, CanManageMeta]
+    permission_classes = [IsAuthenticated, CanAddCourse]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -1560,35 +1588,6 @@ class LevelCreateAPIView(generics.CreateAPIView):
                 {"success": False, "message": "Validation error", "errors": e.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-
-class LevelBulkCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated, CanManageMeta]
-
-    def post(self, request, *args, **kwargs):
-        names = request.data.get("names", [])
-        if not isinstance(names, list) or not names:
-            return Response(
-                {"success": False, "message": "Provide a non-empty list of level names."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        clean_names = []
-        existing_names = set(Level.objects.filter(name__in=names).values_list("name", flat=True))
-        for name in names:
-            clean_name = str(name).strip()
-            if clean_name and clean_name not in existing_names and clean_name not in clean_names:
-                clean_names.append(clean_name)
-
-        created = [Level(name=name) for name in clean_names]
-        Level.objects.bulk_create(created)
-        all_levels = Level.objects.filter(name__in=existing_names.union(set(clean_names)))
-        serializer = LevelSerializer(all_levels, many=True)
-
-        return Response(
-            {"success": True, "message": "Levels bulk created successfully", "count": all_levels.count(), "data": serializer.data},
-            status=status.HTTP_201_CREATED,
-        )
 
 
 class CategoryListAPIView(generics.ListAPIView):
@@ -1626,7 +1625,7 @@ class CategoryListAPIView(generics.ListAPIView):
 
 class CategoryCreateAPIView(generics.CreateAPIView):
     serializer_class = CategorySerializer
-    permission_classes = [IsAuthenticated, CanManageMeta]
+    permission_classes = [IsAuthenticated, CanAddCourse]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -1642,113 +1641,7 @@ class CategoryCreateAPIView(generics.CreateAPIView):
                 {"success": False, "message": "Validation error", "errors": e.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-
-class CategoryBulkCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated, CanManageMeta]
-
-    def post(self, request, *args, **kwargs):
-        names = request.data.get("names", [])
-        if not isinstance(names, list) or not names:
-            return Response(
-                {"success": False, "message": "Provide a non-empty list of category names."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        clean_names = []
-        existing_names = set(Category.objects.filter(name__in=names).values_list("name", flat=True))
-        for name in names:
-            clean_name = str(name).strip()
-            if clean_name and clean_name not in existing_names and clean_name not in clean_names:
-                clean_names.append(clean_name)
-
-        created = [Category(name=name) for name in clean_names]
-        Category.objects.bulk_create(created)
-        all_categories = Category.objects.filter(name__in=existing_names.union(set(clean_names)))
-        serializer = CategorySerializer(all_categories, many=True)
-
-        return Response(
-            {"success": True, "message": "Categories bulk created successfully", "count": all_categories.count(), "data": serializer.data},
-            status=status.HTTP_201_CREATED,
-        )
-
-
-class CategoryUpdateAPIView(generics.UpdateAPIView):
-    queryset = Category.objects.all()
-    serializer_class = CategorySerializer
-    permission_classes = [IsAuthenticated, CanManageMeta]
-
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', True)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        try:
-            serializer.is_valid(raise_exception=True)
-            self.perform_update(serializer)
-            return Response(
-                {"success": True, "message": "Category updated successfully", "data": serializer.data},
-                status=status.HTTP_200_OK,
-            )
-        except ValidationError as e:
-            return Response(
-                {"success": False, "message": "Validation error", "errors": e.detail},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-
-class CategoryDeleteAPIView(generics.DestroyAPIView):
-    queryset = Category.objects.all()
-    permission_classes = [IsAuthenticated, CanManageMeta]
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if Course.objects.filter(models.Q(category=instance) | models.Q(draft_category=instance)).exists():
-            return Response(
-                {"success": False, "message": "This category cannot be deleted because it is currently in use."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        instance.delete()
-        return Response({"success": True, "message": "Category deleted successfully"}, status=status.HTTP_200_OK)
-
-
-class LevelUpdateAPIView(generics.UpdateAPIView):
-    queryset = Level.objects.all()
-    serializer_class = LevelSerializer
-    permission_classes = [IsAuthenticated, CanManageMeta]
-
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', True)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        try:
-            serializer.is_valid(raise_exception=True)
-            self.perform_update(serializer)
-            return Response(
-                {"success": True, "message": "Level updated successfully", "data": serializer.data},
-                status=status.HTTP_200_OK,
-            )
-        except ValidationError as e:
-            return Response(
-                {"success": False, "message": "Validation error", "errors": e.detail},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-
-class LevelDeleteAPIView(generics.DestroyAPIView):
-    queryset = Level.objects.all()
-    permission_classes = [IsAuthenticated, CanManageMeta]
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if Course.objects.filter(models.Q(level=instance) | models.Q(draft_level=instance)).exists():
-            return Response(
-                {"success": False, "message": "This level cannot be deleted because it is currently in use."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        instance.delete()
-        return Response({"success": True, "message": "Level deleted successfully"}, status=status.HTTP_200_OK)
-
-
+        
 class ModuleContentsAPIView(APIView):
 
     permission_classes = [IsAuthenticated, CanViewCourses]

@@ -265,63 +265,6 @@ export const createCategory = createAsyncThunk(
   }
 );
 
-export const createLevel = createAsyncThunk(
-  'courses/createLevel',
-  async (name: string, { rejectWithValue }) => {
-    try {
-      return await courseAPI.createLevel(name);
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to create level');
-    }
-  }
-);
-
-export const updateCategory = createAsyncThunk(
-  'courses/updateCategory',
-  async ({ categoryId, name }: { categoryId: number | string; name: string }, { rejectWithValue }) => {
-    try {
-      return await courseAPI.updateCategory(categoryId, name);
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to update category');
-    }
-  }
-);
-
-export const deleteCategory = createAsyncThunk(
-  'courses/deleteCategory',
-  async (categoryId: number | string, { rejectWithValue }) => {
-    try {
-      const response = await courseAPI.deleteCategory(categoryId);
-      return { categoryId, message: response.message };
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to delete category');
-    }
-  }
-);
-
-export const updateLevel = createAsyncThunk(
-  'courses/updateLevel',
-  async ({ levelId, name }: { levelId: number | string; name: string }, { rejectWithValue }) => {
-    try {
-      return await courseAPI.updateLevel(levelId, name);
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to update level');
-    }
-  }
-);
-
-export const deleteLevel = createAsyncThunk(
-  'courses/deleteLevel',
-  async (levelId: number | string, { rejectWithValue }) => {
-    try {
-      const response = await courseAPI.deleteLevel(levelId);
-      return { levelId, message: response.message };
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || error?.message || 'Failed to delete level');
-    }
-  }
-);
-
 const courseSlice = createSlice({
   name: 'courses',
   initialState,
@@ -535,32 +478,6 @@ const courseSlice = createSlice({
       .addCase(createCategory.fulfilled, (state, action: PayloadAction<any>) => {
         const cat = action.payload.data || action.payload;
         state.categories.push(cat);
-      })
-      .addCase(createLevel.fulfilled, (state, action: PayloadAction<any>) => {
-        const level = action.payload.data || action.payload;
-        state.levels.push(level);
-      })
-      .addCase(updateCategory.fulfilled, (state, action: PayloadAction<any>) => {
-        const updated = action.payload.data || action.payload;
-        state.categories = state.categories.map((category) =>
-          String(category.id) === String(updated.id) ? updated : category
-        );
-      })
-      .addCase(deleteCategory.fulfilled, (state, action: PayloadAction<{ categoryId: number | string; message: string }>) => {
-        state.categories = state.categories.filter(
-          (category) => String(category.id) !== String(action.payload.categoryId)
-        );
-      })
-      .addCase(updateLevel.fulfilled, (state, action: PayloadAction<any>) => {
-        const updated = action.payload.data || action.payload;
-        state.levels = state.levels.map((level) =>
-          String(level.id) === String(updated.id) ? updated : level
-        );
-      })
-      .addCase(deleteLevel.fulfilled, (state, action: PayloadAction<{ levelId: number | string; message: string }>) => {
-        state.levels = state.levels.filter(
-          (level) => String(level.id) !== String(action.payload.levelId)
-        );
       });
   },
 });

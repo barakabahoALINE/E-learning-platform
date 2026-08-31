@@ -69,7 +69,7 @@ export interface Assessment {
 }
 
 export interface AssessmentCreateData {
-  course?: number | string | null;
+  course: number | string;
   module?: number | string | null;
   title: string;
   is_final: boolean;

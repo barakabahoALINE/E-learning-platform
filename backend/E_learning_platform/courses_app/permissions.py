@@ -22,10 +22,6 @@ class CanPublishCourse(HasPermission):
     required_permission = "courses_app.publish_course"
 
 
-class CanManageMeta(HasPermission):
-    required_permission = "courses_app.manage_meta"
-
-
 class CanViewPublishedCourse(HasPermission):
     required_permission = "courses_app.view_published_course"
 

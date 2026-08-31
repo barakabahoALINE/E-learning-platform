@@ -3,14 +3,11 @@ from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from rest_framework.test import APIRequestFactory
 
 from courses_app.models import Course, Module
-from courses_app.serializers import ModuleSerializer, CourseDetailSerializer
 from .models import Assessment, Attempt
 from .services.rules import RuleError, check_attempt_limit
 from .serializers import CreateAssessmentSerializer
-from .views import CreateQuestionAPIView
 
 
 class AssessmentSerializerTests(TestCase):
@@ -47,133 +44,8 @@ class AssessmentSerializerTests(TestCase):
         assessment = serializer.save()
 
         self.assertEqual(assessment.assessment_type, "QUIZ")
-        self.assertEqual(assessment.max_attempts, 1)
+        self.assertEqual(assessment.max_attempts, 3)
         self.assertEqual(assessment.duration, 30)
-
-    def test_independent_quiz_can_be_created_without_course_or_module(self):
-        data = {
-            "assessment_type": "QUIZ",
-            "title": "Standalone Quiz",
-            "pass_mark": 70,
-            "descriptions": "Independent quiz.",
-        }
-
-        serializer = CreateAssessmentSerializer(data=data)
-        self.assertTrue(serializer.is_valid(), serializer.errors)
-
-        assessment = serializer.save()
-
-        self.assertEqual(assessment.assessment_type, "QUIZ")
-        self.assertIsNone(assessment.course)
-        self.assertIsNone(assessment.module)
-
-    def test_independent_final_can_be_created_without_course(self):
-        data = {
-            "assessment_type": "FINAL",
-            "title": "Standalone Final",
-            "pass_mark": 70,
-            "duration": 60,
-            "descriptions": "Independent final.",
-        }
-
-        serializer = CreateAssessmentSerializer(data=data)
-        self.assertTrue(serializer.is_valid(), serializer.errors)
-
-        assessment = serializer.save()
-
-        self.assertEqual(assessment.assessment_type, "FINAL")
-        self.assertIsNone(assessment.course)
-        self.assertIsNone(assessment.module)
-
-    def test_attach_detach_updates_course_and_module(self):
-        quiz_data = {
-            "assessment_type": "QUIZ",
-            "title": "Standalone Quiz",
-            "pass_mark": 70,
-            "descriptions": "Independent quiz.",
-        }
-
-        serializer = CreateAssessmentSerializer(data=quiz_data)
-        self.assertTrue(serializer.is_valid(), serializer.errors)
-        assessment = serializer.save()
-
-        assessment.module = self.module
-        assessment.course = self.module.course
-        assessment.save()
-
-        self.assertEqual(assessment.module, self.module)
-        self.assertEqual(assessment.course, self.course)
-
-        assessment.module = None
-        assessment.course = None
-        assessment.save()
-
-        self.assertIsNone(assessment.module)
-        self.assertIsNone(assessment.course)
-
-    def test_module_serializer_includes_m2m_attached_quiz(self):
-        assessment = Assessment.objects.create(
-            title="Attached Module Quiz",
-            assessment_type="QUIZ",
-            pass_mark=70,
-            duration=30,
-            max_attempts=3,
-        )
-        assessment.modules.add(self.module)
-
-        module_data = ModuleSerializer(self.module).data
-
-        self.assertIsNotNone(module_data.get("quiz"))
-        self.assertEqual(module_data["quiz"]["id"], assessment.id)
-
-    def test_course_detail_serializer_includes_m2m_attached_final(self):
-        assessment = Assessment.objects.create(
-            title="Attached Final Assessment",
-            assessment_type="FINAL",
-            pass_mark=60,
-            duration=60,
-            max_attempts=3,
-        )
-        assessment.courses.add(self.course)
-
-        course_data = CourseDetailSerializer(self.course).data
-
-        self.assertIsNotNone(course_data.get("final_assessment"))
-        self.assertEqual(course_data["final_assessment"]["id"], assessment.id)
-
-    def test_create_question_works_when_course_attachment_is_m2m_only(self):
-        assessment = Assessment.objects.create(
-            title="M2M Final Assessment",
-            assessment_type="FINAL",
-            pass_mark=70,
-            duration=60,
-            max_attempts=3,
-            course=None,
-        )
-        assessment.courses.add(self.course)
-
-        factory = APIRequestFactory()
-        request = factory.post(
-            "/api/assessments/questions/create/",
-            {
-                "assessment": assessment.id,
-                "question_text": "What is the capital of France?",
-                "question_type": "single",
-                "marks": 1,
-                "choices": [
-                    {"text": "Paris", "is_correct": True},
-                    {"text": "London", "is_correct": False},
-                    {"text": "Rome", "is_correct": False},
-                ],
-            },
-            format="json",
-        )
-
-        response = CreateQuestionAPIView().post(request)
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["status"], "success")
-        self.assertEqual(assessment.questions.count(), 1)
 
 
 class FinalAssessmentCooldownTests(TestCase):

@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
-import { FlipCard } from "../../components/course/ContentBlockRenderer";
+import { FlipCard } from "../../components/course";
 import type {
   ContentBlock,
   FlipCardSide,

@@ -217,7 +217,7 @@ def has_passed_module_quiz(user, module):
 
 def validate_unique_assessment(assessment):
 
-    if assessment.assessment_type == "FINAL" and assessment.course is not None:
+    if assessment.assessment_type == "FINAL":
 
         existing_final = Assessment.objects.filter(
             course=assessment.course,
@@ -232,7 +232,12 @@ def validate_unique_assessment(assessment):
                 "Only one final assessment is allowed per course."
             )
 
-    if assessment.assessment_type == "QUIZ" and assessment.module is not None:
+    if assessment.assessment_type == "QUIZ":
+
+        if not assessment.module:
+            raise RuleError(
+                "Quiz must be linked to a module."
+            )
 
         existing_quiz = Assessment.objects.filter(
             module=assessment.module,

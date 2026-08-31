@@ -14,9 +14,7 @@ class Assessment(models.Model):
     course = models.ForeignKey(
         "courses_app.Course",
         on_delete=models.CASCADE,
-        related_name="assessments",
-        null=True,
-        blank=True,
+        related_name="assessments"
     )
 
     module = models.ForeignKey(
@@ -25,18 +23,6 @@ class Assessment(models.Model):
         related_name="assessments",
         null=True,
         blank=True,
-    )
-
-    modules = models.ManyToManyField(
-        "courses_app.Module",
-        blank=True,
-        related_name="attached_assessments",
-    )
-
-    courses = models.ManyToManyField(
-        "courses_app.Course",
-        blank=True,
-        related_name="attached_assessments",
     )
 
     title = models.CharField(max_length=255)
@@ -58,9 +44,8 @@ class Assessment(models.Model):
             ("start_assessment", "Can start assessment"),
         ]
 
-    def save(self, *args, validate=True, **kwargs):
-        if validate:
-            self.clean()
+    def save(self, *args, **kwargs):
+        self.clean()
         super().save(*args, **kwargs)
 
     def clean(self):

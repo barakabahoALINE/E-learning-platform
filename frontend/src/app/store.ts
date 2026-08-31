@@ -7,7 +7,6 @@ import assessmentReducer from '../features/assessments/assessmentSlice';
 import certificateReducer from '../features/certificates/certificateSlice';
 import rbacReducer from '../features/rbac/rbacSlice';
 import searchReducer from '../features/search/searchSlice';
-import communityReducer from '../features/community/communitySlice';
 
 export const store = configureStore({
   reducer: {
@@ -19,7 +18,6 @@ export const store = configureStore({
     certificates: certificateReducer,
     rbac: rbacReducer,
     search: searchReducer,
-    community: communityReducer,
   },
 });
 

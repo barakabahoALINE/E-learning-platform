@@ -44,20 +44,14 @@ import {
   continueLearning,
   fetchCourseSectionsProgress,
 } from "../../features/progress/progressSlice";
-import { normalizeCourseId } from "../data/community-data";
+import { normalizeCourseId, useCommunity } from "../data/community-data";
 import { useLikeState } from "../data/like-data";
-import {
-  createCommunityDiscussion,
-  fetchCommunityDiscussions,
-} from "../../features/community/communitySlice";
 
 export const DashboardPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const reduxUser = useAppSelector(selectCurrentUser);
-  const { discussions: communityDiscussions } = useAppSelector(
-    (state) => state.community,
-  );
+  const { discussions, addDiscussion } = useCommunity();
   const { getSummary } = useLikeState(reduxUser?.id);
   const { myEnrollments } = useAppSelector((state) => state.enrollments);
   const { courses, categories } = useAppSelector((state) => state.courses);
@@ -101,10 +95,6 @@ export const DashboardPage: React.FC = () => {
       dispatch(fetchCourseSectionsProgress(Number(enrollment.course)));
     });
   }, [dispatch, myEnrollments]);
-
-  React.useEffect(() => {
-    dispatch(fetchCommunityDiscussions());
-  }, [dispatch]);
 
   const user = reduxUser
     ? {
@@ -214,7 +204,7 @@ export const DashboardPage: React.FC = () => {
       normalizeCourseId(String(course?.courseId ?? "")),
     ),
   );
-  const communityPreviews = communityDiscussions
+  const communityPreviews = discussions
     .filter((discussion) =>
       enrolledCourseIds.has(normalizeCourseId(discussion.courseId)),
     )
@@ -247,35 +237,16 @@ export const DashboardPage: React.FC = () => {
     ? reduxUser.full_name || reduxUser.email?.split("@")[0] || "User"
     : "User";
 
-  const handlePostDiscussion = async (
+  const handlePostDiscussion = (
     courseId: string,
     courseTitle: string,
     title: string,
     description: string,
   ) => {
-    if (!reduxUser) {
-      navigate("/login");
-      return "";
-    }
-
-    try {
-      const result = await dispatch(
-        createCommunityDiscussion({
-          course_id: courseId,
-          course_title: courseTitle,
-          title,
-          description,
-        }),
-      ).unwrap();
-
-      const newId = String(result.data.id);
-      setShowAskModal(false);
-      navigate(`/community/${newId}`);
-      return newId;
-    } catch (error) {
-      setShowAskModal(false);
-      return "";
-    }
+    const newId = addDiscussion(courseId, courseTitle, title, description);
+    setShowAskModal(false);
+    navigate(`/community/${newId}`);
+    return newId;
   };
 
   return (
