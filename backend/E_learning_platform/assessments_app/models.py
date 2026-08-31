@@ -52,6 +52,10 @@ class Assessment(models.Model):
     is_published = models.BooleanField(default=False)
     has_unpublished_changes = models.BooleanField(default=False)
     pending_delete = models.BooleanField(default=False)
+    draft_course_additions = models.JSONField(default=list, blank=True)
+    draft_course_removals = models.JSONField(default=list, blank=True)
+    draft_module_additions = models.JSONField(default=list, blank=True)
+    draft_module_removals = models.JSONField(default=list, blank=True)
 
     class Meta:
         permissions = [
@@ -103,6 +107,19 @@ class Question(models.Model):
 
     order = models.PositiveIntegerField()
 
+    draft_question_text = models.TextField(blank=True, null=True)
+    draft_question_type = models.CharField(
+        max_length=10,
+        choices=QuestionType.choices,
+        blank=True,
+        null=True,
+    )
+    draft_marks = models.PositiveIntegerField(blank=True, null=True)
+    draft_matching_pairs = models.JSONField(blank=True, null=True)
+    draft_choices = models.JSONField(blank=True, null=True)
+    has_unpublished_changes = models.BooleanField(default=False)
+    pending_delete = models.BooleanField(default=False)
+
     class Meta:
         ordering = ['order']
 
@@ -128,6 +145,13 @@ class Choice(models.Model):
 class Attempt(models.Model):
 
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attempts")
+    course = models.ForeignKey(
+        "courses_app.Course",
+        on_delete=models.CASCADE,
+        related_name="assessment_attempts",
+        null=True,
+        blank=True,
+    )
     assessment = models.ForeignKey(Assessment, on_delete=models.CASCADE, related_name="attempts")
     attempt_number = models.PositiveIntegerField(default=1)
 
@@ -147,7 +171,7 @@ class Attempt(models.Model):
     next_allowed_attempt = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        unique_together = ["student", "assessment", "attempt_number"]
+        unique_together = ["student", "course", "assessment", "attempt_number"]
         ordering = ["-started_at"]
         permissions = [
             ("start_assessment", "Can start assessment"),

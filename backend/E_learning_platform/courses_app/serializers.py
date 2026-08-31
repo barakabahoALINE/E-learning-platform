@@ -233,10 +233,6 @@ class ModuleSerializer(serializers.ModelSerializer):
         from django.db.models import Q
         from assessments_app.models import Assessment
         from assessments_app.serializers import AssessmentDetailSerializer
-        quizzes = Assessment.objects.filter(
-            Q(module=obj) | Q(modules=obj),
-            assessment_type="QUIZ"
-        )
         request = self.context.get('request')
         user = request.user if request else None
         is_admin = user and (
@@ -245,10 +241,23 @@ class ModuleSerializer(serializers.ModelSerializer):
             getattr(user, 'role', None) in ['admin', 'instructor']
         )
         if not is_admin:
-            quizzes = quizzes.filter(is_published=True)
-        quiz = quizzes.distinct().first()
+            quiz = Assessment.objects.filter(
+                Q(module=obj) | Q(modules=obj),
+                assessment_type="QUIZ",
+                is_published=True,
+            ).distinct().first()
+        else:
+            candidates = Assessment.objects.filter(assessment_type="QUIZ")
+            quiz = next((assessment for assessment in candidates if (
+                (
+                    assessment.module_id == obj.id
+                    or assessment.modules.filter(id=obj.id).exists()
+                    or str(obj.id) in [str(value) for value in (assessment.draft_module_additions or [])]
+                )
+                and str(obj.id) not in [str(value) for value in (assessment.draft_module_removals or [])]
+            )), None)
         if quiz:
-            return AssessmentDetailSerializer(quiz).data
+            return AssessmentDetailSerializer(quiz, context=self.context).data
         return None
 
     def validate(self, attrs):
@@ -502,10 +511,6 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         from django.db.models import Q
         from assessments_app.models import Assessment
         from assessments_app.serializers import AssessmentDetailSerializer
-        finals = Assessment.objects.filter(
-            Q(course=obj) | Q(courses=obj),
-            assessment_type="FINAL"
-        )
         request = self.context.get('request')
         user = request.user if request else None
         is_admin = user and (
@@ -514,10 +519,23 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             getattr(user, 'role', None) in ['admin', 'instructor']
         )
         if not is_admin:
-            finals = finals.filter(is_published=True)
-        final = finals.distinct().first()
+            final = Assessment.objects.filter(
+                Q(course=obj) | Q(courses=obj),
+                assessment_type="FINAL",
+                is_published=True,
+            ).distinct().first()
+        else:
+            candidates = Assessment.objects.filter(assessment_type="FINAL")
+            final = next((assessment for assessment in candidates if (
+                (
+                    assessment.course_id == obj.id
+                    or assessment.courses.filter(id=obj.id).exists()
+                    or str(obj.id) in [str(value) for value in (assessment.draft_course_additions or [])]
+                )
+                and str(obj.id) not in [str(value) for value in (assessment.draft_course_removals or [])]
+            )), None)
         if final:
-            return AssessmentDetailSerializer(final).data
+            return AssessmentDetailSerializer(final, context=self.context).data
         return obj.final_assessment if obj.final_assessment else None
 
     def get_modules(self, obj):

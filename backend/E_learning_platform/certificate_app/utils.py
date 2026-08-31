@@ -108,6 +108,7 @@ def course_completed_by_student(student, course_id):
         if final_assessment:
             final_passed = Attempt.objects.filter(
                 student=student,
+                course_id=course_id,
                 assessment=final_assessment,
                 is_submitted=True,
                 is_passed=True
@@ -131,7 +132,7 @@ def course_completed_by_student(student, course_id):
 
     final_attempt = Attempt.objects.filter(
         student=student,
-        assessment__course_id=course_id,
+        course_id=course_id,
         assessment__assessment_type="FINAL",
         is_submitted=True,
         is_passed=True,

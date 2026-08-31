@@ -199,16 +199,24 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
 
-        question_text = data.get('question_text')
+        question_text = data.get(
+            'question_text',
+            self.instance.question_text if self.instance else None,
+        )
 
         if not question_text or not question_text.strip():
             raise serializers.ValidationError(
                 "Question text cannot be empty."
             )
 
-        question_type = data.get('question_type')
+        question_type = data.get(
+            'question_type',
+            self.instance.question_type if self.instance else None,
+        )
 
         choices = data.get('choices')
+        if choices is None and self.instance and question_type != "matching":
+            choices = list(self.instance.choices.values('text', 'is_correct'))
 
         # 1. Validate question text
         if not question_text or not str(question_text).strip():
@@ -217,6 +225,12 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
         # 2. Validate choices exist
         if question_type == "matching":
             matching_pairs = data.get('matching_pairs')
+            if matching_pairs is None and self.instance:
+                matching_pairs = (
+                    self.instance.draft_matching_pairs
+                    if self.instance.draft_matching_pairs is not None
+                    else self.instance.matching_pairs
+                )
             if not matching_pairs or not isinstance(matching_pairs, list) or len(matching_pairs) == 0:
                 raise serializers.ValidationError(
                     "Matching questions require at least one pair."
@@ -319,9 +333,37 @@ class QuestionSerializer(serializers.ModelSerializer):
             'matching_pairs'
         ]
 
+    def _is_editor(self):
+        request = self.context.get('request')
+        user = request.user if request else None
+        return bool(user and (
+            user.is_superuser or
+            user.groups.filter(name__in=['Admin', 'Instructor']).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
+        ))
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self._is_editor():
+            return data
+
+        if instance.draft_question_text is not None:
+            data['question_text'] = instance.draft_question_text
+        if instance.draft_question_type is not None:
+            data['question_type'] = instance.draft_question_type
+        if instance.draft_marks is not None:
+            data['marks'] = instance.draft_marks
+        return data
+
     def get_choices(self, obj):
-        if obj.question_type == Question.QuestionType.MATCHING:
+        question_type = obj.question_type
+        if self._is_editor() and obj.draft_question_type is not None:
+            question_type = obj.draft_question_type
+        if question_type == Question.QuestionType.MATCHING:
             return []
+
+        if self._is_editor() and obj.draft_choices is not None:
+            return obj.draft_choices
 
         choices = list(obj.choices.all())
         random.shuffle(choices)
@@ -331,10 +373,15 @@ class QuestionSerializer(serializers.ModelSerializer):
         ).data
 
     def get_matching_pairs(self, obj):
-        if obj.question_type != Question.QuestionType.MATCHING:
+        question_type = obj.question_type
+        if self._is_editor() and obj.draft_question_type is not None:
+            question_type = obj.draft_question_type
+        if question_type != Question.QuestionType.MATCHING:
             return []
 
         pairs = obj.matching_pairs or []
+        if self._is_editor() and obj.draft_matching_pairs is not None:
+            pairs = obj.draft_matching_pairs
         if isinstance(pairs, list):
             shuffled = list(pairs)
             random.shuffle(shuffled)
@@ -390,6 +437,17 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
             'pending_delete',
             'questions',
         ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        pending_ids = set(
+            instance.questions.filter(pending_delete=True).values_list('id', flat=True)
+        )
+        data['questions'] = [
+            question for question in data['questions']
+            if question['id'] not in pending_ids
+        ]
+        return data
 
     def get_course_attachments(self, obj):
         courses = list(obj.courses.all())

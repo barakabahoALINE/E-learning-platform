@@ -42,13 +42,15 @@ const assessmentAPI = {
     return response.data;
   },
 
-  startAssessment: async (assessmentId: number | string) => {
-    const response = await api.get(`assessments/${assessmentId}/start/`);
+  startAssessment: async (assessmentId: number | string, courseId?: number | string) => {
+    const response = await api.get(`assessments/${assessmentId}/start/`, {
+      params: courseId !== undefined && courseId !== null ? { course_id: courseId } : {},
+    });
     return response.data;
   },
 
-  startAttempt: async (assessmentId: number | string) => {
-    const response = await api.post(`assessments/${assessmentId}/start-attempt/`);
+  startAttempt: async (assessmentId: number | string, courseId?: number | string) => {
+    const response = await api.post(`assessments/${assessmentId}/start-attempt/`, courseId !== undefined && courseId !== null ? { course_id: courseId } : {});
     return response.data;
   },
 

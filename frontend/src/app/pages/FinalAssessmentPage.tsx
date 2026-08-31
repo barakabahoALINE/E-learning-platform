@@ -393,7 +393,7 @@ export const FinalAssessmentPage: React.FC = () => {
         setLockedMessage(null);
         setIsAttemptLoading(true);
         try {
-            const response = await assessmentAPI.startAttempt(assessment.id);
+            const response = await assessmentAPI.startAttempt(assessment.id, courseId);
             const wrapper = response?.data ? response : { data: response };
             const inner = wrapper.data?.data ? wrapper.data.data : wrapper.data;
             const newAttemptId = inner?.id ?? inner?.attempt_id ?? inner?.attemptId ?? null;
