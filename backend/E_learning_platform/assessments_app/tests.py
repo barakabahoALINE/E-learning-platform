@@ -10,7 +10,7 @@ from courses_app.models import Course, Module
 from courses_app.serializers import ModuleSerializer, CourseDetailSerializer
 from .models import Assessment, Attempt, Choice, Question
 from .services.rules import RuleError, check_attempt_limit
-from .serializers import CreateAssessmentSerializer
+from .serializers import CreateAssessmentSerializer, AssessmentDetailSerializer
 from .views import (
     CreateQuestionAPIView,
     DeleteQuestionAPIView,
@@ -161,6 +161,26 @@ class AssessmentSerializerTests(TestCase):
 
         self.assertIsNone(course_data.get("final_assessment"))
 
+    def test_assessment_detail_serializer_unifies_fk_and_m2m_course_attachments(self):
+        other_course = Course.objects.create(
+            title="Second Course",
+            description="Another course.",
+            duration="2h",
+        )
+        assessment = Assessment.objects.create(
+            title="Mixed Course Link Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            duration=60,
+            max_attempts=3,
+            course=self.course,
+        )
+        assessment.courses.add(other_course)
+
+        detail = AssessmentDetailSerializer(assessment).data
+        attachment_ids = [item["id"] for item in detail["course_attachments"]]
+        self.assertEqual(sorted(attachment_ids), sorted([self.course.id, other_course.id]))
+
     def test_create_question_works_when_course_attachment_is_m2m_only(self):
         assessment = Assessment.objects.create(
             title="M2M Final Assessment",
@@ -214,9 +234,8 @@ class AssessmentSerializerTests(TestCase):
         )
         Choice.objects.create(question=question, text="Correct", is_correct=True)
 
-        request = APIRequestFactory().put(
-            "/api/assessments/questions/1/update/",
-            {
+        request = SimpleNamespace(
+            data={
                 "question_text": "Edited on server",
                 "question_type": "single",
                 "marks": 2,
@@ -225,7 +244,7 @@ class AssessmentSerializerTests(TestCase):
                     {"text": "Wrong", "is_correct": False},
                 ],
             },
-            format="json",
+            user=self.user if hasattr(self, 'user') else None,
         )
         response = UpdateQuestionAPIView().put(request, question.id)
 
@@ -309,12 +328,7 @@ class AssessmentSerializerTests(TestCase):
             is_published=True,
         )
 
-        factory = APIRequestFactory()
-        request = factory.post(
-            "/api/assessments/1/detach/",
-            {"course_id": self.course.id},
-            format="json",
-        )
+        request = SimpleNamespace(data={"course_id": self.course.id})
 
         response = DetachAssessmentAPIView().post(request, assessment.id)
 
@@ -373,12 +387,7 @@ class AssessmentSerializerTests(TestCase):
             is_published=True,
         )
 
-        factory = APIRequestFactory()
-        request = factory.post(
-            "/api/assessments/1/attach/",
-            {"course_id": self.course.id},
-            format="json",
-        )
+        request = SimpleNamespace(data={"course_id": self.course.id})
 
         response = AttachAssessmentAPIView().post(request, assessment.id)
 

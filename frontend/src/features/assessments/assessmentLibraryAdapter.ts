@@ -251,18 +251,46 @@ export const listAssessmentLibrary = async (): Promise<AssessmentLibraryItem[]> 
 
   const courseItems = extractAssessmentsFromCourses(detailedCourses);
 
+  const allAssessmentsResponse = await assessmentAPI.listAssessments();
+  const allAssessments = Array.isArray(allAssessmentsResponse)
+    ? allAssessmentsResponse
+    : Array.isArray(allAssessmentsResponse?.data)
+      ? allAssessmentsResponse.data
+      : [];
+
+  const databaseItems: AssessmentLibraryItem[] = allAssessments.map((assessment: any) => ({
+    id: assessment.id,
+    title: assessment.title,
+    assessment_type: assessment.assessment_type,
+    pass_mark: assessment.pass_mark,
+    max_attempts: assessment.max_attempts,
+    duration: assessment.duration,
+    tab_switch_enabled: assessment.tab_switch_enabled,
+    tab_switch_limit: assessment.tab_switch_limit,
+    descriptions: assessment.descriptions,
+    instructions: assessment.instructions,
+    questions: assessment.questions || [],
+    source: 'course',
+    courseId: assessment.course ?? assessment.course_id ?? undefined,
+    moduleId: assessment.module ?? assessment.module_id ?? undefined,
+    courseTitle: assessment.course_title || assessment.course?.title || undefined,
+    moduleTitle: assessment.module_title || assessment.module?.title || undefined,
+  }));
+
   const unassignedResponse = await assessmentAPI.listAssessments({ unassigned: true });
-  const unassignedAssessments = Array.isArray(unassignedResponse?.data)
-    ? unassignedResponse.data
-    : [];
+  const unassignedAssessments = Array.isArray(unassignedResponse)
+    ? unassignedResponse
+    : Array.isArray(unassignedResponse?.data)
+      ? unassignedResponse.data
+      : [];
 
   const unassignedItems: AssessmentLibraryItem[] = unassignedAssessments.map((assessment: any) => ({
     ...assessment,
     source: 'course',
-    courseId: assessment.course ?? undefined,
-    moduleId: assessment.module ?? undefined,
-    courseTitle: assessment.course ? assessment.course.title : undefined,
-    moduleTitle: assessment.module ? assessment.module.title : undefined,
+    courseId: assessment.course ?? assessment.course_id ?? undefined,
+    moduleId: assessment.module ?? assessment.module_id ?? undefined,
+    courseTitle: assessment.course_title || assessment.course?.title || undefined,
+    moduleTitle: assessment.module_title || assessment.module?.title || undefined,
     questions: assessment.questions || [],
   }));
 
@@ -272,9 +300,17 @@ export const listAssessmentLibrary = async (): Promise<AssessmentLibraryItem[]> 
     const key = String(it.id);
     if (!byId.has(key)) {
       byId.set(key, it);
+      return;
+    }
+
+    const existing = byId.get(key)!;
+    const shouldReplace = !existing.title && !!it.title;
+    if (shouldReplace || (existing.courseTitle == null && it.courseTitle != null)) {
+      byId.set(key, { ...existing, ...it });
     }
   };
 
+  databaseItems.forEach(pushItem);
   courseItems.forEach(pushItem);
   unassignedItems.forEach(pushItem);
 

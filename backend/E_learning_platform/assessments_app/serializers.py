@@ -412,6 +412,8 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
     ModuleSerializer to embed quiz/final-assessment data in course responses.
     """
     questions = QuestionSerializer(many=True, read_only=True)
+    course_title = serializers.SerializerMethodField()
+    module_title = serializers.SerializerMethodField()
     course_attachments = serializers.SerializerMethodField()
     module_attachments = serializers.SerializerMethodField()
 
@@ -420,7 +422,9 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'course',
+            'course_title',
             'module',
+            'module_title',
             'course_attachments',
             'module_attachments',
             'title',
@@ -438,6 +442,22 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
             'questions',
         ]
 
+    def get_course_title(self, obj):
+        if obj.course_id is not None:
+            return obj.course.title if obj.course else None
+        if obj.courses.exists():
+            first_course = obj.courses.first()
+            return first_course.title if first_course else None
+        return None
+
+    def get_module_title(self, obj):
+        if obj.module_id is not None:
+            return obj.module.title if obj.module else None
+        if obj.modules.exists():
+            first_module = obj.modules.first()
+            return first_module.title if first_module else None
+        return None
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         pending_ids = set(
@@ -450,27 +470,46 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
         return data
 
     def get_course_attachments(self, obj):
-        courses = list(obj.courses.all())
-        if not courses and obj.course is not None:
-            courses = [obj.course]
-        return [
-            {
-                'id': course.id,
-                'title': course.title,
-            }
-            for course in courses
-        ]
+        seen = set()
+        attached = []
+
+        for course in list(obj.courses.all()):
+            if course and course.id not in seen:
+                attached.append({
+                    'id': course.id,
+                    'title': course.title,
+                })
+                seen.add(course.id)
+
+        if obj.course_id is not None and obj.course_id not in seen:
+            attached.append({
+                'id': obj.course.id,
+                'title': obj.course.title,
+            })
+
+        return attached
 
     def get_module_attachments(self, obj):
-        modules = list(obj.modules.all())
-        if not modules and obj.module is not None:
-            modules = [obj.module]
-        return [
-            {
+        seen = set()
+        attached = []
+
+        for module in list(obj.modules.all()):
+            if module and module.id not in seen:
+                attached.append({
+                    'id': module.id,
+                    'title': module.title,
+                    'course_id': module.course_id,
+                    'course_title': module.course.title if module.course else None,
+                })
+                seen.add(module.id)
+
+        if obj.module_id is not None and obj.module_id not in seen:
+            module = obj.module
+            attached.append({
                 'id': module.id,
                 'title': module.title,
                 'course_id': module.course_id,
                 'course_title': module.course.title if module.course else None,
-            }
-            for module in modules
-        ]
+            })
+
+        return attached

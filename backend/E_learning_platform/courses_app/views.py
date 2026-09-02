@@ -91,9 +91,13 @@ class CourseListAPIView(generics.ListAPIView):
             rating=models.Avg("certificate_feedback__overall_rating"),
         )
         user = self.request.user
+        params = getattr(self.request, "query_params", getattr(self.request, "GET", {}))
+        admin_view = str(params.get("admin", "")).lower() in {"1", "true", "yes", "on"}
 
         if user.is_authenticated:
-            if _is_unrestricted_user(user):
+            if admin_view and (_is_admin_user(user) or _is_instructor_user(user)):
+                queryset = queryset.distinct()
+            elif _is_unrestricted_user(user):
                 queryset = queryset.distinct()
             elif _is_instructor_user(user):
                 queryset = queryset.filter(created_by=user).distinct()
