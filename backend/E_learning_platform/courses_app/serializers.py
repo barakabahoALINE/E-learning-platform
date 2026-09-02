@@ -240,22 +240,17 @@ class ModuleSerializer(serializers.ModelSerializer):
             user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
             getattr(user, 'role', None) in ['admin', 'instructor']
         )
-        if not is_admin:
-            quiz = Assessment.objects.filter(
-                Q(module=obj) | Q(modules=obj),
-                assessment_type="QUIZ",
-                is_published=True,
-            ).distinct().first()
-        else:
-            candidates = Assessment.objects.filter(assessment_type="QUIZ")
-            quiz = next((assessment for assessment in candidates if (
-                (
-                    assessment.module_id == obj.id
-                    or assessment.modules.filter(id=obj.id).exists()
-                    or str(obj.id) in [str(value) for value in (assessment.draft_module_additions or [])]
-                )
-                and str(obj.id) not in [str(value) for value in (assessment.draft_module_removals or [])]
-            )), None)
+
+        quizzes = Assessment.objects.filter(
+            assessment_type="QUIZ"
+        ).filter(
+            Q(module=obj) | Q(modules=obj)
+        )
+
+        if request is not None and user is not None and not is_admin:
+            quizzes = quizzes.filter(is_published=True)
+
+        quiz = quizzes.distinct().first()
         if quiz:
             return AssessmentDetailSerializer(quiz, context=self.context).data
         return None
@@ -518,34 +513,44 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
             getattr(user, 'role', None) in ['admin', 'instructor']
         )
-        if not is_admin:
-            final = Assessment.objects.filter(
-                Q(course=obj) | Q(courses=obj),
-                assessment_type="FINAL",
-                is_published=True,
-            ).distinct().first()
-        else:
-            candidates = Assessment.objects.filter(assessment_type="FINAL")
-            final = next((assessment for assessment in candidates if (
-                (
-                    assessment.course_id == obj.id
-                    or assessment.courses.filter(id=obj.id).exists()
-                    or str(obj.id) in [str(value) for value in (assessment.draft_course_additions or [])]
-                )
-                and str(obj.id) not in [str(value) for value in (assessment.draft_course_removals or [])]
-            )), None)
+
+        finals = Assessment.objects.filter(
+            assessment_type="FINAL"
+        ).filter(
+            Q(course=obj) | Q(courses=obj)
+        )
+
+        if request is not None and user is not None and not is_admin:
+            finals = finals.filter(is_published=True)
+
+        final = finals.distinct().first()
         if final:
             return AssessmentDetailSerializer(final, context=self.context).data
-        return obj.final_assessment if obj.final_assessment else None
+
+        course_payload = obj.final_assessment if isinstance(obj.final_assessment, dict) else None
+        if not course_payload:
+            return None
+
+        candidate_id = course_payload.get("id") or course_payload.get("assessment_id")
+        if not candidate_id:
+            return None
+
+        live_final = Assessment.objects.filter(id=candidate_id, assessment_type="FINAL").first()
+        if live_final:
+            return AssessmentDetailSerializer(live_final, context=self.context).data
+        return None
 
     def get_modules(self, obj):
         modules = obj.modules.all()
         request = self.context.get('request')
         user = request.user if request else None
-        is_admin = user and (
-            user.is_superuser or
-            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
-            getattr(user, 'role', None) in ['admin', 'instructor']
+        is_admin = bool(
+            user and (
+                user.is_superuser or
+                getattr(user, 'is_staff', False) or
+                user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+                getattr(user, 'role', None) in ['admin', 'instructor']
+            )
         )
         if not is_admin:
             modules = modules.filter(is_published=True)

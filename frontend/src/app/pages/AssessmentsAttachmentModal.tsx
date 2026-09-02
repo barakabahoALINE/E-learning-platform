@@ -49,11 +49,32 @@ export function AssessmentsAttachmentModal({ item, onClose, onAttach, onDetach }
         ]);
 
         const detailedCourses = await Promise.all(
-          courseSummaries.map((course) =>
-            courseAPI
-              .fetchCourseDetails(course.id)
-              .catch(() => course)
-          )
+          courseSummaries.map(async (course) => {
+            try {
+              const detail = await courseAPI.fetchCourseDetails(course.id);
+              const modules = Array.isArray(detail.modules) && detail.modules.length > 0
+                ? detail.modules
+                : await courseAPI.fetchModules(course.id).catch(() => []);
+
+              return {
+                ...detail,
+                modules,
+              } as Course;
+            } catch {
+              try {
+                const fallbackModules = await courseAPI.fetchModules(course.id);
+                return {
+                  ...course,
+                  modules: fallbackModules,
+                } as Course;
+              } catch {
+                return {
+                  ...course,
+                  modules: [],
+                } as Course;
+              }
+            }
+          })
         );
 
         if (!active) return;

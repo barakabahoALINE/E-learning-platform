@@ -76,7 +76,7 @@ export function AssessmentsPage() {
     try {
       setIsLoading(true);
       const libraryItems = await listAssessmentLibrary();
-      setItems(libraryItems.filter((item) => item.source === "course"));
+      setItems(libraryItems);
     } catch (error: any) {
       toast.error(error?.message || "Failed to load assessments");
     } finally {

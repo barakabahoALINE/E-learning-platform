@@ -5,6 +5,15 @@ import type { Course, Quiz, QuizQuestion } from "../courses/types";
 
 const LOCAL_LIBRARY_KEY = "learnhub.assessmentLibrary.v1";
 
+export const clearLegacyAssessmentLibraryCache = () => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(LOCAL_LIBRARY_KEY);
+  } catch {
+    // ignore storage access errors in restricted browser contexts
+  }
+};
+
 export interface AssessmentLibraryItem {
   id: string | number;
   title: string;
@@ -231,7 +240,7 @@ export const extractAssessmentsFromCourses = (courses: Course[]): AssessmentLibr
 };
 
 export const listAssessmentLibrary = async (): Promise<AssessmentLibraryItem[]> => {
-  const localItems = getLocalAssessmentTemplates();
+  clearLegacyAssessmentLibraryCache();
 
   const courses = await courseAPI.fetchCourses(true);
   const detailedCourses = await Promise.all(
@@ -242,42 +251,66 @@ export const listAssessmentLibrary = async (): Promise<AssessmentLibraryItem[]> 
 
   const courseItems = extractAssessmentsFromCourses(detailedCourses);
 
+  const allAssessmentsResponse = await assessmentAPI.listAssessments();
+  const allAssessments = Array.isArray(allAssessmentsResponse)
+    ? allAssessmentsResponse
+    : Array.isArray(allAssessmentsResponse?.data)
+      ? allAssessmentsResponse.data
+      : [];
+
+  const databaseItems: AssessmentLibraryItem[] = allAssessments.map((assessment: any) => ({
+    id: assessment.id,
+    title: assessment.title,
+    assessment_type: assessment.assessment_type,
+    pass_mark: assessment.pass_mark,
+    max_attempts: assessment.max_attempts,
+    duration: assessment.duration,
+    tab_switch_enabled: assessment.tab_switch_enabled,
+    tab_switch_limit: assessment.tab_switch_limit,
+    descriptions: assessment.descriptions,
+    instructions: assessment.instructions,
+    questions: assessment.questions || [],
+    source: 'course',
+    courseId: assessment.course ?? assessment.course_id ?? undefined,
+    moduleId: assessment.module ?? assessment.module_id ?? undefined,
+    courseTitle: assessment.course_title || assessment.course?.title || undefined,
+    moduleTitle: assessment.module_title || assessment.module?.title || undefined,
+  }));
+
   const unassignedResponse = await assessmentAPI.listAssessments({ unassigned: true });
-  const unassignedAssessments = Array.isArray(unassignedResponse?.data)
-    ? unassignedResponse.data
-    : [];
+  const unassignedAssessments = Array.isArray(unassignedResponse)
+    ? unassignedResponse
+    : Array.isArray(unassignedResponse?.data)
+      ? unassignedResponse.data
+      : [];
 
   const unassignedItems: AssessmentLibraryItem[] = unassignedAssessments.map((assessment: any) => ({
     ...assessment,
     source: 'course',
-    courseId: assessment.course ?? undefined,
-    moduleId: assessment.module ?? undefined,
-    courseTitle: assessment.course ? assessment.course.title : undefined,
-    moduleTitle: assessment.module ? assessment.module.title : undefined,
+    courseId: assessment.course ?? assessment.course_id ?? undefined,
+    moduleId: assessment.module ?? assessment.module_id ?? undefined,
+    courseTitle: assessment.course_title || assessment.course?.title || undefined,
+    moduleTitle: assessment.module_title || assessment.module?.title || undefined,
     questions: assessment.questions || [],
   }));
 
-  // Merge and dedupe items: prefer course-backed items over local templates when ids collide
   const byId = new Map<string, AssessmentLibraryItem>();
 
   const pushItem = (it: AssessmentLibraryItem) => {
     const key = String(it.id);
-    const existing = byId.get(key);
-    if (!existing) {
+    if (!byId.has(key)) {
       byId.set(key, it);
       return;
     }
 
-    // If existing is local but new is course, prefer course
-    if (existing.source === 'local' && it.source === 'course') {
-      byId.set(key, it);
-      return;
+    const existing = byId.get(key)!;
+    const shouldReplace = !existing.title && !!it.title;
+    if (shouldReplace || (existing.courseTitle == null && it.courseTitle != null)) {
+      byId.set(key, { ...existing, ...it });
     }
-
-    // Otherwise keep existing (local preferred if both local, or first wins)
   };
 
-  localItems.forEach(pushItem);
+  databaseItems.forEach(pushItem);
   courseItems.forEach(pushItem);
   unassignedItems.forEach(pushItem);
 

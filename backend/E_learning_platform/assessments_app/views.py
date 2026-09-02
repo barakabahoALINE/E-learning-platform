@@ -156,6 +156,15 @@ class DeleteAssessmentAPIView(APIView):
             mark_course_unpublished_change(assessment.course)
             return Response({"success": True, "message": "Assessment marked for deletion. Publish changes to apply deletion."})
 
+        impacted_courses = set(assessment.courses.all())
+        if assessment.course:
+            impacted_courses.add(assessment.course)
+
+        if assessment.assessment_type == "FINAL":
+            for course in impacted_courses:
+                course.final_assessment = None
+                course.save(update_fields=["final_assessment"])
+
         assessment.delete()
         return Response({"success": True, "message": "Assessment deleted successfully"})
 
@@ -345,6 +354,15 @@ class DetachAssessmentAPIView(APIView):
                 if assessment.course and str(assessment.course.id) == str(course_id):
                     assessment.course = assessment.courses.first()
 
+        if assessment.assessment_type == "FINAL":
+            for course in previous_courses:
+                if course.final_assessment and (
+                    course.final_assessment.get("id") == assessment.id
+                    or course.final_assessment.get("assessment_id") == assessment.id
+                ):
+                    course.final_assessment = None
+                    course.save(update_fields=["final_assessment"])
+
         assessment.has_unpublished_changes = True
         assessment.save(update_fields=["module", "course", "has_unpublished_changes"])
 
@@ -381,9 +399,20 @@ class CreateQuestionAPIView(APIView):
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
     def post(self, request):
+        request_data = getattr(request, 'data', None)
+        if request_data is None:
+            if hasattr(request, 'body') and request.body:
+                try:
+                    import json
+                    body = request.body.decode('utf-8') if isinstance(request.body, bytes) else str(request.body)
+                    request_data = json.loads(body) if body else {}
+                except Exception:
+                    request_data = getattr(request, 'POST', {}) or {}
+            else:
+                request_data = getattr(request, 'POST', {}) or {}
 
         serializer = QuestionCreateSerializer(
-            data=request.data
+            data=request_data
         )
 
         if serializer.is_valid():
