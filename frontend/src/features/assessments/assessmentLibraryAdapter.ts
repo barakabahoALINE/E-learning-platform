@@ -5,6 +5,15 @@ import type { Course, Quiz, QuizQuestion } from "../courses/types";
 
 const LOCAL_LIBRARY_KEY = "learnhub.assessmentLibrary.v1";
 
+export const clearLegacyAssessmentLibraryCache = () => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(LOCAL_LIBRARY_KEY);
+  } catch {
+    // ignore storage access errors in restricted browser contexts
+  }
+};
+
 export interface AssessmentLibraryItem {
   id: string | number;
   title: string;
@@ -231,7 +240,7 @@ export const extractAssessmentsFromCourses = (courses: Course[]): AssessmentLibr
 };
 
 export const listAssessmentLibrary = async (): Promise<AssessmentLibraryItem[]> => {
-  const localItems = getLocalAssessmentTemplates();
+  clearLegacyAssessmentLibraryCache();
 
   const courses = await courseAPI.fetchCourses(true);
   const detailedCourses = await Promise.all(
@@ -257,27 +266,15 @@ export const listAssessmentLibrary = async (): Promise<AssessmentLibraryItem[]> 
     questions: assessment.questions || [],
   }));
 
-  // Merge and dedupe items: prefer course-backed items over local templates when ids collide
   const byId = new Map<string, AssessmentLibraryItem>();
 
   const pushItem = (it: AssessmentLibraryItem) => {
     const key = String(it.id);
-    const existing = byId.get(key);
-    if (!existing) {
+    if (!byId.has(key)) {
       byId.set(key, it);
-      return;
     }
-
-    // If existing is local but new is course, prefer course
-    if (existing.source === 'local' && it.source === 'course') {
-      byId.set(key, it);
-      return;
-    }
-
-    // Otherwise keep existing (local preferred if both local, or first wins)
   };
 
-  localItems.forEach(pushItem);
   courseItems.forEach(pushItem);
   unassignedItems.forEach(pushItem);
 

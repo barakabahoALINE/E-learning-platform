@@ -9,8 +9,8 @@ import random
 class CreateAssessmentSerializer(serializers.ModelSerializer):
     is_final = serializers.BooleanField(required=False, write_only=True)
 
-    max_attempts = serializers.IntegerField(required=False, default=1, min_value=0)
-    duration = serializers.IntegerField(required=False, default=30, min_value=0)
+    max_attempts = serializers.IntegerField(required=False, default=1, min_value=0, allow_null=True)
+    duration = serializers.IntegerField(required=False, default=30, min_value=0, allow_null=True)
     tab_switch_enabled = serializers.BooleanField(required=False, default=False)
     tab_switch_limit = serializers.IntegerField(required=False, default=0, min_value=0)
 

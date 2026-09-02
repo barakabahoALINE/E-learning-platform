@@ -149,6 +149,18 @@ class AssessmentSerializerTests(TestCase):
         self.assertIsNotNone(course_data.get("final_assessment"))
         self.assertEqual(course_data["final_assessment"]["id"], assessment.id)
 
+    def test_course_detail_serializer_ignores_stale_json_final_assessment_when_no_db_assessment_exists(self):
+        self.course.final_assessment = {
+            "id": 999999,
+            "title": "Ghost Final Assessment",
+            "assessment_type": "FINAL",
+        }
+        self.course.save(update_fields=["final_assessment"])
+
+        course_data = CourseDetailSerializer(self.course).data
+
+        self.assertIsNone(course_data.get("final_assessment"))
+
     def test_create_question_works_when_course_attachment_is_m2m_only(self):
         assessment = Assessment.objects.create(
             title="M2M Final Assessment",
