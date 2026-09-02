@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clock, FileQuestion, Link2, RefreshCw, Search, Unlink2, X } from "lucide-react";
+import { AlertTriangle, Check, Clock, FileQuestion, Link2, RefreshCw, Search, Unlink2, X } from "lucide-react";
 import { toast } from "sonner";
 import assessmentAPI from "../../features/assessments/assessmentAPI";
 import courseAPI from "../../features/courses/courseAPI";
@@ -29,6 +29,7 @@ export function AssessmentsAttachmentModal({ item, onClose, onAttach, onDetach }
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedCourseIds, setExpandedCourseIds] = useState<Array<number | string>>([]);
   const [expandedCurrentCourseIds, setExpandedCurrentCourseIds] = useState<Array<number | string>>([]);
@@ -161,7 +162,8 @@ export function AssessmentsAttachmentModal({ item, onClose, onAttach, onDetach }
       toast.success("Attachments updated successfully.");
       onClose();
     } catch (err: any) {
-      toast.error(err?.message || "Failed to attach assessment");
+      const message = typeof err === "string" ? err : err?.message;
+      setConflictMessage(message || "Failed to attach assessment");
     } finally {
       setIsSaving(false);
     }
@@ -530,6 +532,45 @@ export function AssessmentsAttachmentModal({ item, onClose, onAttach, onDetach }
           </div>
         </div>
       </div>
+      {conflictMessage && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="attachment-conflict-title"
+            className="w-full max-w-[460px] rounded-2xl bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h4 id="attachment-conflict-title" className="text-lg font-bold text-gray-900">
+                  Attachment not available
+                </h4>
+                <p className="mt-2 text-sm leading-6 text-gray-600">{conflictMessage}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConflictMessage(null)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Close error message"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setConflictMessage(null)}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

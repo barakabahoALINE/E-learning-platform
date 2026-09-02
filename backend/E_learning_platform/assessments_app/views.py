@@ -1,5 +1,6 @@
 import json
 from urllib import request
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -19,6 +20,7 @@ from .services.rules import (
     handle_attempt_state,
     unlock_attempt,
     apply_assessment_rules,
+    validate_attachment_targets,
     RuleError,
     enforce_tab_switch_limit,
 )
@@ -32,6 +34,151 @@ def mark_course_unpublished_change(course):
     if course and course.is_published:
         course.has_unpublished_changes = True
         course.save(update_fields=["has_unpublished_changes"])
+
+
+def detach_final_assessments_from_unpublished_course(course):
+    changed_assessments = []
+    assessments = Assessment.objects.filter(
+        assessment_type="FINAL",
+    ).filter(
+        Q(course=course) | Q(courses=course)
+    ).distinct()
+
+    for assessment in assessments:
+        changed = False
+        if assessment.courses.filter(id=course.id).exists():
+            assessment.courses.remove(course)
+            changed = True
+
+        if assessment.course_id == course.id:
+            assessment.course = assessment.courses.first()
+            changed = True
+
+        if changed:
+            assessment.has_unpublished_changes = True
+            assessment.save(
+                update_fields=["course", "has_unpublished_changes"],
+                validate=False,
+            )
+            changed_assessments.append(assessment)
+
+    if course.final_assessment is not None:
+        course.final_assessment = None
+        course.save(update_fields=["final_assessment"])
+
+    return changed_assessments
+
+
+def detach_quiz_assessments_from_unpublished_module(module):
+    changed_assessments = []
+    assessments = Assessment.objects.filter(
+        assessment_type="QUIZ",
+    ).filter(
+        Q(module=module) | Q(modules=module)
+    ).distinct()
+
+    for assessment in assessments:
+        changed = False
+        if assessment.modules.filter(id=module.id).exists():
+            assessment.modules.remove(module)
+            changed = True
+
+        if assessment.module_id == module.id:
+            next_module = assessment.modules.first()
+            assessment.module = next_module
+            assessment.course = next_module.course if next_module else None
+            changed = True
+
+        if changed:
+            assessment.has_unpublished_changes = True
+            assessment.save(
+                update_fields=["module", "course", "has_unpublished_changes"],
+                validate=False,
+            )
+            changed_assessments.append(assessment)
+
+    return changed_assessments
+
+
+def remove_unpublished_targets_from_attachment_drafts(course_ids=None, module_ids=None):
+    course_ids = {
+        str(value)
+        for value in Course.objects.filter(
+            id__in=course_ids or [],
+            is_published=False,
+        ).values_list("id", flat=True)
+    }
+    module_ids = {
+        str(value)
+        for value in Module.objects.filter(
+            id__in=module_ids or [],
+            course__is_published=False,
+        ).values_list("id", flat=True)
+    }
+
+    if not course_ids and not module_ids:
+        return
+
+    for assessment in Assessment.objects.all():
+        draft_course_additions = {
+            str(value) for value in (assessment.draft_course_additions or [])
+        }
+        draft_course_removals = {
+            str(value) for value in (assessment.draft_course_removals or [])
+        }
+        draft_module_additions = {
+            str(value) for value in (assessment.draft_module_additions or [])
+        }
+        draft_module_removals = {
+            str(value) for value in (assessment.draft_module_removals or [])
+        }
+
+        cleaned_course_additions = draft_course_additions - course_ids
+        cleaned_course_removals = draft_course_removals - course_ids
+        cleaned_module_additions = draft_module_additions - module_ids
+        cleaned_module_removals = draft_module_removals - module_ids
+
+        if (
+            cleaned_course_additions != draft_course_additions
+            or cleaned_course_removals != draft_course_removals
+            or cleaned_module_additions != draft_module_additions
+            or cleaned_module_removals != draft_module_removals
+        ):
+            assessment.draft_course_additions = list(cleaned_course_additions)
+            assessment.draft_course_removals = list(cleaned_course_removals)
+            assessment.draft_module_additions = list(cleaned_module_additions)
+            assessment.draft_module_removals = list(cleaned_module_removals)
+            assessment.save(
+                update_fields=[
+                    "draft_course_additions",
+                    "draft_course_removals",
+                    "draft_module_additions",
+                    "draft_module_removals",
+                ],
+                validate=False,
+            )
+
+
+def repair_duplicate_unpublished_final_attachments(course_ids):
+    for course in Course.objects.filter(id__in=course_ids or [], is_published=False):
+        existing_count = Assessment.objects.filter(
+            assessment_type="FINAL",
+        ).filter(
+            Q(course=course) | Q(courses=course)
+        ).distinct().count()
+        if existing_count > 1:
+            detach_final_assessments_from_unpublished_course(course)
+
+
+def repair_duplicate_unpublished_quiz_attachments(module_ids):
+    for module in Module.objects.filter(id__in=module_ids or [], course__is_published=False):
+        existing_count = Assessment.objects.filter(
+            assessment_type="QUIZ",
+        ).filter(
+            Q(module=module) | Q(modules=module)
+        ).distinct().count()
+        if existing_count > 1:
+            detach_quiz_assessments_from_unpublished_module(module)
 
 
 class ListAssessmentsAPIView(APIView):
@@ -168,6 +315,15 @@ class DeleteAssessmentAPIView(APIView):
                 course.final_assessment = None
                 course.save(update_fields=["final_assessment"])
 
+        impacted_courses = set(assessment.courses.all())
+        if assessment.course:
+            impacted_courses.add(assessment.course)
+
+        if assessment.assessment_type == "FINAL":
+            for course in impacted_courses:
+                course.final_assessment = None
+                course.save(update_fields=["final_assessment"])
+
         assessment.delete()
         for course in impacted_courses:
             if course.is_published:
@@ -178,6 +334,7 @@ class DeleteAssessmentAPIView(APIView):
 class AttachAssessmentAPIView(APIView):
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
+    @transaction.atomic
     def post(self, request, assessment_id):
         assessment = get_object_or_404(Assessment, id=assessment_id)
         module_ids = request.data.get("module_ids")
@@ -202,6 +359,10 @@ class AttachAssessmentAPIView(APIView):
         courses = Course.objects.filter(id__in=course_ids or [])
         impacted_courses = set()
         published_targets = set()
+        published_module_ids = set()
+        unpublished_module_ids = set()
+        published_course_ids = set()
+        unpublished_course_ids = set()
         if module_ids is not None:
             published_targets.update(
                 module.course for module in modules
@@ -238,12 +399,12 @@ class AttachAssessmentAPIView(APIView):
             removals_modules = set(assessment.draft_module_removals or [])
             additions_courses = set(assessment.draft_course_additions or [])
             removals_courses = set(assessment.draft_course_removals or [])
-            if module_ids is not None:
-                additions_modules.update(str(value) for value in module_ids)
-                removals_modules.difference_update(str(value) for value in module_ids)
-            if course_ids is not None:
-                additions_courses.update(str(value) for value in course_ids)
-                removals_courses.difference_update(str(value) for value in course_ids)
+            if published_module_ids:
+                additions_modules.update(published_module_ids)
+                removals_modules.difference_update(published_module_ids)
+            if published_course_ids:
+                additions_courses.update(published_course_ids)
+                removals_courses.difference_update(published_course_ids)
             assessment.draft_module_additions = list(additions_modules)
             assessment.draft_module_removals = list(removals_modules)
             assessment.draft_course_additions = list(additions_courses)
@@ -253,7 +414,7 @@ class AttachAssessmentAPIView(APIView):
                 "draft_module_additions", "draft_module_removals",
                 "draft_course_additions", "draft_course_removals",
                 "has_unpublished_changes",
-            ])
+            ], validate=False)
             for course in published_targets:
                 mark_course_unpublished_change(course)
             return Response({
@@ -280,7 +441,22 @@ class AttachAssessmentAPIView(APIView):
             if not assessment.course and courses:
                 assessment.course = courses.first()
 
-        assessment.save()
+        try:
+            assessment.save()
+        except RuleError:
+            if assessment.assessment_type == "QUIZ":
+                target = modules.first().title if module_ids and modules.exists() else "the selected module"
+                message = (
+                    f"{target} already has a quiz attached. "
+                    "Please detach the existing quiz before attaching another one."
+                )
+            else:
+                target = courses.first().title if course_ids and courses.exists() else "the selected course"
+                message = (
+                    f"{target} already has a final assessment attached. "
+                    "Please detach the existing assessment before attaching another one."
+                )
+            return Response({"success": False, "error": message}, status=400)
 
         impacted_courses = set(assessment.courses.all())
         impacted_courses.update({module.course for module in assessment.modules.all()})
@@ -303,10 +479,13 @@ class AttachAssessmentAPIView(APIView):
 class DetachAssessmentAPIView(APIView):
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
+    @transaction.atomic
     def post(self, request, assessment_id):
         assessment = get_object_or_404(Assessment, id=assessment_id)
         module_id = request.data.get("module_id")
         course_id = request.data.get("course_id")
+        target_module = None
+        target_course = None
 
         previous_courses = set(filter(None, [assessment.course]))
         previous_courses.update(assessment.courses.all())
@@ -350,6 +529,24 @@ class DetachAssessmentAPIView(APIView):
                 "message": "Assessment detachment queued. Update the live course to apply it.",
                 "data": CreateAssessmentSerializer(assessment).data,
             })
+
+        if (
+            course_id is not None
+            and target_course is not None
+            and not target_course.is_published
+            and assessment.assessment_type == "FINAL"
+        ):
+            remove_unpublished_targets_from_attachment_drafts(course_ids=[target_course.id])
+            detach_final_assessments_from_unpublished_course(target_course)
+
+        if (
+            module_id is not None
+            and target_module is not None
+            and not target_module.course.is_published
+            and assessment.assessment_type == "QUIZ"
+        ):
+            remove_unpublished_targets_from_attachment_drafts(module_ids=[target_module.id])
+            detach_quiz_assessments_from_unpublished_module(target_module)
 
         if module_id is None and course_id is None:
             assessment.modules.clear()

@@ -1,9 +1,10 @@
 from datetime import timedelta
+from django.db.models import Q
 from django.utils import timezone
 
 from progress_app.models import SectionProgress
 from assessments_app.models import Assessment, Attempt
-from courses_app.models import Module
+from courses_app.models import Course, Module
 
 
 COOLDOWN_HOURS = 0.0333
@@ -251,6 +252,59 @@ def validate_unique_assessment(assessment):
             raise RuleError(
                 "Only one quiz is allowed per module."
             )
+
+    return True
+
+
+def validate_attachment_targets(assessment, module_ids=None, course_ids=None):
+    """Prevent more than one quiz per module or final per course."""
+    requested_modules = {str(value) for value in (module_ids or [])}
+    requested_courses = {str(value) for value in (course_ids or [])}
+
+    candidates = Assessment.objects.filter(
+        assessment_type=assessment.assessment_type,
+    ).exclude(pk=assessment.pk)
+
+    for candidate in candidates:
+        if assessment.assessment_type == "QUIZ":
+            active_modules = set()
+            if candidate.module_id is not None:
+                active_modules.add(str(candidate.module_id))
+            active_modules.update(
+                str(value) for value in candidate.modules.values_list("id", flat=True)
+            )
+            removals = {str(value) for value in (candidate.draft_module_removals or [])}
+            additions = {str(value) for value in (candidate.draft_module_additions or [])}
+            active_modules.difference_update(removals)
+            active_modules.update(additions - removals)
+
+            conflict_id = next(iter(requested_modules & active_modules), None)
+            if conflict_id:
+                module = Module.objects.filter(id=conflict_id).first()
+                target = module.title if module else "the selected module"
+                raise RuleError(
+                    f"{target} already has another quiz attached. Detach it first."
+                )
+
+        elif assessment.assessment_type == "FINAL":
+            active_courses = set()
+            if candidate.course_id is not None:
+                active_courses.add(str(candidate.course_id))
+            active_courses.update(
+                str(value) for value in candidate.courses.values_list("id", flat=True)
+            )
+            removals = {str(value) for value in (candidate.draft_course_removals or [])}
+            additions = {str(value) for value in (candidate.draft_course_additions or [])}
+            active_courses.difference_update(removals)
+            active_courses.update(additions - removals)
+
+            conflict_id = next(iter(requested_courses & active_courses), None)
+            if conflict_id:
+                course = Course.objects.filter(id=conflict_id).first()
+                target = course.title if course else "the selected course"
+                raise RuleError(
+                    f"{target} already has another final assessment attached. Detach it first."
+                )
 
     return True
 def apply_assessment_rules(data):

@@ -192,6 +192,12 @@ export function AssessmentsPage() {
 
   const handleUpdateAssessment = async () => {
     if (!editingAssessment || !createForm) return;
+    const title = createForm.title.trim();
+
+    if (!title) {
+      toast.error("Title is required");
+      return;
+    }
 
     try {
       const payload = {
@@ -201,7 +207,7 @@ export function AssessmentsPage() {
         pass_mark: Number(createForm.pass_mark) || 0,
         tab_switch_enabled: createForm.assessment_type === 'FINAL' ? Boolean(createForm.tab_switch_enabled) : false,
         tab_switch_limit: createForm.assessment_type === 'FINAL' ? Number(createForm.tab_switch_limit) || 0 : 0,
-      } as any;
+      };
 
       await dispatch(updateAssessmentSettings({ assessmentId: editingAssessment.id, data: payload })).unwrap();
       await loadLibrary();

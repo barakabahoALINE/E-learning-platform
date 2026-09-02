@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X, Clock, RefreshCw, Info } from "lucide-react";
 
 interface FinalAssessmentSettings {
+  title: string;
   duration: number;
   max_attempts: number;
   pass_mark: number;
@@ -25,6 +26,7 @@ export function FinalAssessmentSettingsModal({
   onClose,
   onConfirm,
 }: FinalAssessmentSettingsModalProps) {
+  const [title, setTitle] = useState<string>(initialValues?.title ?? "Final Assessment");
   const [duration, setDuration] = useState<number>(initialValues?.duration ?? 60);
   const [maxAttempts, setMaxAttempts] = useState<number>(initialValues?.max_attempts ?? 3);
   const [passMark, setPassMark] = useState<number>(initialValues?.pass_mark ?? 60);
@@ -54,6 +56,7 @@ export function FinalAssessmentSettingsModal({
     setIsSaving(true);
     try {
       await onConfirm({
+        title: title.trim(),
         duration,
         max_attempts: maxAttempts,
         pass_mark: passMark,
@@ -100,6 +103,20 @@ export function FinalAssessmentSettingsModal({
 
         {/* Body */}
         <div className="p-5 space-y-5">
+          {/* Title */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+              Title
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Final Assessment"
+            />
+          </div>
+
           {/* Duration */}
           <div>
             <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">

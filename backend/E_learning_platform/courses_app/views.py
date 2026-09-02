@@ -25,6 +25,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db import transaction, IntegrityError, models
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from .models import Content, Section, Module, Course, Level, Category
 from .permissions import (
@@ -676,22 +677,38 @@ def apply_assessment_attachment_drafts(course):
     module_ids = {str(value) for value in course.modules.values_list("id", flat=True)}
 
     for assessment in Assessment.objects.all():
-        course_additions = set(assessment.draft_course_additions or [])
-        course_removals = set(assessment.draft_course_removals or [])
-        module_additions = set(assessment.draft_module_additions or [])
-        module_removals = set(assessment.draft_module_removals or [])
+        course_additions = {str(value) for value in (assessment.draft_course_additions or [])}
+        course_removals = {str(value) for value in (assessment.draft_course_removals or [])}
+        module_additions = {str(value) for value in (assessment.draft_module_additions or [])}
+        module_removals = {str(value) for value in (assessment.draft_module_removals or [])}
         changed = False
+        course_changed = False
 
         if course_id in course_additions:
             assessment.courses.add(course)
             if assessment.course_id is None:
                 assessment.course = course
+            if assessment.assessment_type == "FINAL":
+                course.final_assessment = {
+                    "id": assessment.id,
+                    "assessment_id": assessment.id,
+                    "title": assessment.title,
+                    "assessment_type": assessment.assessment_type,
+                }
+                course_changed = True
             course_additions.discard(course_id)
             changed = True
         if course_id in course_removals:
             assessment.courses.remove(course)
             if assessment.course_id == course.id:
                 assessment.course = assessment.courses.first()
+            final_payload = course.final_assessment if isinstance(course.final_assessment, dict) else {}
+            if assessment.assessment_type == "FINAL" and (
+                final_payload.get("id") == assessment.id
+                or final_payload.get("assessment_id") == assessment.id
+            ):
+                course.final_assessment = None
+                course_changed = True
             course_removals.discard(course_id)
             changed = True
 
@@ -721,10 +738,24 @@ def apply_assessment_attachment_drafts(course):
             assessment.draft_course_removals = list(course_removals)
             assessment.draft_module_additions = list(module_additions)
             assessment.draft_module_removals = list(module_removals)
-            assessment.save(update_fields=[
+            update_fields = [
                 "course", "module", "draft_course_additions", "draft_course_removals",
                 "draft_module_additions", "draft_module_removals",
-            ], validate=False)
+            ]
+            if not (
+                assessment.draft_course_additions
+                or assessment.draft_course_removals
+                or assessment.draft_module_additions
+                or assessment.draft_module_removals
+                or assessment.questions.filter(has_unpublished_changes=True).exists()
+                or assessment.questions.filter(pending_delete=True).exists()
+                or assessment.pending_delete
+            ):
+                assessment.has_unpublished_changes = False
+                update_fields.append("has_unpublished_changes")
+            assessment.save(update_fields=update_fields, validate=False)
+        if course_changed:
+            course.save(update_fields=["final_assessment"])
 
 class CoursePublishAPIView(generics.GenericAPIView):
 
@@ -1514,6 +1545,36 @@ class PublishCourseChangesAPIView(APIView):
 
         course = get_object_or_404(Course, id=course_id)
 
+        course_id_value = str(course.id)
+        effective_finals = []
+        for assessment in Assessment.objects.filter(assessment_type="FINAL", pending_delete=False).filter(
+            Q(course=course) | Q(courses=course)
+        ).distinct():
+            if course_id_value not in {
+                str(value) for value in (assessment.draft_course_removals or [])
+            }:
+                effective_finals.append(assessment)
+
+        queued_final_ids = {
+            assessment.id
+            for assessment in Assessment.objects.filter(
+                assessment_type="FINAL",
+                pending_delete=False,
+            )
+            if course_id_value in {
+                str(value) for value in (assessment.draft_course_additions or [])
+            }
+        }
+
+        if not effective_finals and not queued_final_ids:
+            return Response({
+                "success": False,
+                "message": (
+                    "A final assessment is required to update this live course. "
+                    "Attach another final assessment before updating the course."
+                ),
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         with transaction.atomic():
             assessment_ids = set(
                 course.assessments.values_list("id", flat=True)
@@ -1680,6 +1741,7 @@ class PublishCourseChangesAPIView(APIView):
                 "success": True,
                 "message": "Course deleted successfully"
             }, status=status.HTTP_200_OK)
+        apply_assessment_attachment_drafts(course)
 
         return Response({
             "success": True,

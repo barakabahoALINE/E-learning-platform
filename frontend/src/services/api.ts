@@ -92,7 +92,7 @@ api.interceptors.response.use(
     }
       // Normalize server error message for UI consumption
       try {
-        const serverDetail = error.response?.data?.detail || error.response?.data?.message;
+        const serverDetail = error.response?.data?.detail || error.response?.data?.message || error.response?.data?.error;
         if (serverDetail) error.message = typeof serverDetail === 'string' ? serverDetail : JSON.stringify(serverDetail);
         else if (error.response?.data) error.message = JSON.stringify(error.response.data);
       } catch (_) {
