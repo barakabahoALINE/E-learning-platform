@@ -9,7 +9,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from courses_app.models import Course, Module
 from courses_app.serializers import ModuleSerializer, CourseDetailSerializer
 from .models import Assessment, Attempt, Choice, Question
-from .services.rules import RuleError, check_attempt_limit
+from .services.rules import RuleError, check_attempt_limit, validate_attachment_targets
 from .serializers import CreateAssessmentSerializer, AssessmentDetailSerializer
 from .views import (
     CreateQuestionAPIView,
@@ -120,6 +120,45 @@ class AssessmentSerializerTests(TestCase):
 
         self.assertIsNone(assessment.module)
         self.assertIsNone(assessment.course)
+
+    def test_only_one_quiz_can_be_attached_to_a_module(self):
+        existing = Assessment.objects.create(title="Existing Quiz", assessment_type="QUIZ", pass_mark=70)
+        existing.modules.add(self.module)
+        replacement = Assessment.objects.create(title="Replacement Quiz", assessment_type="QUIZ", pass_mark=70)
+
+        with self.assertRaisesMessage(RuleError, "Detach it first"):
+            validate_attachment_targets(replacement, module_ids=[self.module.id])
+
+        self.assertEqual(list(self.module.attached_assessments.values_list("id", flat=True)), [existing.id])
+
+    def test_only_one_final_can_be_attached_to_a_course(self):
+        existing = Assessment.objects.create(title="Existing Final", assessment_type="FINAL", pass_mark=60)
+        existing.courses.add(self.course)
+        replacement = Assessment.objects.create(title="Replacement Final", assessment_type="FINAL", pass_mark=60)
+
+        with self.assertRaisesMessage(RuleError, "Detach it first"):
+            validate_attachment_targets(replacement, course_ids=[self.course.id])
+
+        self.assertEqual(list(self.course.attached_assessments.values_list("id", flat=True)), [existing.id])
+
+    def test_replacement_final_is_allowed_after_pending_detach(self):
+        existing = Assessment.objects.create(
+            title="Existing Final",
+            assessment_type="FINAL",
+            pass_mark=60,
+            course=self.course,
+        )
+        existing.draft_course_removals = [str(self.course.id)]
+        existing.save(update_fields=["draft_course_removals"], validate=False)
+        replacement = Assessment.objects.create(
+            title="Replacement Final",
+            assessment_type="FINAL",
+            pass_mark=60,
+        )
+
+        self.assertTrue(
+            validate_attachment_targets(replacement, course_ids=[self.course.id])
+        )
 
     def test_module_serializer_includes_m2m_attached_quiz(self):
         assessment = Assessment.objects.create(

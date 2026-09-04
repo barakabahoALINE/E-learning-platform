@@ -444,7 +444,7 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
 
     def get_course_title(self, obj):
         if obj.course_id is not None:
-            return obj.course.title if obj.course else None
+            return Course.objects.filter(id=obj.course_id).values_list("title", flat=True).first()
         if obj.courses.exists():
             first_course = obj.courses.first()
             return first_course.title if first_course else None
@@ -452,7 +452,7 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
 
     def get_module_title(self, obj):
         if obj.module_id is not None:
-            return obj.module.title if obj.module else None
+            return Module.objects.filter(id=obj.module_id).values_list("title", flat=True).first()
         if obj.modules.exists():
             first_module = obj.modules.first()
             return first_module.title if first_module else None
@@ -519,6 +519,7 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
 
         for module in list(obj.modules.all()):
             if module and str(module.id) not in pending_removals and module.id not in seen:
+                
                 attached.append({
                     'id': module.id,
                     'title': module.title,

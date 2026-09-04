@@ -53,7 +53,7 @@ import {
   ContentItem,
   QuizQuestion
 } from "../../features/courses/types";
-import { addQuestion, updateQuestion, createAssessment, attachAssessment, detachAssessment, deleteQuestionAction } from "../../features/assessments/assessmentSlice";
+import { addQuestion, updateQuestion, createAssessment, attachAssessment, detachAssessment, deleteQuestionAction, updateAssessmentSettings } from "../../features/assessments/assessmentSlice";
 import assessmentAPI from "../../features/assessments/assessmentAPI";
 import type { AssessmentCreateData } from "../../features/assessments/types";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
@@ -119,6 +119,11 @@ export function CourseBuilderPage() {
   const hasInitializedExpansion = useRef(false);
 
   useEffect(() => {
+    setPendingModuleQuizzes({});
+    setPendingFinalAssessment(null);
+    setHasLocalUnpublishedChanges(false);
+    hasInitializedExpansion.current = false;
+
     if (id && id !== "temp-id") {
       dispatch(fetchCourseDetails(id));
     }
@@ -131,7 +136,9 @@ export function CourseBuilderPage() {
     }
   }, [course]);
 
-  if (!course && isLoading) {
+  const isCurrentCourseLoaded = Boolean(course && (!id || String(course.id) === String(id)));
+
+  if ((!isCurrentCourseLoaded || isLoading) && id !== "temp-id") {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
@@ -139,7 +146,7 @@ export function CourseBuilderPage() {
     );
   }
 
-  if (!course) {
+  if (!isCurrentCourseLoaded || !course) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <h2 className="text-xl font-bold text-gray-900 mb-2">Course not found</h2>
@@ -312,6 +319,7 @@ export function CourseBuilderPage() {
           assessmentId: module.quiz.id,
           payload: { module_id: moduleId },
         })).unwrap();
+        if (course.is_published) setHasLocalUnpublishedChanges(true);
         setPendingModuleQuizzes((prev) => {
           const next = { ...prev };
           delete next[moduleId];
@@ -337,6 +345,7 @@ export function CourseBuilderPage() {
           assessmentId: item.id,
           payload: { module_id: showAssessmentLibraryPicker.moduleId },
         })).unwrap();
+        if (course.is_published) setHasLocalUnpublishedChanges(true);
         await dispatch(fetchCourseDetails(course.id));
         setPendingModuleQuizzes((prev) => {
           const next = { ...prev };
@@ -349,6 +358,7 @@ export function CourseBuilderPage() {
           assessmentId: item.id,
           payload: { course_id: course.id },
         })).unwrap();
+        if (course.is_published) setHasLocalUnpublishedChanges(true);
         await dispatch(fetchCourseDetails(course.id));
         setPendingFinalAssessment(null);
         toast.success("Final assessment attached to this course");
@@ -655,34 +665,30 @@ export function CourseBuilderPage() {
   /**
    * Called from FinalAssessmentSettingsModal when editing an existing final assessment's settings.
    */
-  const handleUpdateFinalAssessmentSettings = async (settings: { duration: number; max_attempts: number; pass_mark: number; tab_switch_enabled?: boolean; tab_switch_limit?: number }) => {
-    if (pendingFinalAssessment) {
-      const updatedTemplate = updateLocalAssessmentTemplate(String(pendingFinalAssessment.id), {
-        pass_mark: settings.pass_mark,
-        max_attempts: settings.max_attempts,
-        duration: settings.duration,
-        tab_switch_enabled: settings.tab_switch_enabled,
-        tab_switch_limit: settings.tab_switch_limit,
-      });
-      setPendingFinalAssessment(updatedTemplate as LocalAssessmentTemplate);
+  const handleUpdateFinalAssessmentSettings = async (settings: { title: string; duration: number; max_attempts: number; pass_mark: number; tab_switch_enabled?: boolean; tab_switch_limit?: number }) => {
+    const assessment = pendingFinalAssessment || course.final_assessment;
+    if (!assessment || String(assessment.id).startsWith("local-")) return;
+
+    try {
+      await dispatch(updateAssessmentSettings({
+        assessmentId: assessment.id,
+        data: {
+          title: settings.title,
+          pass_mark: settings.pass_mark,
+          max_attempts: settings.max_attempts,
+          duration: settings.duration,
+          tab_switch_enabled: settings.tab_switch_enabled,
+          tab_switch_limit: settings.tab_switch_limit,
+        },
+      })).unwrap();
+
+      await refetchCourse(course.id);
+      setPendingFinalAssessment(null);
       toast.success("Assessment settings updated!");
       setShowFinalAssessmentSettings(null);
-      return;
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update assessment settings");
     }
-
-    const template = ensureFinalAssessmentTemplate();
-    if (!template) return;
-
-    const updatedTemplate = updateLocalAssessmentTemplate(String(template.id), {
-      pass_mark: settings.pass_mark,
-      max_attempts: settings.max_attempts,
-      duration: settings.duration,
-      tab_switch_enabled: settings.tab_switch_enabled,
-      tab_switch_limit: settings.tab_switch_limit,
-    });
-    setPendingFinalAssessment(updatedTemplate as LocalAssessmentTemplate);
-    toast.success("Assessment settings updated!");
-    setShowFinalAssessmentSettings(null);
   };
 
   const handleUnpublish = async () => {
@@ -806,6 +812,11 @@ export function CourseBuilderPage() {
           setHasLocalUnpublishedChanges(false);
           setStatus({ type: 'success', message: 'Course changes published successfully!' });
           dispatch(fetchCourseDetails(course.id));
+        } else {
+          setStatus({
+            type: 'error',
+            message: typeof res.payload === 'string' ? res.payload : 'Failed to publish course changes.',
+          });
         }
       });
     } else {
@@ -813,6 +824,11 @@ export function CourseBuilderPage() {
         if (res.meta.requestStatus === 'fulfilled') {
           setStatus({ type: 'success', message: 'Course published successfully!' });
           dispatch(fetchCourseDetails(course.id));
+        } else {
+          setStatus({
+            type: 'error',
+            message: typeof res.payload === 'string' ? res.payload : 'Failed to publish course.',
+          });
         }
       });
     }
@@ -1181,6 +1197,7 @@ export function CourseBuilderPage() {
                       assessmentId: finalAssessmentToDetach.id,
                       payload: { course_id: course.id },
                     })).unwrap();
+                    if (course.is_published) setHasLocalUnpublishedChanges(true);
                     setPendingFinalAssessment(null);
                     await dispatch(fetchCourseDetails(course.id));
                     toast.success("Final assessment detached from this course.");
@@ -1328,6 +1345,7 @@ export function CourseBuilderPage() {
       {showFinalAssessmentSettings === 'edit' && (
         <FinalAssessmentSettingsModal
           initialValues={{
+            title: activeFinalAssessment?.title,
             duration: activeFinalAssessment?.duration,
             max_attempts: activeFinalAssessment?.max_attempts,
             pass_mark: activeFinalAssessment?.pass_mark,

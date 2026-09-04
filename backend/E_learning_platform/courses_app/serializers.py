@@ -241,6 +241,26 @@ class ModuleSerializer(serializers.ModelSerializer):
             getattr(user, 'role', None) in ['admin', 'instructor']
         )
 
+        if is_admin:
+            module_id = str(obj.id)
+            pending_quiz = next(
+                (
+                    candidate for candidate in Assessment.objects.filter(
+                        assessment_type="QUIZ",
+                        pending_delete=False,
+                    )
+                    if module_id in {
+                        str(value) for value in (candidate.draft_module_additions or [])
+                    }
+                    and module_id not in {
+                        str(value) for value in (candidate.draft_module_removals or [])
+                    }
+                ),
+                None,
+            )
+            if pending_quiz:
+                return AssessmentDetailSerializer(pending_quiz, context=self.context).data
+
         quizzes = Assessment.objects.filter(
             assessment_type="QUIZ"
         )
