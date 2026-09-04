@@ -227,7 +227,8 @@ def validate_unique_assessment(assessment):
 
         existing_final = Assessment.objects.filter(
             course=assessment.course,
-            assessment_type="FINAL"
+            assessment_type="FINAL",
+            pending_delete=False,
         )
 
         if assessment.pk:
@@ -242,7 +243,8 @@ def validate_unique_assessment(assessment):
 
         existing_quiz = Assessment.objects.filter(
             module=assessment.module,
-            assessment_type="QUIZ"
+            assessment_type="QUIZ",
+            pending_delete=False,
         )
 
         if assessment.pk:

@@ -595,13 +595,10 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         modules = obj.modules.all()
         request = self.context.get('request')
         user = request.user if request else None
-        is_admin = bool(
-            user and (
-                user.is_superuser or
-                getattr(user, 'is_staff', False) or
-                user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
-                getattr(user, 'role', None) in ['admin', 'instructor']
-            )
+        is_admin = user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
         )
         if not is_admin:
             modules = modules.filter(is_published=True)

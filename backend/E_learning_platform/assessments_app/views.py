@@ -191,7 +191,7 @@ class ListAssessmentsAPIView(APIView):
         module_id = request.query_params.get('module_id')
         unassigned = request.query_params.get('unassigned')
 
-        assessments = Assessment.objects.all()
+        assessments = Assessment.objects.filter(pending_delete=False)
 
         if assessment_type:
             assessments = assessments.filter(assessment_type=assessment_type)
@@ -632,20 +632,9 @@ class CreateQuestionAPIView(APIView):
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
     def post(self, request):
-        request_data = getattr(request, 'data', None)
-        if request_data is None:
-            if hasattr(request, 'body') and request.body:
-                try:
-                    import json
-                    body = request.body.decode('utf-8') if isinstance(request.body, bytes) else str(request.body)
-                    request_data = json.loads(body) if body else {}
-                except Exception:
-                    request_data = getattr(request, 'POST', {}) or {}
-            else:
-                request_data = getattr(request, 'POST', {}) or {}
 
         serializer = QuestionCreateSerializer(
-            data=request_data
+            data=request.data
         )
 
         if serializer.is_valid():
