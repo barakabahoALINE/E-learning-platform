@@ -1331,8 +1331,8 @@ export function CourseBuilderPage() {
             duration: activeFinalAssessment?.duration,
             max_attempts: activeFinalAssessment?.max_attempts,
             pass_mark: activeFinalAssessment?.pass_mark,
-            tab_switch_enabled: pendingFinalAssessment?.tab_switch_enabled,
-            tab_switch_limit: pendingFinalAssessment?.tab_switch_limit,
+            tab_switch_enabled: activeFinalAssessment?.tab_switch_enabled,
+            tab_switch_limit: activeFinalAssessment?.tab_switch_limit,
           }}
           onClose={() => setShowFinalAssessmentSettings(null)}
           onConfirm={handleUpdateFinalAssessmentSettings}

@@ -14,6 +14,7 @@
 # from .models import Content, Section, Module, Course
 # from .serializers import *
 # from django.db.models import F
+from django.db.models import F, Q
 # # ═══════════════════════════════════════════════
 # # COURSE VIEWS  (unchanged logic, updated names)
 # # ═══════════════════════════════════════════════
@@ -749,12 +750,10 @@ class CoursePublishAPIView(generics.GenericAPIView):
         final_assessment = (
             course.assessments.filter(
                 assessment_type="FINAL",
-                is_published=True,
                 pending_delete=False,
             ).first()
             or course.attached_assessments.filter(
                 assessment_type="FINAL",
-                is_published=True,
                 pending_delete=False,
             ).first()
         )
@@ -1516,6 +1515,19 @@ class PublishCourseChangesAPIView(APIView):
         course = get_object_or_404(Course, id=course_id)
 
         with transaction.atomic():
+            assessment_ids = set(
+                course.assessments.values_list("id", flat=True)
+            )
+            assessment_ids.update(
+                course.attached_assessments.values_list("id", flat=True)
+            )
+            assessment_ids.update(
+                Assessment.objects.filter(
+                    Q(module__course=course) | Q(modules__course=course)
+                ).values_list("id", flat=True)
+            )
+            course_assessments = list(Assessment.objects.filter(id__in=assessment_ids))
+
             # =========================
             # 1. APPLY COURSE CHANGES
             # =========================
@@ -1562,6 +1574,31 @@ class PublishCourseChangesAPIView(APIView):
             course.draft_price = None
 
             course.save()
+            apply_assessment_attachment_drafts(course)
+
+            for assessment in course_assessments:
+                if assessment.pending_delete:
+                    if assessment.assessment_type == "FINAL":
+                        if (
+                            isinstance(course.final_assessment, dict)
+                            and (
+                                str(course.final_assessment.get("id")) == str(assessment.id)
+                                or str(course.final_assessment.get("assessment_id")) == str(assessment.id)
+                            )
+                        ):
+                            course.final_assessment = None
+                            course.save(update_fields=["final_assessment"])
+                    assessment.delete()
+                    continue
+
+                assessment.questions.filter(pending_delete=True).delete()
+                apply_question_draft_changes(assessment)
+                assessment.has_unpublished_changes = False
+                assessment.pending_delete = False
+                assessment.is_published = True
+                assessment.save(update_fields=[
+                    "has_unpublished_changes", "pending_delete", "is_published",
+                ], validate=False)
 
             # =========================
             # 3. APPLY MODULES

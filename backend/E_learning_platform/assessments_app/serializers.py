@@ -470,18 +470,32 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
         return data
 
     def get_course_attachments(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        is_admin = bool(user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, "role", None) in ["admin", "instructor"]
+        ))
+        pending_removals = {
+            str(value) for value in (obj.draft_course_removals or [])
+        } if is_admin else set()
         seen = set()
         attached = []
 
         for course in list(obj.courses.all()):
-            if course and course.id not in seen:
+            if course and str(course.id) not in pending_removals and course.id not in seen:
                 attached.append({
                     'id': course.id,
                     'title': course.title,
                 })
                 seen.add(course.id)
 
-        if obj.course_id is not None and obj.course_id not in seen:
+        if (
+            obj.course_id is not None
+            and str(obj.course_id) not in pending_removals
+            and obj.course_id not in seen
+        ):
             attached.append({
                 'id': obj.course.id,
                 'title': obj.course.title,
@@ -490,11 +504,21 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
         return attached
 
     def get_module_attachments(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        is_admin = bool(user and (
+            user.is_superuser or
+            user.groups.filter(name__in=["Admin", "Instructor"]).exists() or
+            getattr(user, "role", None) in ["admin", "instructor"]
+        ))
+        pending_removals = {
+            str(value) for value in (obj.draft_module_removals or [])
+        } if is_admin else set()
         seen = set()
         attached = []
 
         for module in list(obj.modules.all()):
-            if module and module.id not in seen:
+            if module and str(module.id) not in pending_removals and module.id not in seen:
                 attached.append({
                     'id': module.id,
                     'title': module.title,
@@ -503,7 +527,11 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
                 })
                 seen.add(module.id)
 
-        if obj.module_id is not None and obj.module_id not in seen:
+        if (
+            obj.module_id is not None
+            and str(obj.module_id) not in pending_removals
+            and obj.module_id not in seen
+        ):
             module = obj.module
             attached.append({
                 'id': module.id,
