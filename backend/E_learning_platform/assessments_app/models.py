@@ -13,7 +13,7 @@ class Assessment(models.Model):
 
     course = models.ForeignKey(
         "courses_app.Course",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="assessments",
         null=True,
         blank=True,
@@ -21,7 +21,7 @@ class Assessment(models.Model):
 
     module = models.ForeignKey(
         "courses_app.Module",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="assessments",
         null=True,
         blank=True,

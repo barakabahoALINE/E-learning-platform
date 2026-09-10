@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
 from django.utils import timezone
 from courses_app.models import Section, Module, Content, Course
@@ -274,17 +275,17 @@ def _refresh_course_progress(student, course, enrollment):
 
     # Count published quiz assessments (module quizzes)
     total_quizzes = Assessment.objects.filter(
-        course=course,
+        Q(course=course) | Q(courses=course),
         assessment_type="QUIZ",
         is_published=True,
-    ).count()
+    ).distinct().count()
 
     # Check if final assessment exists
     final_assessment = Assessment.objects.filter(
-        course=course,
+        Q(course=course) | Q(courses=course),
         assessment_type="FINAL",
         is_published=True,
-    ).first()
+    ).distinct().first()
 
     has_final = 1 if final_assessment else 0
 
@@ -303,10 +304,10 @@ def _refresh_course_progress(student, course, enrollment):
 
     # Count passed quizzes
     done_quizzes = Assessment.objects.filter(
-        course=course,
+        Q(course=course) | Q(courses=course),
         assessment_type="QUIZ",
         is_published=True,
-    ).values_list("id", flat=True)
+    ).distinct().values_list("id", flat=True)
     
     from assessments_app.services.rules import has_passed_module_quiz
     passed_quiz_count = 0

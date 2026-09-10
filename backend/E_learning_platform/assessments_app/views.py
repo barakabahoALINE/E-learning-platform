@@ -368,8 +368,16 @@ class AttachAssessmentAPIView(APIView):
                 module.course for module in modules
                 if module.course.is_published
             )
+            published_module_ids.update(
+                str(module.id) for module in modules
+                if module.course.is_published
+            )
         if course_ids is not None:
             published_targets.update(course for course in courses if course.is_published)
+            published_course_ids.update(
+                str(course.id) for course in courses
+                if course.is_published
+            )
 
         targets = list(modules) if module_ids is not None else list(courses)
         for target in targets:
@@ -410,7 +418,7 @@ class AttachAssessmentAPIView(APIView):
             assessment.draft_course_additions = list(additions_courses)
             assessment.draft_course_removals = list(removals_courses)
             assessment.has_unpublished_changes = True
-            assessment.save(update_fields=["course", "module",
+            assessment.save(update_fields=[
                 "draft_module_additions", "draft_module_removals",
                 "draft_course_additions", "draft_course_removals",
                 "has_unpublished_changes",
@@ -428,18 +436,12 @@ class AttachAssessmentAPIView(APIView):
             impacted_courses.update({module.course for module in modules})
 
             assessment.modules.add(*modules)
-            if not assessment.module and modules:
-                assessment.module = modules.first()
-                if not assessment.course:
-                    assessment.course = modules.first().course
 
         if course_ids is not None:
             courses = Course.objects.filter(id__in=course_ids)
             impacted_courses.update(courses)
 
             assessment.courses.add(*courses)
-            if not assessment.course and courses:
-                assessment.course = courses.first()
 
         try:
             assessment.save()
@@ -594,7 +596,7 @@ class DetachAssessmentAPIView(APIView):
         ]
         assessment.has_unpublished_changes = True
         assessment.save(update_fields=[
-            "module", "course", "has_unpublished_changes",
+            "has_unpublished_changes",
             "draft_module_additions", "draft_module_removals",
             "draft_course_additions", "draft_course_removals",
         ], validate=False)
@@ -701,12 +703,12 @@ class StartAssessmentAPIView(APIView):
 
         if course_id:
             course = get_object_or_404(Course, id=course_id)
-        elif assessment.module:
-            course = assessment.module.course
-        elif assessment.course:
-            course = assessment.course
         elif assessment.courses.exists():
             course = assessment.courses.first()
+        elif assessment.course:
+            course = assessment.course
+        elif assessment.modules.exists():
+            course = assessment.modules.first().course
 
         if not course:
             return Response({
@@ -722,12 +724,13 @@ class StartAssessmentAPIView(APIView):
 
         # Quiz rule
         if assessment.assessment_type == "QUIZ":
-            if not assessment.module:
+            module = assessment.module or assessment.modules.first()
+            if not module:
                 return Response({
                     "status": "failed",
                     "message": "Quiz is not attached to a module yet."
                 }, status=403)
-            if not has_completed_module_sections(request.user, assessment.module):
+            if not has_completed_module_sections(request.user, module):
                 return Response({
                     "status": "failed",
                     "message": "Complete module before quiz"
