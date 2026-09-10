@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from datetime import timedelta
 import datetime
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -27,17 +27,17 @@ def _calculate_course_progress_percentage(course, student):
     
     # Count published quiz assessments
     total_quizzes = Assessment.objects.filter(
-        course_id=course.id,
+        Q(course_id=course.id) | Q(courses=course),
         assessment_type="QUIZ",
         is_published=True,
-    ).count()
+    ).distinct().count()
     
     # Check if final assessment exists
     final_assessment = Assessment.objects.filter(
-        course_id=course.id,
+        Q(course_id=course.id) | Q(courses=course),
         assessment_type="FINAL",
         is_published=True,
-    ).first()
+    ).distinct().first()
     
     has_final = 1 if final_assessment else 0
     
@@ -59,10 +59,10 @@ def _calculate_course_progress_percentage(course, student):
 
     # Count passed quizzes
     quizzes = Assessment.objects.filter(
-        course_id=course.id,
+        Q(course_id=course.id) | Q(courses=course),
         assessment_type="QUIZ",
         is_published=True,
-    )
+    ).distinct()
     
     passed_quiz_count = 0
     for assessment in quizzes:
@@ -109,10 +109,10 @@ def _published_contents_for_course(course_id):
 
 def _published_final_assessment(course_id):
     return Assessment.objects.filter(
-        course_id=course_id,
+        Q(course_id=course_id) | Q(courses__id=course_id),
         assessment_type="FINAL",
         is_published=True,
-    ).first()
+    ).distinct().first()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -214,10 +214,10 @@ class CompleteContentAPIView(APIView):
         # Check if all quizzes are passed
         from assessments_app.services.rules import has_passed_module_quiz
         all_quizzes = Assessment.objects.filter(
-            course_id=course_id,
+            Q(course_id=course_id) | Q(courses__id=course_id),
             assessment_type="QUIZ",
             is_published=True,
-        )
+        ).distinct()
         all_quizzes_passed = True
         for quiz_assessment in all_quizzes:
             if quiz_assessment.module and not has_passed_module_quiz(request.user, quiz_assessment.module):
@@ -428,7 +428,11 @@ class ModuleProgressAPIView(APIView):
         ).count()
         
         # Check if module has a quiz
-        module_quiz = Assessment.objects.filter(module=module, assessment_type="QUIZ", is_published=True).first()
+        module_quiz = Assessment.objects.filter(
+            Q(module=module) | Q(modules=module),
+            assessment_type="QUIZ",
+            is_published=True,
+        ).distinct().first()
         quiz_passed = False
         if module_quiz:
             quiz_passed = Attempt.objects.filter(
@@ -600,7 +604,11 @@ class CourseModulesProgressAPIView(APIView):
             ).count()
             
             # Check if module has a quiz
-            quiz = Assessment.objects.filter(module=module, assessment_type="QUIZ", is_published=True).first()
+            quiz = Assessment.objects.filter(
+                Q(module=module) | Q(modules=module),
+                assessment_type="QUIZ",
+                is_published=True,
+            ).distinct().first()
             quiz_passed = False
             if quiz:
                 quiz_passed = Attempt.objects.filter(

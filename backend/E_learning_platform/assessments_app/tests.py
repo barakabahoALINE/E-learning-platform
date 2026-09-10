@@ -95,6 +95,25 @@ class AssessmentSerializerTests(TestCase):
         self.assertIsNone(assessment.course)
         self.assertIsNone(assessment.module)
 
+    def test_attached_assessment_survives_course_and_module_deletion(self):
+        assessment = Assessment.objects.create(
+            title="Reusable Assessment",
+            assessment_type="QUIZ",
+            pass_mark=70,
+        )
+        assessment.modules.add(self.module)
+
+        assessment_id = assessment.id
+        course_id = self.course.id
+        self.course.delete()
+
+        self.assertTrue(Assessment.objects.filter(id=assessment_id).exists())
+        assessment.refresh_from_db()
+        self.assertIsNone(assessment.course_id)
+        self.assertIsNone(assessment.module_id)
+        self.assertFalse(assessment.modules.exists())
+        self.assertFalse(Course.objects.filter(id=course_id).exists())
+
     def test_attach_detach_updates_course_and_module(self):
         quiz_data = {
             "assessment_type": "QUIZ",

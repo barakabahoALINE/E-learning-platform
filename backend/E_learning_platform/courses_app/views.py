@@ -686,8 +686,6 @@ def apply_assessment_attachment_drafts(course):
 
         if course_id in course_additions:
             assessment.courses.add(course)
-            if assessment.course_id is None:
-                assessment.course = course
             if assessment.assessment_type == "FINAL":
                 course.final_assessment = {
                     "id": assessment.id,
@@ -718,10 +716,6 @@ def apply_assessment_attachment_drafts(course):
                 continue
             if module_id in module_additions:
                 assessment.modules.add(module)
-                if assessment.module_id is None and assessment.assessment_type == "QUIZ":
-                    assessment.module = module
-                    if assessment.course_id is None:
-                        assessment.course = course
                 module_additions.discard(module_id)
                 changed = True
             if module_id in module_removals:

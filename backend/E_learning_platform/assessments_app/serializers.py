@@ -64,10 +64,6 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         course = data.get('course')
         module = data.get('module')
 
-        if module and not course:
-            data['course'] = module.course
-            course = module.course
-
         if data['assessment_type'] == 'FINAL':
             if module is not None or data.get('modules'):
                 raise serializers.ValidationError("Final assessment cannot be linked to a module.")
@@ -127,10 +123,10 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         courses = validated_data.pop('courses', [])
         modules = validated_data.pop('modules', [])
+        legacy_course = validated_data.pop('course', None)
+        legacy_module = validated_data.pop('module', None)
 
         assessment = Assessment.objects.create(
-            course=validated_data.get('course'),
-            module=validated_data.get('module'),
             assessment_type=validated_data.get('assessment_type'),
             title=validated_data.get('title'),
             pass_mark=validated_data.get('pass_mark'),
@@ -142,19 +138,23 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             instructions=validated_data.get('instructions')
         )
 
+        if legacy_course:
+            courses = list(courses)
+            if legacy_course not in courses:
+                courses.append(legacy_course)
+
+        if legacy_module:
+            modules = list(modules)
+            if legacy_module not in modules:
+                modules.append(legacy_module)
+
         if courses:
             assessment.courses.set(courses)
-            if not assessment.course:
-                assessment.course = courses[0]
 
         if modules:
             assessment.modules.set(modules)
-            if not assessment.module:
-                assessment.module = modules[0]
-            if not assessment.course:
-                assessment.course = modules[0].course
 
-        assessment.save()
+        assessment.save(validate=False)
         return assessment
 
     def to_representation(self, instance):

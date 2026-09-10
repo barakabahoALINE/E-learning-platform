@@ -170,10 +170,10 @@ def can_access_module(user, module):
         return True
 
     quiz = Assessment.objects.filter(
-        module=previous_module,
+        Q(module=previous_module) | Q(modules=previous_module),
         assessment_type="QUIZ",
         is_published=True
-    ).first()
+    ).distinct().first()
 
     # no quiz
     if not quiz:
@@ -201,10 +201,10 @@ def has_passed_module_quiz(user, module):
     - Module has a quiz AND user has NOT passed it yet
     """
     quiz = Assessment.objects.filter(
-        module=module,
+        Q(module=module) | Q(modules=module),
         assessment_type="QUIZ",
         is_published=True
-    ).first()
+    ).distinct().first()
 
     # No quiz requirement - module can be completed
     if not quiz:
