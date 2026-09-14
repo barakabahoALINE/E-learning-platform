@@ -3,6 +3,7 @@ import base64
 from datetime import datetime
 from io import BytesIO
 from django.core.files.base import ContentFile
+from django.db.models import Q
 from django.templatetags.static import static
 from django.utils import timezone
 from django.template.loader import render_to_string
@@ -11,7 +12,7 @@ from weasyprint import HTML, CSS
 from xhtml2pdf import pisa
 
 from enrollments_app.models import Enrollment
-from progress_app.models import CourseProgress
+from progress_app.models import ContentProgress, CourseProgress, has_passed_final_assessment
 from assessments_app.models import Attempt
 
 
@@ -85,60 +86,63 @@ def course_completed_by_student(student, course_id):
     if not course_progress:
         return False, enrollment, None
 
-    if not course_progress.completed:
-        from courses_app.models import Module
-        from progress_app.models import ModuleProgress
-        from assessments_app.models import Assessment
+    from assessments_app.models import Assessment
+    from courses_app.models import Content
 
-        total = Module.objects.filter(course_id=course_id, is_published=True).count()
-        done = ModuleProgress.objects.filter(
-            student=student,
-            module__course_id=course_id,
-            module__is_published=True,
-            completed=True,
-        ).count()
+    content_filter = Q(
+        section__module__course_id=course_id,
+        section__module__is_published=True,
+        section__is_published=True,
+        is_published=True,
+    )
+    quiz_filter = Q(course_id=course_id) | Q(courses__id=course_id) | Q(module__course_id=course_id) | Q(modules__course_id=course_id)
+    final_filter = Q(course_id=course_id) | Q(courses__id=course_id)
 
-        final_assessment = Assessment.objects.filter(
-            course_id=course_id,
-            assessment_type="FINAL",
-            is_published=True
-        ).first()
+    total_content = Content.objects.filter(content_filter).count()
+    completed_content = ContentProgress.objects.filter(
+        student=student,
+        content__in=Content.objects.filter(content_filter),
+        completed=True,
+    ).count()
 
-        final_passed = False
-        if final_assessment:
-            final_passed = Attempt.objects.filter(
-                student=student,
-                course_id=course_id,
-                assessment=final_assessment,
-                is_submitted=True,
-                is_passed=True
-            ).exists()
+    quizzes = Assessment.objects.filter(
+        quiz_filter,
+        assessment_type="QUIZ",
+        is_published=True,
+    ).distinct()
+    passed_quizzes = Attempt.objects.filter(
+        student=student,
+        assessment__in=quizzes,
+        course_id=course_id,
+        is_submitted=True,
+        is_passed=True,
+    ).values("assessment_id").distinct().count()
 
-        now_complete = (done == total)
-        if final_assessment:
-            now_complete = now_complete and final_passed
+    final_assessment = Assessment.objects.filter(
+        final_filter,
+        assessment_type="FINAL",
+        is_published=True,
+    ).distinct().first()
+    final_passed = has_passed_final_assessment(student, enrollment.course)
 
-        if now_complete:
-            course_progress.completed = True
-            course_progress.completed_at = timezone.now()
-            course_progress.save()
+    total_requirements = total_content + quizzes.count() + bool(final_assessment or final_passed)
+    completed_requirements = completed_content + passed_quizzes + final_passed
+    now_complete = total_requirements > 0 and completed_requirements == total_requirements
 
-            if enrollment.status != Enrollment.Status.COMPLETED:
-                enrollment.status = Enrollment.Status.COMPLETED
-                enrollment.save()
+    if now_complete and not course_progress.completed:
+        course_progress.completed = True
+        course_progress.completed_at = timezone.now()
+        course_progress.progress_percentage = 100
+        course_progress.save()
+
+        if enrollment.status != Enrollment.Status.COMPLETED:
+            enrollment.status = Enrollment.Status.COMPLETED
+            enrollment.save()
 
     if not course_progress.completed:
         return False, enrollment, None
 
-    final_attempt = Attempt.objects.filter(
-        student=student,
-        course_id=course_id,
-        assessment__assessment_type="FINAL",
-        is_submitted=True,
-        is_passed=True,
-    ).order_by("-submitted_at").first()
-
-    return bool(final_attempt), enrollment, course_progress
+    return final_passed, enrollment, course_progress
 
 
 def build_plain_pdf_bytes(certificate):

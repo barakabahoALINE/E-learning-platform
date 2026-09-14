@@ -79,7 +79,7 @@ class SubmitCertificateFeedbackAPIView(APIView):
 
         final_attempt = Attempt.objects.filter(
             student=request.user,
-            assessment__course=course,
+            course=course,
             assessment__assessment_type="FINAL",
             is_submitted=True,
             is_passed=True,

@@ -258,6 +258,19 @@ def _refresh_module_progress(student, module, enrollment):
         module_prog.save()
 
 
+def has_passed_final_assessment(student, course):
+    """Return whether the student passed any final attempt for this course."""
+    from assessments_app.models import Attempt
+
+    return Attempt.objects.filter(
+        student=student,
+        course=course,
+        assessment__assessment_type="FINAL",
+        is_submitted=True,
+        is_passed=True,
+    ).exists()
+
+
 def _refresh_course_progress(student, course, enrollment):
     """
     Recompute the parent Course progress based on content completion, quiz completion,
@@ -287,7 +300,8 @@ def _refresh_course_progress(student, course, enrollment):
         is_published=True,
     ).distinct().first()
 
-    has_final = 1 if final_assessment else 0
+    final_passed = has_passed_final_assessment(student, course)
+    has_final = 1 if final_assessment or final_passed else 0
 
     # Total items = content + quizzes + final assessment
     total = total_content + total_quizzes + has_final
@@ -316,16 +330,6 @@ def _refresh_course_progress(student, course, enrollment):
         assessment = Assessment.objects.get(id=assessment_id)
         if assessment.module and has_passed_module_quiz(student, assessment.module):
             passed_quiz_count += 1
-
-    # Check if final assessment is passed
-    final_passed = False
-    if final_assessment:
-        final_passed = Attempt.objects.filter(
-            student=student,
-            assessment=final_assessment,
-            is_submitted=True,
-            is_passed=True,
-        ).exists()
 
     # Total completed items
     done = done_content + passed_quiz_count + (1 if final_passed else 0)

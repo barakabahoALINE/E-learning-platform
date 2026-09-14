@@ -36,6 +36,32 @@ def mark_course_unpublished_change(course):
         course.save(update_fields=["has_unpublished_changes"])
 
 
+def build_attempt_snapshot(assessment):
+    questions = []
+    for question in assessment.questions.filter(pending_delete=False).order_by("order"):
+        questions.append({
+            "id": question.id,
+            "question_text": question.question_text,
+            "question_type": question.question_type,
+            "marks": question.marks,
+            "order": question.order,
+            "matching_pairs": question.matching_pairs or [],
+            "choices": list(question.choices.values("id", "text", "is_correct")),
+        })
+
+    settings = {
+        "id": assessment.id,
+        "title": assessment.title,
+        "assessment_type": assessment.assessment_type,
+        "pass_mark": assessment.pass_mark,
+        "max_attempts": assessment.max_attempts,
+        "duration": assessment.duration,
+        "tab_switch_enabled": assessment.tab_switch_enabled,
+        "tab_switch_limit": assessment.tab_switch_limit,
+    }
+    return settings, questions
+
+
 def detach_final_assessments_from_unpublished_course(course):
     changed_assessments = []
     assessments = Assessment.objects.filter(
@@ -932,15 +958,18 @@ class StartAttemptAPIView(APIView):
         if course_id:
             course = get_object_or_404(Course, id=course_id)
         else:
-            if assessment.course:
-                course = assessment.course
-            elif assessment.courses.exists():
-                matching_enrollment = Enrollment.objects.filter(
-                    student=user,
-                    course__in=assessment.courses.all(),
-                    status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED],
-                ).first()
-                course = matching_enrollment.course if matching_enrollment else assessment.courses.first()
+            attached_courses = assessment.courses.all()
+            if assessment.course_id:
+                attached_courses = attached_courses | Course.objects.filter(id=assessment.course_id)
+            if assessment.module_id:
+                attached_courses = attached_courses | Course.objects.filter(id=assessment.module.course_id)
+            attached_courses = attached_courses.distinct()
+            matching_enrollment = Enrollment.objects.filter(
+                student=user,
+                course__in=attached_courses,
+                status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED],
+            ).select_related("course").first()
+            course = matching_enrollment.course if matching_enrollment else attached_courses.first()
 
         if course and not is_student_enrolled(user, course):
             return Response({
@@ -974,9 +1003,11 @@ class StartAttemptAPIView(APIView):
                 return Response({
                     "status": "success",
                     "message": "Resume attempt",
-                    "data": StartAttemptSerializer(
-                        existing
-                    ).data
+                    "data": {
+                        **StartAttemptSerializer(existing).data,
+                        "assessment_snapshot": existing.assessment_snapshot,
+                        "question_snapshot": existing.question_snapshot,
+                    }
                 })
 
             # ATTEMPT LIMIT RULE
@@ -995,10 +1026,23 @@ class StartAttemptAPIView(APIView):
             }, status=403)
 
         # CREATE ATTEMPT
+        previous_attempt = Attempt.objects.filter(
+            student=user,
+            assessment=assessment,
+            course=course,
+        ).exclude(question_snapshot=[]).order_by("-started_at").first()
+        if previous_attempt:
+            assessment_snapshot = previous_attempt.assessment_snapshot
+            question_snapshot = previous_attempt.question_snapshot
+        else:
+            assessment_snapshot, question_snapshot = build_attempt_snapshot(assessment)
+
         attempt = Attempt.objects.create(
             student=user,
             assessment=assessment,
             course=course,
+            assessment_snapshot=assessment_snapshot,
+            question_snapshot=question_snapshot,
             attempt_number=(
                 Attempt.objects.filter(
                     student=user,
@@ -1011,9 +1055,11 @@ class StartAttemptAPIView(APIView):
         return Response({
             "status": "success",
             "message": "Attempt started",
-            "data": StartAttemptSerializer(
-                attempt
-            ).data
+            "data": {
+                **StartAttemptSerializer(attempt).data,
+                "assessment_snapshot": attempt.assessment_snapshot,
+                "question_snapshot": attempt.question_snapshot,
+            }
         })
 
 
@@ -1194,10 +1240,64 @@ class SaveAnswerAPIView(APIView):
                 "data": None
             }, status=403)
 
-        question = get_object_or_404(
-            Question,
-            id=question_id
+        snapshot_question = next(
+            (
+                item for item in (attempt.question_snapshot or [])
+                if str(item.get("id")) == str(question_id)
+            ),
+            None,
         )
+        question = Question.objects.filter(id=question_id).first()
+        if attempt.question_snapshot and snapshot_question is None:
+            return Response({
+                "success": False,
+                "message": "Question does not belong to this assessment attempt"
+            }, status=400)
+        if question is None and snapshot_question is None:
+            return Response({"success": False, "message": "Question not found"}, status=404)
+
+        if snapshot_question is not None:
+            answer = StudentAnswer.objects.filter(
+                attempt=attempt,
+                answer_snapshot__question_id=question_id,
+            ).first()
+            if answer is None:
+                answer = StudentAnswer.objects.create(attempt=attempt, question=question)
+
+            payload = {
+                "question_id": question_id,
+                "selected_choices": list(selected_choices or []),
+                "matching_pairs": matching_pairs or [],
+                "text_answer": text_answer,
+            }
+            answer.answer_snapshot = payload
+            answer.selected_choice = None
+            answer.selected_choices.clear()
+            answer.text_answer = text_answer
+
+            snapshot_choices = snapshot_question.get("choices") or []
+            correct_choice_ids = {
+                str(choice["id"])
+                for choice in snapshot_choices
+                if choice.get("is_correct")
+            }
+            selected_choice_ids = {str(choice_id) for choice_id in selected_choices or []}
+            if snapshot_question.get("question_type") == "multiple":
+                answer.is_correct = selected_choice_ids == correct_choice_ids
+            elif snapshot_question.get("question_type") == "matching":
+                correct_pairs = snapshot_question.get("matching_pairs") or []
+                answer.is_correct = matching_pairs == correct_pairs
+                answer.text_answer = json.dumps(matching_pairs or [])
+            elif snapshot_question.get("question_type") == "text":
+                answer.is_correct = False
+            else:
+                answer.is_correct = len(selected_choice_ids) == 1 and selected_choice_ids <= correct_choice_ids
+            answer.save()
+            if attempt.assessment_snapshot.get("assessment_type") == "FINAL" and attempt.assessment_snapshot.get("tab_switch_enabled"):
+                enforce_tab_switch_limit(attempt)
+            return Response({"success": True, "message": "Answer saved"})
+
+        question = get_object_or_404(Question, id=question_id)
 
         answer, created = (
             StudentAnswer.objects.get_or_create(
@@ -1470,7 +1570,76 @@ class SubmitAttemptAPIView(APIView):
 # =========================================================
 # CALCULATION HELPERS
 
+def _calculate_snapshot_attempt_score(attempt, user):
+    total_marks = 0
+    earned_marks = 0
+    answers = {
+        str(answer.answer_snapshot.get("question_id")): answer
+        for answer in StudentAnswer.objects.filter(attempt=attempt)
+        if answer.answer_snapshot
+    }
+
+    for question in attempt.question_snapshot or []:
+        question_marks = question.get("marks") or 1
+        total_marks += question_marks
+        answer = answers.get(str(question.get("id")))
+        payload = answer.answer_snapshot if answer else {}
+        selected_ids = {str(value) for value in payload.get("selected_choices", [])}
+        correct_ids = {
+            str(choice["id"])
+            for choice in question.get("choices", [])
+            if choice.get("is_correct")
+        }
+        if question.get("question_type") == "multiple":
+            is_correct = selected_ids == correct_ids
+        elif question.get("question_type") == "matching":
+            is_correct = payload.get("matching_pairs", []) == (question.get("matching_pairs") or [])
+        elif question.get("question_type") == "text":
+            is_correct = False
+        else:
+            is_correct = len(selected_ids) == 1 and selected_ids <= correct_ids
+
+        if answer:
+            answer.is_correct = is_correct
+            answer.save(update_fields=["is_correct"])
+        if is_correct:
+            earned_marks += question_marks
+
+    percentage = (earned_marks / total_marks * 100) if total_marks else 0
+    pass_mark = attempt.assessment_snapshot.get("pass_mark", attempt.assessment.pass_mark)
+    is_passed = percentage >= pass_mark
+    attempt.score = earned_marks
+    attempt.percentage = round(percentage, 2)
+    attempt.is_passed = is_passed
+    attempt.is_submitted = True
+    attempt.submitted_at = timezone.now()
+    attempt.save()
+
+    if is_passed and attempt.assessment.assessment_type == "FINAL":
+        enrollment = Enrollment.objects.filter(
+            student=user,
+            course=attempt.course,
+            status__in=[Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED],
+        ).first()
+        if enrollment:
+            _refresh_course_progress(user, attempt.course, enrollment)
+
+    return {
+        "message": "Congratulations! You passed." if is_passed else "You failed. Try again.",
+        "data": {
+            "attempt_id": attempt.id,
+            "score": earned_marks,
+            "total_marks": total_marks,
+            "percentage": round(percentage, 2),
+            "is_passed": is_passed,
+        },
+    }
+
+
 def _calculate_attempt_score(attempt, user):
+
+    if attempt.question_snapshot:
+        return _calculate_snapshot_attempt_score(attempt, user)
 
     questions = attempt.assessment.questions.all()
 
@@ -1626,7 +1795,7 @@ def _calculate_attempt_score(attempt, user):
     ):
         enrollment = Enrollment.objects.filter(
             student=user,
-            course=attempt.assessment.course,
+            course=attempt.course,
             status__in=[
                 Enrollment.Status.ACTIVE,
                 Enrollment.Status.COMPLETED
@@ -1634,9 +1803,12 @@ def _calculate_attempt_score(attempt, user):
         ).first()
 
         if enrollment:
+            quiz_module = attempt.assessment.modules.filter(
+                course=attempt.course
+            ).first() or attempt.assessment.module
             _refresh_module_progress(
                 user,
-                attempt.assessment.module,
+                quiz_module,
                 enrollment
             )
 
@@ -1648,7 +1820,7 @@ def _calculate_attempt_score(attempt, user):
 
         enrollment = Enrollment.objects.filter(
             student=user,
-            course=attempt.assessment.course,
+            course=attempt.course,
             status__in=[
                 Enrollment.Status.ACTIVE,
                 Enrollment.Status.COMPLETED
@@ -1658,7 +1830,7 @@ def _calculate_attempt_score(attempt, user):
         if enrollment:
             _refresh_course_progress(
                 user,
-                attempt.assessment.course,
+                attempt.course,
                 enrollment
             )
 

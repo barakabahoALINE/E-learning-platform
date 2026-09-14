@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from courses_app.models import Course, Module
+from enrollments_app.models import Enrollment
 from courses_app.serializers import ModuleSerializer, CourseDetailSerializer
 from .models import Assessment, Attempt, Choice, Question
 from .services.rules import RuleError, check_attempt_limit, validate_attachment_targets
@@ -19,6 +20,7 @@ from .views import (
     DeleteAssessmentAPIView,
     UpdateQuestionAPIView,
     UpdateAssessmentAPIView,
+    StartAttemptAPIView,
 )
 from courses_app.views import apply_assessment_attachment_drafts, apply_question_draft_changes, CoursePublishAPIView
 
@@ -713,9 +715,11 @@ class FinalAssessmentCooldownTests(TestCase):
     def _create_submitted_attempt(self, submitted_at):
         return Attempt.objects.create(
             student=self.user,
+            course=self.course,
             assessment=self.assessment,
             attempt_number=Attempt.objects.filter(
                 student=self.user,
+                course=self.course,
                 assessment=self.assessment
             ).count() + 1,
             is_submitted=True,
@@ -730,9 +734,9 @@ class FinalAssessmentCooldownTests(TestCase):
         self.assertTrue(check_attempt_limit(self.user, self.assessment))
 
     def test_denies_final_attempt_before_cooldown_ends(self):
-        now = timezone.now()
+        now = timezone.now() - timedelta(minutes=1)
         for i in range(3):
-            self._create_submitted_attempt(now - timedelta(hours=1 + i))
+            self._create_submitted_attempt(now - timedelta(seconds=i))
 
         with self.assertRaisesMessage(RuleError, "Next attempt allowed in"):
             check_attempt_limit(self.user, self.assessment)
@@ -756,7 +760,6 @@ class FinalAssessmentCooldownTests(TestCase):
         )
 
         shared_assessment = Assessment.objects.create(
-            course=self.course,
             title="Shared Final Assessment",
             assessment_type="FINAL",
             pass_mark=70,
@@ -764,8 +767,7 @@ class FinalAssessmentCooldownTests(TestCase):
             duration=30,
             is_published=True
         )
-        shared_assessment.courses.add(other_course)
-
+        shared_assessment.courses.add(self.course, other_course)
         Attempt.objects.create(
             student=self.user,
             course=self.course,
@@ -775,5 +777,121 @@ class FinalAssessmentCooldownTests(TestCase):
             is_passed=True,
             submitted_at=timezone.now(),
         )
+
+        self.assertTrue(check_attempt_limit(self.user, shared_assessment, course=other_course))
+
+
+class AssessmentSnapshotTests(TestCase):
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="snapshot-student@example.com", password="Str0ngP@ssword!")
+        self.later_user = get_user_model().objects.create_user(email="later-student@example.com", password="Str0ngP@ssword!")
+        self.course = Course.objects.create(
+            title="Snapshot Course",
+            description="Course with versioned assessment behavior.",
+            duration="1h",
+            is_published=True,
+        )
+        for user in (self.user, self.later_user):
+            Enrollment.objects.create(student=user, course=self.course, status=Enrollment.Status.ACTIVE)
+        self.assessment = Assessment.objects.create(
+            course=self.course,
+            title="Versioned Final",
+            assessment_type="FINAL",
+            pass_mark=70,
+            max_attempts=3,
+            duration=30,
+            is_published=True,
+        )
+        self.question = Question.objects.create(
+            assessment=self.assessment,
+            question_text="Old question",
+            question_type="single",
+            order=1,
+        )
+        Choice.objects.create(question=self.question, text="Old answer", is_correct=True)
+
+    def _start(self, user):
+        request = APIRequestFactory().post(
+            f"/assessments/{self.assessment.id}/start-attempt/",
+            {"course_id": self.course.id},
+            format="json",
+        )
+        force_authenticate(request, user=user)
+        return StartAttemptAPIView.as_view()(request, assessment_id=self.assessment.id)
+
+    def test_retake_keeps_old_snapshot_and_later_student_gets_new_snapshot(self):
+        first_response = self._start(self.user)
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.data["data"]["question_snapshot"][0]["question_text"], "Old question")
+
+        first_attempt = Attempt.objects.get(id=first_response.data["data"]["id"])
+        first_attempt.is_submitted = True
+        first_attempt.save(update_fields=["is_submitted"])
+        self.question.question_text = "Updated question"
+        self.question.save(update_fields=["question_text"])
+
+        retake_response = self._start(self.user)
+        later_response = self._start(self.later_user)
+
+        self.assertEqual(retake_response.status_code, 200)
+        self.assertEqual(later_response.status_code, 200)
+        self.assertEqual(retake_response.data["data"]["question_snapshot"][0]["question_text"], "Old question")
+        self.assertEqual(later_response.data["data"]["question_snapshot"][0]["question_text"], "Updated question")
+
+
+
+    def test_course_specific_failed_attempt_does_not_block_other_course(self):
+        other_course = Course.objects.create(
+            title="Other Course",
+            description="Another course using the same shared assessment.",
+            duration="2h",
+        )
+        shared_assessment = Assessment.objects.create(
+            title="Shared Final Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            max_attempts=3,
+            duration=30,
+            is_published=True,
+        )
+        shared_assessment.courses.add(self.course, other_course)
+        Attempt.objects.create(
+            student=self.user,
+            course=self.course,
+            assessment=shared_assessment,
+            attempt_number=1,
+            is_submitted=True,
+            is_passed=False,
+            submitted_at=timezone.now(),
+        )
+
+        self.assertTrue(check_attempt_limit(self.user, shared_assessment, course=other_course))
+
+    def test_course_specific_cooldown_does_not_block_other_course(self):
+        other_course = Course.objects.create(
+            title="Other Course",
+            description="Another course using the same shared assessment.",
+            duration="2h",
+        )
+        shared_assessment = Assessment.objects.create(
+            title="Shared Final Assessment",
+            assessment_type="FINAL",
+            pass_mark=70,
+            max_attempts=3,
+            duration=30,
+            is_published=True,
+        )
+        shared_assessment.courses.add(self.course, other_course)
+        now = timezone.now()
+        for attempt_number in range(1, 4):
+            Attempt.objects.create(
+                student=self.user,
+                course=self.course,
+                assessment=shared_assessment,
+                attempt_number=attempt_number,
+                is_submitted=True,
+                submitted_at=now,
+            )
 
         self.assertTrue(check_attempt_limit(self.user, shared_assessment, course=other_course))
