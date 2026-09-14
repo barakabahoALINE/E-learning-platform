@@ -1805,7 +1805,19 @@ def _calculate_attempt_score(attempt, user):
         attempt.assessment.assessment_type == "FINAL"
         and attempt.is_passed
     ):
+        course = attempt.course or attempt.assessment.course
+        if not course and attempt.assessment.courses.exists():
+            course = attempt.assessment.courses.first()
 
+        if course:
+            enrollment = Enrollment.objects.filter(
+                student=user,
+                course=course,
+                status__in=[
+                    Enrollment.Status.ACTIVE,
+                    Enrollment.Status.COMPLETED
+                ]
+            ).first()
 
         enrollment = Enrollment.objects.filter(
             student=user,
