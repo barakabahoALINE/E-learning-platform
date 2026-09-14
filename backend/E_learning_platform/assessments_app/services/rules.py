@@ -65,11 +65,15 @@ def check_attempt_limit(user, assessment, course=None):
         return True
 
     total_attempts = submitted_attempts.count()
+    latest_snapshot = submitted_attempts.first()
+    max_attempts = assessment.max_attempts
+    if latest_snapshot and latest_snapshot.assessment_snapshot:
+        max_attempts = latest_snapshot.assessment_snapshot.get("max_attempts") or max_attempts
 
-    if total_attempts < assessment.max_attempts:
+    if total_attempts < max_attempts:
         return True
 
-    if total_attempts == assessment.max_attempts:
+    if total_attempts == max_attempts:
         last_attempt = submitted_attempts.first()
         cooldown_end = last_attempt.submitted_at + timedelta(hours=COOLDOWN_HOURS)
 
@@ -101,7 +105,7 @@ def handle_attempt_state(attempt):
     if attempt.assessment.assessment_type == "QUIZ":
         return "active"
 
-    duration_minutes = attempt.assessment.duration
+    duration_minutes = attempt.assessment_snapshot.get("duration", attempt.assessment.duration)
 
     expiration_time = (
         attempt.started_at +
@@ -214,6 +218,7 @@ def has_passed_module_quiz(user, module):
     passed = Attempt.objects.filter(
         student=user,
         assessment=quiz,
+        course=module.course,
         is_submitted=True,
         is_passed=True
     ).exists()

@@ -173,4 +173,47 @@ class WeeklyKPIBehaviorTests(TestCase):
 		self.assertEqual(course_progress.progress_percentage, 50.0)
 		self.assertFalse(course_progress.completed)  # Not completed yet - quiz and final still pending
 
+	def test_passed_old_final_still_completes_course_after_assessment_replacement(self):
+		from assessments_app.models import Assessment, Attempt
+		from certificate_app.utils import course_completed_by_student
+		from progress_app.models import _refresh_course_progress
+
+		course = Course.objects.create(
+			title="Replaced Assessment Course",
+			description="d",
+			duration="1h",
+			price=0,
+			is_published=True,
+		)
+		enrollment = Enrollment.objects.create(student=self.user, course=course)
+		old_assessment = Assessment.objects.create(
+			title="Old Final",
+			assessment_type="FINAL",
+			is_published=False,
+			pass_mark=60,
+		)
+		new_assessment = Assessment.objects.create(
+			course=course,
+			title="New Final",
+			assessment_type="FINAL",
+			is_published=True,
+			pass_mark=60,
+		)
+		Attempt.objects.create(
+			student=self.user,
+			course=course,
+			assessment=old_assessment,
+			attempt_number=1,
+			is_submitted=True,
+			is_passed=True,
+			percentage=100,
+		)
+
+		_refresh_course_progress(self.user, course, enrollment)
+		final_passed, _, course_progress = course_completed_by_student(self.user, course.id)
+
+		self.assertTrue(final_passed)
+		self.assertTrue(course_progress.completed)
+		self.assertEqual(course_progress.progress_percentage, 100.0)
+
 

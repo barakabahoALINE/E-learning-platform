@@ -10,7 +10,14 @@ from django.utils import timezone
 from rest_framework import status
 from assessments_app.models import Assessment, Attempt
 from .permissions import CanViewProgress, CanCompleteProgress, IsEnrolled
-from .models import ContentProgress, SectionProgress, ModuleProgress, CourseProgress, LearningSession
+from .models import (
+    ContentProgress,
+    SectionProgress,
+    ModuleProgress,
+    CourseProgress,
+    LearningSession,
+    has_passed_final_assessment,
+)
 from courses_app.models import Content, Section, Module, Course
 from enrollments_app.models import Enrollment
 from .serializers import *
@@ -39,7 +46,8 @@ def _calculate_course_progress_percentage(course, student):
         is_published=True,
     ).distinct().first()
     
-    has_final = 1 if final_assessment else 0
+    final_passed = has_passed_final_assessment(student, course)
+    has_final = 1 if final_assessment or final_passed else 0
     
     # Total items = content + quizzes + final assessment
     total = total_contents + total_quizzes + has_final
@@ -68,17 +76,6 @@ def _calculate_course_progress_percentage(course, student):
     for assessment in quizzes:
         if assessment.module and has_passed_module_quiz(student, assessment.module):
             passed_quiz_count += 1
-
-    # Check if final assessment is passed for this course
-    final_passed = False
-    if final_assessment:
-        final_passed = Attempt.objects.filter(
-            student=student,
-            course=course,
-            assessment=final_assessment,
-            is_submitted=True,
-            is_passed=True,
-        ).exists()
 
     # Total completed items
     completed = completed_contents + passed_quiz_count + (1 if final_passed else 0)
@@ -202,14 +199,7 @@ class CompleteContentAPIView(APIView):
         ).count()
 
         final_assessment = _published_final_assessment(course_id)
-        final_passed = False
-        if final_assessment:
-            final_passed = Attempt.objects.filter(
-                student=request.user,
-                assessment=final_assessment,
-                is_submitted=True,
-                is_passed=True,
-            ).exists()
+        final_passed = has_passed_final_assessment(request.user, enrollment.course)
 
         # Check if all quizzes are passed
         from assessments_app.services.rules import has_passed_module_quiz
@@ -551,14 +541,7 @@ class CourseSectionsProgressAPIView(APIView):
             completed=True
         ).count()
         final_assessment = _published_final_assessment(course_id)
-        final_passed = False
-        if final_assessment:
-            final_passed = Attempt.objects.filter(
-                student=request.user,
-                assessment=final_assessment,
-                is_submitted=True,
-                is_passed=True,
-            ).exists()
+        final_passed = has_passed_final_assessment(request.user, enrollment.course)
 
         course_pct = _calculate_course_progress_percentage(Course.objects.get(id=course_id), request.user)
         return Response({
@@ -614,6 +597,7 @@ class CourseModulesProgressAPIView(APIView):
                 quiz_passed = Attempt.objects.filter(
                     student=request.user,
                     assessment=quiz,
+                    course_id=course_id,
                     is_submitted=True,
                     is_passed=True,
                 ).exists()
@@ -646,14 +630,7 @@ class CourseModulesProgressAPIView(APIView):
             })
 
         final_assessment = _published_final_assessment(course_id)
-        final_passed = False
-        if final_assessment:
-            final_passed = Attempt.objects.filter(
-                student=request.user,
-                assessment=final_assessment,
-                is_submitted=True,
-                is_passed=True,
-            ).exists()
+        final_passed = has_passed_final_assessment(request.user, enrollment.course)
 
         course_pct = _calculate_course_progress_percentage(Course.objects.get(id=course_id), request.user)
         return Response({
@@ -897,14 +874,7 @@ class StudentCourseProgressAPIView(APIView):
         ).count()
 
         final_assessment = _published_final_assessment(course_id)
-        final_passed = False
-        if final_assessment:
-            final_passed = Attempt.objects.filter(
-                student=request.user,
-                assessment=final_assessment,
-                is_submitted=True,
-                is_passed=True,
-            ).exists()
+        final_passed = has_passed_final_assessment(request.user, enrollment.course)
 
         pct = _calculate_course_progress_percentage(enrollment.course, request.user)
 
@@ -939,7 +909,8 @@ class AdminStudentCourseProgressAPIView(APIView):
             student = User.objects.get(id=student_id)
         except User.DoesNotExist:
             return Response({"success": False, "message": "Student not found"})
-        if not Enrollment.objects.filter(student=student, course_id=course_id).exists():
+        enrollment = Enrollment.objects.filter(student=student, course_id=course_id).first()
+        if not enrollment:
             return Response({"success": False, "message": "Student is not enrolled in this course"})
 
         total_modules = _published_modules(course_id).count()
@@ -951,14 +922,7 @@ class AdminStudentCourseProgressAPIView(APIView):
         ).count()
 
         final_assessment = _published_final_assessment(course_id)
-        final_passed = False
-        if final_assessment:
-            final_passed = Attempt.objects.filter(
-                student=student,
-                assessment=final_assessment,
-                is_submitted=True,
-                is_passed=True,
-            ).exists()
+        final_passed = has_passed_final_assessment(student, enrollment.course)
 
         pct = _calculate_course_progress_percentage(Course.objects.get(id=course_id), student)
 
@@ -1017,12 +981,7 @@ class AdminCompleteCourseAPIView(APIView):
 
         final_assessment = _published_final_assessment(course_id)
         if final_assessment:
-            final_passed = Attempt.objects.filter(
-                student=student,
-                assessment=final_assessment,
-                is_submitted=True,
-                is_passed=True,
-            ).exists()
+            final_passed = has_passed_final_assessment(student, enrollment.course)
             if not final_passed:
                 return Response({
                     "success": False,
@@ -1070,12 +1029,7 @@ class CompleteCourseAPIView(APIView):
 
         final_assessment = _published_final_assessment(course_id)
         if final_assessment:
-            final_passed = Attempt.objects.filter(
-                student=request.user,
-                assessment=final_assessment,
-                is_submitted=True,
-                is_passed=True,
-            ).exists()
+            final_passed = has_passed_final_assessment(request.user, enrollment.course)
             if not final_passed:
                 return Response({"success": False, "message": "You must pass the final assessment before finishing the course"}, status=400)
 

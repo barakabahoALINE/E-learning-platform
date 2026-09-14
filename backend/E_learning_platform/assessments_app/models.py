@@ -169,6 +169,8 @@ class Attempt(models.Model):
     percentage = models.FloatField(default=0)
 
     next_allowed_attempt = models.DateTimeField(null=True, blank=True)
+    assessment_snapshot = models.JSONField(default=dict, blank=True)
+    question_snapshot = models.JSONField(default=list, blank=True)
 
     class Meta:
         unique_together = ["student", "course", "assessment", "attempt_number"]
@@ -193,7 +195,9 @@ class StudentAnswer(models.Model):
 
     question = models.ForeignKey(
         Question,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
     )
 
     selected_choice = models.ForeignKey(
@@ -215,6 +219,7 @@ class StudentAnswer(models.Model):
     is_final = models.BooleanField(default=False)
 
     is_correct = models.BooleanField(default=False)
+    answer_snapshot = models.JSONField(default=dict, blank=True)
 
 
 class Feedback(models.Model):

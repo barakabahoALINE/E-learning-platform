@@ -93,6 +93,7 @@ const getSelectedMatchingPairs = (answers: AnswerValue | undefined): MatchingPai
 export const FinalAssessmentPage: React.FC = () => {
     const { courseId } = useParams();
     const numericCourseId = Number(courseId);
+    const sessionCourseId = courseId ?? '';
     const navigate = useNavigate();
     const dispatch = useAppDispatch();
 
@@ -116,11 +117,12 @@ export const FinalAssessmentPage: React.FC = () => {
     const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [lockedMessage, setLockedMessage] = useState<string | null>(null);
     const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+    const [attemptSnapshot, setAttemptSnapshot] = useState<any | null>(null);
     const activeAttemptRef = useRef<number | null>(null);
 
     const sessionKey = attemptId !== null ? `final-assessment-session-${courseId}-${attemptId}` : `final-assessment-session-${courseId}`;
     const progress = numericCourseId ? courseProgress[numericCourseId] : undefined;
-    const assessment = course?.final_assessment;
+    const assessment = attemptSnapshot || course?.final_assessment;
     const questions = assessment?.questions || [];
     const question = questions[currentQuestion];
     const answeredCount = Object.values(selectedAnswers).filter(answers => answers && answers.length > 0).length;
@@ -225,7 +227,7 @@ export const FinalAssessmentPage: React.FC = () => {
                 pass_mark: response.data?.pass_mark ?? passMark,
             });
             setShowResults(true);
-            clearAssessmentSessionData(courseId, attemptId);
+            clearAssessmentSessionData(sessionCourseId, attemptId);
             activeAttemptRef.current = null;
             dispatch(fetchCourseProgress(numericCourseId));
             toast.success('Final assessment submitted.');
@@ -256,7 +258,7 @@ export const FinalAssessmentPage: React.FC = () => {
     useEffect(() => {
         if (!startTime || !endTime || showResults || showInstructions) return;
 
-        saveAssessmentSessionData(courseId, attemptId, {
+        saveAssessmentSessionData(sessionCourseId, attemptId, {
             startTime: startTime.toISOString(),
             endTime: endTime.toISOString(),
             currentQuestion,
@@ -343,7 +345,7 @@ export const FinalAssessmentPage: React.FC = () => {
                                     pass_mark: resultPayload?.pass_mark ?? passMark,
                                 });
                                 setShowResults(true);
-                                clearAssessmentSessionData(courseId, attemptId);
+                                clearAssessmentSessionData(sessionCourseId, attemptId);
                                 activeAttemptRef.current = null;
                                 dispatch(fetchCourseProgress(numericCourseId));
                                 toast.info('Attempt auto-submitted due to tab-switch limit.');
@@ -379,7 +381,7 @@ export const FinalAssessmentPage: React.FC = () => {
     const startAssessment = async () => {
         if (!assessment?.id) return;
 
-        clearAssessmentSessionData(courseId, attemptId);
+        clearAssessmentSessionData(sessionCourseId, attemptId);
         activeAttemptRef.current = null;
         setAttemptId(null);
         setStartTime(null);
@@ -389,6 +391,7 @@ export const FinalAssessmentPage: React.FC = () => {
         setSelectedAnswers({});
         setTabSwitches(0);
         setBackendResult(null);
+        setAttemptSnapshot(null);
         setShowResults(false);
         setLockedMessage(null);
         setIsAttemptLoading(true);
@@ -401,6 +404,12 @@ export const FinalAssessmentPage: React.FC = () => {
                 const normalizedAttemptId = Number(newAttemptId);
                 setAttemptId(normalizedAttemptId);
                 activeAttemptRef.current = normalizedAttemptId;
+                if (inner?.assessment_snapshot) {
+                    setAttemptSnapshot({
+                        ...inner.assessment_snapshot,
+                        questions: inner.question_snapshot || [],
+                    });
+                }
                 console.debug('Started attempt id:', newAttemptId);
             } else {
                 console.warn('Could not determine attempt id from startAttempt response', response);
@@ -444,12 +453,12 @@ export const FinalAssessmentPage: React.FC = () => {
                 };
             });
 
-            const previousIndex = updated.findIndex(pair => pair.right === rightValue);
+            const previousIndex = updated.findIndex((pair: MatchingPair) => pair.right === rightValue);
             if (previousIndex !== -1) {
                 updated[previousIndex] = { ...updated[previousIndex], right: '' };
             }
 
-            const targetIndex = updated.findIndex(pair => pair.left === leftItem);
+            const targetIndex = updated.findIndex((pair: MatchingPair) => pair.left === leftItem);
             if (targetIndex !== -1) {
                 updated[targetIndex] = { ...updated[targetIndex], right: rightValue };
             }
@@ -658,7 +667,7 @@ export const FinalAssessmentPage: React.FC = () => {
                                     variant="outline"
                                     className="h-12 rounded-xl border-border dark:border-white/10 text-muted-foreground dark:text-gray-300 hover:text-foreground dark:hover:text-white hover:bg-accent dark:hover:bg-white/5"
                                     onClick={() => {
-                                        clearAssessmentSessionData(courseId, attemptId);
+                                        clearAssessmentSessionData(sessionCourseId, attemptId);
                                         setAttemptId(null);
                                         setCurrentQuestion(0);
                                         setSelectedAnswers({});
