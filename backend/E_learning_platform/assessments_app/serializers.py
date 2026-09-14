@@ -95,7 +95,8 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             for course in selected_courses:
                 existing_final = Assessment.objects.filter(
                     Q(course=course) | Q(courses=course),
-                    assessment_type='FINAL'
+                    assessment_type='FINAL',
+                    pending_delete=False,
                 )
                 if self.instance:
                     existing_final = existing_final.exclude(pk=self.instance.pk)
@@ -109,7 +110,8 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             for module in selected_modules:
                 existing_quiz = Assessment.objects.filter(
                     Q(module=module) | Q(modules=module),
-                    assessment_type='QUIZ'
+                    assessment_type='QUIZ',
+                    pending_delete=False,
                 )
                 if self.instance:
                     existing_quiz = existing_quiz.exclude(pk=self.instance.pk)
@@ -335,7 +337,7 @@ class QuestionSerializer(serializers.ModelSerializer):
 
     def _is_editor(self):
         request = self.context.get('request')
-        user = request.user if request else None
+        user = getattr(request, 'user', None) if request else None
         return bool(user and (
             user.is_superuser or
             user.groups.filter(name__in=['Admin', 'Instructor']).exists() or
@@ -442,6 +444,15 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
             'questions',
         ]
 
+    def _is_editor(self):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        return bool(user and (
+            user.is_superuser or
+            user.groups.filter(name__in=['Admin', 'Instructor']).exists() or
+            getattr(user, 'role', None) in ['admin', 'instructor']
+        ))
+
     def get_course_title(self, obj):
         if obj.course_id is not None:
             return Course.objects.filter(id=obj.course_id).values_list("title", flat=True).first()
@@ -482,6 +493,9 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
         } if is_admin else set()
         seen = set()
         attached = []
+        removed = {
+            str(value) for value in (obj.draft_course_removals or [])
+        } if self._is_editor() else set()
 
         for course in list(obj.courses.all()):
             if course and str(course.id) not in pending_removals and course.id not in seen:
@@ -516,6 +530,9 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
         } if is_admin else set()
         seen = set()
         attached = []
+        removed = {
+            str(value) for value in (obj.draft_module_removals or [])
+        } if self._is_editor() else set()
 
         for module in list(obj.modules.all()):
             if module and str(module.id) not in pending_removals and module.id not in seen:
