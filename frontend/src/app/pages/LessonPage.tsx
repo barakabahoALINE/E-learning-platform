@@ -42,6 +42,7 @@ import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { ContentBlockRenderer } from "../components/course/ContentBlockRenderer";
 import { cn } from "../components/ui/utils";
 import type { ContentBlock, ContentItem } from "../../features/courses/types";
+import { flattenModuleItems, getLessonNavigation } from "./lessonNavigation";
 
 const parseContentBlocks = (item: ContentItem): ContentBlock[] => {
   let blocks: ContentBlock[] = [];
@@ -130,27 +131,43 @@ export const LessonPage: React.FC = () => {
     }
   }, [dispatch, numericCourseId, course?.id]);
 
-  useEffect(() => {
-    // Auto-expand current module and its sections
-    if (numericModuleId) {
-      setExpandedModules((prev) =>
-        prev.includes(numericModuleId) ? prev : [...prev, numericModuleId],
-      );
-
-      const mod = course?.modules?.find((m) => m.id === numericModuleId);
-      if (mod) {
-        const sectionIds = mod.sections.map((s) => Number(s.id));
-        setExpandedSections((prev) => {
-          const newSet = new Set([...prev, ...sectionIds]);
-          return Array.from(newSet);
-        });
-      }
-    }
-  }, [numericModuleId, course]);
-
   const currentModule = useMemo(() => {
     return course?.modules?.find((m) => m.id === numericModuleId);
   }, [course, numericModuleId]);
+
+  const orderedLessons = useMemo(
+    () => flattenModuleItems(currentModule ?? {}),
+    [currentModule],
+  );
+  const lessonNavigation = useMemo(
+    () =>
+      getLessonNavigation(currentModule ?? {}, activeItemId, completedItemIds),
+    [activeItemId, completedItemIds, currentModule],
+  );
+  const currentLesson = lessonNavigation.currentItem;
+
+  useEffect(() => {
+    if (!numericModuleId) return;
+
+    setExpandedModules([numericModuleId]);
+
+    const mod = course?.modules?.find((m) => Number(m.id) === numericModuleId);
+    const activeSectionId = currentLesson?.sectionId ?? null;
+
+    if (mod && activeSectionId !== null) {
+      setExpandedSections([Number(activeSectionId)]);
+      return;
+    }
+
+    if (mod) {
+      const firstSectionId = mod.sections[0]?.id;
+      setExpandedSections(firstSectionId ? [Number(firstSectionId)] : []);
+    }
+  }, [numericModuleId, course, currentLesson?.sectionId]);
+  const previousLesson = lessonNavigation.previousItem;
+  const nextLesson = lessonNavigation.nextItem;
+  const isCurrentLessonComplete = lessonNavigation.isCurrentItemComplete;
+  const isModuleComplete = lessonNavigation.isModuleComplete;
 
   const currentModuleProgress = moduleContentsProgress[numericModuleId];
 
@@ -693,13 +710,13 @@ export const LessonPage: React.FC = () => {
 
   const toggleModule = (id: number) => {
     setExpandedModules((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
+      prev.includes(id) ? prev.filter((m) => m !== id) : [id],
     );
   };
 
   const toggleSection = (id: number) => {
     setExpandedSections((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+      prev.includes(id) ? prev.filter((s) => s !== id) : [id],
     );
   };
 
@@ -725,6 +742,55 @@ export const LessonPage: React.FC = () => {
       userCompletionIntentRef.current = false;
     }, 500);
   };
+
+  const handleNavigateToLesson = useCallback(
+    (itemId: string | number) => {
+      const targetItem = orderedLessons.find(
+        (lesson) => String(lesson.id) === String(itemId),
+      );
+      if (!targetItem) return;
+
+      userCompletionIntentRef.current = false;
+      setActiveItemId(itemId);
+      scrollMainToItem(itemId, "smooth");
+      window.setTimeout(() => {
+        userCompletionIntentRef.current = false;
+      }, 500);
+    },
+    [orderedLessons, scrollMainToItem],
+  );
+
+  const handlePreviousLesson = useCallback(() => {
+    if (!previousLesson) return;
+    handleNavigateToLesson(previousLesson.id);
+  }, [handleNavigateToLesson, previousLesson]);
+
+  const handleNextLesson = useCallback(() => {
+    if (!currentModule) return;
+
+    if (nextLesson) {
+      if (!isCurrentLessonComplete) return;
+      handleNavigateToLesson(nextLesson.id);
+      return;
+    }
+
+    if (isModuleComplete) {
+      if (currentModule.quiz) {
+        navigate(`/learning/${courseId}/quiz/${currentModule.id}`);
+      } else {
+        handleNextModule();
+      }
+    }
+  }, [
+    currentModule,
+    courseId,
+    handleNavigateToLesson,
+    handleNextModule,
+    isCurrentLessonComplete,
+    isModuleComplete,
+    nextLesson,
+    navigate,
+  ]);
 
   const handleCloseLesson = async () => {
     if (numericCourseId) {
@@ -968,6 +1034,69 @@ export const LessonPage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {currentLesson && (
+            <div className="sticky bottom-4 z-30 mt-8 pb-4">
+              <div className="mx-auto max-w-5xl px-4 sm:px-6">
+                <div className="pointer-events-auto rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/60 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/90 dark:shadow-none">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground dark:text-slate-400">
+                        Lesson {lessonNavigation.currentLessonNumber} of{" "}
+                        {lessonNavigation.totalLessons}
+                      </p>
+                      <p className="truncate text-sm font-semibold text-foreground dark:text-white">
+                        {currentLesson.title}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!previousLesson}
+                        onClick={handlePreviousLesson}
+                        className="h-10 rounded-xl px-3 text-sm"
+                        aria-label={
+                          previousLesson
+                            ? `Previous lesson: ${previousLesson.title}`
+                            : "Previous lesson unavailable"
+                        }
+                      >
+                        ← Previous
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        disabled={
+                          nextLesson
+                            ? !isCurrentLessonComplete
+                            : !isModuleComplete
+                        }
+                        onClick={handleNextLesson}
+                        className="h-10 rounded-xl px-4 text-sm font-semibold"
+                        aria-label={
+                          nextLesson
+                            ? `Next lesson: ${nextLesson.title}`
+                            : isModuleComplete
+                              ? "Continue to module completion"
+                              : "Next lesson unavailable until current lesson is complete"
+                        }
+                      >
+                        {nextLesson
+                          ? `Next: ${nextLesson.title}`
+                          : isModuleComplete
+                            ? currentModule.quiz
+                              ? "Start Module Quiz"
+                              : "Continue"
+                            : "Next Lesson"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
 
         {/* Backdrop for Mobile Sidebar */}
