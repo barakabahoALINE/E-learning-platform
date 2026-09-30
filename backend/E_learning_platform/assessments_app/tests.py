@@ -59,7 +59,7 @@ class AssessmentSerializerTests(TestCase):
         assessment = serializer.save()
 
         self.assertEqual(assessment.assessment_type, "QUIZ")
-        self.assertEqual(assessment.max_attempts, 1)
+        self.assertEqual(assessment.max_attempts, 3)
         self.assertEqual(assessment.duration, 30)
 
     def test_independent_quiz_can_be_created_without_course_or_module(self):

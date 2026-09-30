@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useAppDispatch } from "../../hooks/reduxHooks";
 import { toast } from "sonner";
 import {
@@ -61,15 +61,21 @@ export function AssessmentsPage() {
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [createForm, setCreateForm] = useState<CreateTemplateForm | null>(null);
-  const [questionTarget, setQuestionTarget] = useState<AssessmentLibraryItem | null>(null);
-  const [editingQuestion, setEditingQuestion] = useState<QuizQuestion | null>(null);
+  const [questionTarget, setQuestionTarget] =
+    useState<AssessmentLibraryItem | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<QuizQuestion | null>(
+    null,
+  );
   const [deleteQuestionTarget, setDeleteQuestionTarget] = useState<{
     item: AssessmentLibraryItem;
     question: QuizQuestion;
   } | null>(null);
-  const [attachmentTarget, setAttachmentTarget] = useState<AssessmentLibraryItem | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AssessmentLibraryItem | null>(null);
-  const [editingAssessment, setEditingAssessment] = useState<AssessmentLibraryItem | null>(null);
+  const [attachmentTarget, setAttachmentTarget] =
+    useState<AssessmentLibraryItem | null>(null);
+  const [deleteTarget, setDeleteTarget] =
+    useState<AssessmentLibraryItem | null>(null);
+  const [editingAssessment, setEditingAssessment] =
+    useState<AssessmentLibraryItem | null>(null);
   const dispatch = useAppDispatch();
 
   const loadLibrary = async () => {
@@ -96,7 +102,9 @@ export function AssessmentsPage() {
         if (!normalizedQuery) return true;
         return [item.title, item.courseTitle, item.moduleTitle]
           .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(normalizedQuery));
+          .some((value) =>
+            String(value).toLowerCase().includes(normalizedQuery),
+          );
       });
   }, [activeTab, items, query]);
 
@@ -118,8 +126,11 @@ export function AssessmentsPage() {
         pass_mark: Number(createForm.pass_mark) || 60,
         max_attempts: Number(createForm.max_attempts) || 3,
         duration: Number(createForm.duration) || 30,
-        tab_switch_enabled: isFinalAssessment && Boolean(createForm.tab_switch_enabled),
-        tab_switch_limit: isFinalAssessment ? Number(createForm.tab_switch_limit) || 0 : 0,
+        tab_switch_enabled:
+          isFinalAssessment && Boolean(createForm.tab_switch_enabled),
+        tab_switch_limit: isFinalAssessment
+          ? Number(createForm.tab_switch_limit) || 0
+          : 0,
       };
 
       const response = await dispatch(createAssessment(payload)).unwrap();
@@ -142,21 +153,35 @@ export function AssessmentsPage() {
       const payload: any = {
         assessment: questionTarget.id,
         question_text: question.question_text || question.question,
-        question_type: question.question_type === "multiple" ? "multiple" : question.question_type === "matching" ? "matching" : "single",
+        question_type:
+          question.question_type === "multiple"
+            ? "multiple"
+            : question.question_type === "matching"
+              ? "matching"
+              : "single",
         marks: question.marks || 1,
       };
 
       if (question.question_type === "matching") {
         payload.matching_pairs = question.matching_pairs || [];
       } else {
-        payload.choices = (question.choices && question.choices.length > 0)
-          ? question.choices.map((choice) => ({ text: String(choice.text || ""), is_correct: Boolean(choice.is_correct) }))
-          : (question.options || []).map((option, index) => ({ text: String(option || ""), is_correct: index === question.correctAnswer }));
+        payload.choices =
+          question.choices && question.choices.length > 0
+            ? question.choices.map((choice) => ({
+                text: String(choice.text || ""),
+                is_correct: Boolean(choice.is_correct),
+              }))
+            : (question.options || []).map((option, index) => ({
+                text: String(option || ""),
+                is_correct: index === question.correctAnswer,
+              }));
       }
 
       const isUpdate = Boolean(question.id);
       if (isUpdate) {
-        await dispatch(updateQuestion({ questionId: question.id, data: payload })).unwrap();
+        await dispatch(
+          updateQuestion({ questionId: question.id, data: payload }),
+        ).unwrap();
       } else {
         await dispatch(addQuestion(payload)).unwrap();
       }
@@ -171,7 +196,10 @@ export function AssessmentsPage() {
     }
   };
 
-  const openQuestionEditor = (item: AssessmentLibraryItem, question?: QuizQuestion) => {
+  const openQuestionEditor = (
+    item: AssessmentLibraryItem,
+    question?: QuizQuestion,
+  ) => {
     setQuestionTarget(item);
     setEditingQuestion(question || null);
   };
@@ -180,11 +208,17 @@ export function AssessmentsPage() {
     // Open the assessment settings modal (reuse create form) for editing
     setEditingAssessment(item);
     setCreateForm({
-      title: item.title || (item.assessment_type === "FINAL" ? "Final Assessment" : "New Quiz"),
+      title:
+        item.title ||
+        (item.assessment_type === "FINAL" ? "Final Assessment" : "New Quiz"),
       assessment_type: item.assessment_type,
-      pass_mark: String(item.pass_mark ?? (item.assessment_type === "FINAL" ? 60 : 70)),
+      pass_mark: String(
+        item.pass_mark ?? (item.assessment_type === "FINAL" ? 60 : 70),
+      ),
       max_attempts: String(item.max_attempts ?? 3),
-      duration: String(item.duration ?? (item.assessment_type === "FINAL" ? 60 : 30)),
+      duration: String(
+        item.duration ?? (item.assessment_type === "FINAL" ? 60 : 30),
+      ),
       tab_switch_enabled: Boolean(item.tab_switch_enabled),
       tab_switch_limit: String(item.tab_switch_limit ?? 0),
     });
@@ -205,11 +239,22 @@ export function AssessmentsPage() {
         duration: Number(createForm.duration) || 0,
         max_attempts: Number(createForm.max_attempts) || 0,
         pass_mark: Number(createForm.pass_mark) || 0,
-        tab_switch_enabled: createForm.assessment_type === 'FINAL' ? Boolean(createForm.tab_switch_enabled) : false,
-        tab_switch_limit: createForm.assessment_type === 'FINAL' ? Number(createForm.tab_switch_limit) || 0 : 0,
+        tab_switch_enabled:
+          createForm.assessment_type === "FINAL"
+            ? Boolean(createForm.tab_switch_enabled)
+            : false,
+        tab_switch_limit:
+          createForm.assessment_type === "FINAL"
+            ? Number(createForm.tab_switch_limit) || 0
+            : 0,
       };
 
-      await dispatch(updateAssessmentSettings({ assessmentId: editingAssessment.id, data: payload })).unwrap();
+      await dispatch(
+        updateAssessmentSettings({
+          assessmentId: editingAssessment.id,
+          data: payload,
+        }),
+      ).unwrap();
       await loadLibrary();
       toast.success("Assessment updated successfully");
     } catch (error: any) {
@@ -222,7 +267,9 @@ export function AssessmentsPage() {
 
   const handleOpenAttachmentModal = (item: AssessmentLibraryItem) => {
     if (item.source !== "course") {
-      toast.error("Only backend course assessments can be attached or detached.");
+      toast.error(
+        "Only backend course assessments can be attached or detached.",
+      );
       return;
     }
     setAttachmentTarget(item);
@@ -237,7 +284,15 @@ export function AssessmentsPage() {
     if (!deleteTarget) return;
     try {
       await dispatch(deleteAssessmentAction(deleteTarget.id)).unwrap();
-      setItems((prev) => prev.filter((existing) => !(existing.source === "course" && String(existing.id) === String(deleteTarget.id))));
+      setItems((prev) =>
+        prev.filter(
+          (existing) =>
+            !(
+              existing.source === "course" &&
+              String(existing.id) === String(deleteTarget.id)
+            ),
+        ),
+      );
       toast.success("Assessment deleted successfully.");
     } catch (error: any) {
       toast.error(error?.message || "Failed to delete assessment");
@@ -250,22 +305,32 @@ export function AssessmentsPage() {
     handleOpenAttachmentModal(item);
   };
 
-  const handleAttachAssessment = async (payload: { module_ids?: Array<number | string>; course_ids?: Array<number | string> }) => {
+  const handleAttachAssessment = async (payload: {
+    module_ids?: Array<number | string>;
+    course_ids?: Array<number | string>;
+  }) => {
     if (!attachmentTarget) return;
 
     try {
-      await dispatch(attachAssessment({ assessmentId: attachmentTarget.id, payload })).unwrap();
+      await dispatch(
+        attachAssessment({ assessmentId: attachmentTarget.id, payload }),
+      ).unwrap();
       await loadLibrary();
     } catch (error: any) {
       throw error;
     }
   };
 
-  const handleDetachAttachment = async (payload: { module_id?: number | string; course_id?: number | string }) => {
+  const handleDetachAttachment = async (payload: {
+    module_id?: number | string;
+    course_id?: number | string;
+  }) => {
     if (!attachmentTarget) return;
 
     try {
-      await dispatch(detachAssessment({ assessmentId: attachmentTarget.id, payload })).unwrap();
+      await dispatch(
+        detachAssessment({ assessmentId: attachmentTarget.id, payload }),
+      ).unwrap();
       await loadLibrary();
     } catch (error: any) {
       throw error;
@@ -304,21 +369,29 @@ export function AssessmentsPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Assessments</h1>
-              <p className="text-sm text-gray-500">Quizzes and final assessments</p>
+              <p className="text-sm text-gray-500">
+                Quizzes and final assessments
+              </p>
             </div>
           </div>
           <div className="inline-flex p-1 rounded-lg bg-gray-100 border border-gray-200">
             <button
               onClick={() => setActiveTab("QUIZ")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === "QUIZ" ? "bg-white text-blue-600 shadow-sm" : "text-gray-600 hover:text-gray-900"
-                }`}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors ${
+                activeTab === "QUIZ"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
             >
               Quizzes
             </button>
             <button
               onClick={() => setActiveTab("FINAL")}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === "FINAL" ? "bg-white text-blue-600 shadow-sm" : "text-gray-600 hover:text-gray-900"
-                }`}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors ${
+                activeTab === "FINAL"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
             >
               Final Assessments
             </button>
@@ -346,21 +419,30 @@ export function AssessmentsPage() {
       </div>
 
       {isLoading ? (
-        <div className="py-20 text-center text-sm text-gray-500">Loading assessments...</div>
+        <div className="py-20 text-center text-sm text-gray-500">
+          Loading assessments...
+        </div>
       ) : filteredItems.length === 0 ? (
         <div className="py-20 text-center border-2 border-dashed border-gray-200 rounded-xl bg-white">
           <CheckCircle2 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-gray-700">No {label.toLowerCase()}s found</p>
+          <p className="text-sm font-semibold text-gray-700">
+            No {label.toLowerCase()}s found
+          </p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredItems.map((item) => (
-            <div key={`${item.source}-${item.id}`} className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+            <div
+              key={`${item.source}-${item.id}`}
+              className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm"
+            >
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-base font-bold text-gray-900 truncate">{item.title}</h3>
-                    </div>
+                    <h3 className="text-base font-bold text-gray-900 truncate">
+                      {item.title}
+                    </h3>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -375,11 +457,19 @@ export function AssessmentsPage() {
                     type="button"
                     onClick={() => handleToggleAttachment(item)}
                     className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                    title={item.assessment_type === "QUIZ" ? (item.moduleId ? "Manage module attachments" : "Attach to modules") : (item.courseId ? "Manage course attachments" : "Attach to courses")}
+                    title={
+                      item.assessment_type === "QUIZ"
+                        ? item.moduleId
+                          ? "Manage module attachments"
+                          : "Attach to modules"
+                        : item.courseId
+                          ? "Manage course attachments"
+                          : "Attach to courses"
+                    }
                   >
                     <Paperclip className="w-4 h-4" />
                   </button>
-                      <button
+                  <button
                     onClick={() => handleDeleteAssessment(item)}
                     className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                     title="Delete assessment"
@@ -391,7 +481,8 @@ export function AssessmentsPage() {
 
               <div className="flex flex-wrap gap-2 mb-4">
                 <span className="text-[11px] px-2 py-1 rounded bg-gray-50 text-gray-600 border border-gray-100">
-                  {(item.questions || []).length} question{(item.questions || []).length === 1 ? "" : "s"}
+                  {(item.questions || []).length} question
+                  {(item.questions || []).length === 1 ? "" : "s"}
                 </span>
                 {item.duration != null && (
                   <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 border border-gray-100">
@@ -416,28 +507,34 @@ export function AssessmentsPage() {
               {item.questions.length > 0 && (
                 <div className="space-y-2 mb-4 max-h-64 overflow-y-auto pr-1">
                   {item.questions.map((question, index) => (
-                    <div key={question.id || index} className="flex items-center justify-between gap-2 text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                    <div
+                      key={question.id || index}
+                      className="flex items-center justify-between gap-2 text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2"
+                    >
                       <span className="min-w-0 truncate">
-                        {index + 1}. {question.question_text || question.question}
+                        {index + 1}.{" "}
+                        {question.question_text || question.question}
                       </span>
-                        <span className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => openQuestionEditor(item, question)}
-                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                            title="Edit question"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteQuestionTarget({ item, question })}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                            title="Delete question"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </span>
+                      <span className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openQuestionEditor(item, question)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                          title="Edit question"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDeleteQuestionTarget({ item, question })
+                          }
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          title="Delete question"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -471,7 +568,9 @@ export function AssessmentsPage() {
             <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
               <div>
                 <h2 className="text-base font-semibold text-gray-900">
-                  {editingAssessment ? `Edit ${createForm.assessment_type === "QUIZ" ? "Quiz" : "Assessment"}` : `Create ${createForm.assessment_type === "QUIZ" ? "Quiz" : "Final Assessment"}`}
+                  {editingAssessment
+                    ? `Edit ${createForm.assessment_type === "QUIZ" ? "Quiz" : "Assessment"}`
+                    : `Create ${createForm.assessment_type === "QUIZ" ? "Quiz" : "Final Assessment"}`}
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
                   Set the rules for how students will take this assessment
@@ -483,15 +582,25 @@ export function AssessmentsPage() {
                     <span className="text-sm">Tab switch</span>
                     <button
                       type="button"
-                      onClick={() => setCreateForm({ ...createForm, tab_switch_enabled: !createForm.tab_switch_enabled })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${createForm.tab_switch_enabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                      onClick={() =>
+                        setCreateForm({
+                          ...createForm,
+                          tab_switch_enabled: !createForm.tab_switch_enabled,
+                        })
+                      }
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${createForm.tab_switch_enabled ? "bg-blue-600" : "bg-gray-200"}`}
                     >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${createForm.tab_switch_enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${createForm.tab_switch_enabled ? "translate-x-5" : "translate-x-1"}`}
+                      />
                     </button>
                   </label>
                 )}
                 <button
-                  onClick={() => { setCreateForm(null); setEditingAssessment(null); }}
+                  onClick={() => {
+                    setCreateForm(null);
+                    setEditingAssessment(null);
+                  }}
                   className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <X className="w-4 h-4 text-gray-500" />
@@ -501,10 +610,14 @@ export function AssessmentsPage() {
 
             <div className="p-5 space-y-5 overflow-y-auto max-h-[calc(100vh-15rem)]">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Title</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Title
+                </label>
                 <input
                   value={createForm.title}
-                  onChange={(event) => setCreateForm({ ...createForm, title: event.target.value })}
+                  onChange={(event) =>
+                    setCreateForm({ ...createForm, title: event.target.value })
+                  }
                   className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g., Final Assessment"
                 />
@@ -520,11 +633,18 @@ export function AssessmentsPage() {
                   min={1}
                   max={100}
                   value={createForm.pass_mark}
-                  onChange={(event) => setCreateForm({ ...createForm, pass_mark: event.target.value })}
+                  onChange={(event) =>
+                    setCreateForm({
+                      ...createForm,
+                      pass_mark: event.target.value,
+                    })
+                  }
                   className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g., 60"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">Minimum percentage score required to pass.</p>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Minimum percentage score required to pass.
+                </p>
               </div>
 
               <div>
@@ -536,11 +656,18 @@ export function AssessmentsPage() {
                   type="number"
                   min={1}
                   value={createForm.max_attempts}
-                  onChange={(event) => setCreateForm({ ...createForm, max_attempts: event.target.value })}
+                  onChange={(event) =>
+                    setCreateForm({
+                      ...createForm,
+                      max_attempts: event.target.value,
+                    })
+                  }
                   className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g., 3"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">Number of times a student can attempt this assessment.</p>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Number of times a student can attempt this assessment.
+                </p>
               </div>
 
               <div>
@@ -552,52 +679,77 @@ export function AssessmentsPage() {
                   type="number"
                   min={1}
                   value={createForm.duration}
-                  onChange={(event) => setCreateForm({ ...createForm, duration: event.target.value })}
+                  onChange={(event) =>
+                    setCreateForm({
+                      ...createForm,
+                      duration: event.target.value,
+                    })
+                  }
                   className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g., 60"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">Time limit students have to complete the assessment.</p>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Time limit students have to complete the assessment.
+                </p>
               </div>
 
-              {createForm.assessment_type === "FINAL" && createForm.tab_switch_enabled && (
-                <div>
-                  <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-                    <ShieldCheck className="w-4 h-4 text-orange-500" />
-                    tabswitch
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={createForm.tab_switch_limit}
-                    onChange={(event) => setCreateForm({ ...createForm, tab_switch_limit: event.target.value })}
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., 3"
-                  />
-                  <p className="text-[11px] text-gray-400 mt-1">Maximum number of allowed tab switches during the assessment.</p>
-                </div>
-              )}
+              {createForm.assessment_type === "FINAL" &&
+                createForm.tab_switch_enabled && (
+                  <div>
+                    <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+                      <ShieldCheck className="w-4 h-4 text-orange-500" />
+                      tabswitch
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={createForm.tab_switch_limit}
+                      onChange={(event) =>
+                        setCreateForm({
+                          ...createForm,
+                          tab_switch_limit: event.target.value,
+                        })
+                      }
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="e.g., 3"
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      Maximum number of allowed tab switches during the
+                      assessment.
+                    </p>
+                  </div>
+                )}
 
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
                   <Clock className="w-3 h-3" /> {createForm.duration} min
                 </span>
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  <RefreshCw className="w-3 h-3" /> {createForm.max_attempts} attempt{createForm.max_attempts !== "1" ? "s" : ""}
+                  <RefreshCw className="w-3 h-3" /> {createForm.max_attempts}{" "}
+                  attempt{createForm.max_attempts !== "1" ? "s" : ""}
                 </span>
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
                   <Info className="w-3 h-3" /> Pass: {createForm.pass_mark}%
                 </span>
-                {createForm.assessment_type === "FINAL" && createForm.tab_switch_enabled && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-orange-500 border border-gray-200">
-                    <ShieldCheck className="w-3 h-3 text-orange-500" /> {Number(createForm.tab_switch_limit || 0)} switch{Number(createForm.tab_switch_limit || 0) === 1 ? "" : "es"}
-                  </span>
-                )}
+                {createForm.assessment_type === "FINAL" &&
+                  createForm.tab_switch_enabled && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-orange-500 border border-gray-200">
+                      <ShieldCheck className="w-3 h-3 text-orange-500" />{" "}
+                      {Number(createForm.tab_switch_limit || 0)} switch
+                      {Number(createForm.tab_switch_limit || 0) === 1
+                        ? ""
+                        : "es"}
+                    </span>
+                  )}
               </div>
             </div>
 
             <div className="p-5 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0">
               <button
-                onClick={() => { setCreateForm(null); setEditingAssessment(null); }}
+                onClick={() => {
+                  setCreateForm(null);
+                  setEditingAssessment(null);
+                }}
                 className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Cancel

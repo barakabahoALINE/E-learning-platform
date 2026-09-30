@@ -16,6 +16,7 @@ import {
 import {
   ChevronRight,
   ChevronDown,
+  Check,
   CheckCircle2,
   Circle,
   FileText,
@@ -41,6 +42,7 @@ import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { ContentBlockRenderer } from "../components/course/ContentBlockRenderer";
 import { cn } from "../components/ui/utils";
 import type { ContentBlock, ContentItem } from "../../features/courses/types";
+import { flattenModuleItems, getLessonNavigation } from "./lessonNavigation";
 
 const parseContentBlocks = (item: ContentItem): ContentBlock[] => {
   let blocks: ContentBlock[] = [];
@@ -129,27 +131,43 @@ export const LessonPage: React.FC = () => {
     }
   }, [dispatch, numericCourseId, course?.id]);
 
-  useEffect(() => {
-    // Auto-expand current module and its sections
-    if (numericModuleId) {
-      setExpandedModules((prev) =>
-        prev.includes(numericModuleId) ? prev : [...prev, numericModuleId],
-      );
-
-      const mod = course?.modules?.find((m) => m.id === numericModuleId);
-      if (mod) {
-        const sectionIds = mod.sections.map((s) => Number(s.id));
-        setExpandedSections((prev) => {
-          const newSet = new Set([...prev, ...sectionIds]);
-          return Array.from(newSet);
-        });
-      }
-    }
-  }, [numericModuleId, course]);
-
   const currentModule = useMemo(() => {
     return course?.modules?.find((m) => m.id === numericModuleId);
   }, [course, numericModuleId]);
+
+  const orderedLessons = useMemo(
+    () => flattenModuleItems(currentModule ?? {}),
+    [currentModule],
+  );
+  const lessonNavigation = useMemo(
+    () =>
+      getLessonNavigation(currentModule ?? {}, activeItemId, completedItemIds),
+    [activeItemId, completedItemIds, currentModule],
+  );
+  const currentLesson = lessonNavigation.currentItem;
+
+  useEffect(() => {
+    if (!numericModuleId) return;
+
+    setExpandedModules([numericModuleId]);
+
+    const mod = course?.modules?.find((m) => Number(m.id) === numericModuleId);
+    const activeSectionId = currentLesson?.sectionId ?? null;
+
+    if (mod && activeSectionId !== null) {
+      setExpandedSections([Number(activeSectionId)]);
+      return;
+    }
+
+    if (mod) {
+      const firstSectionId = mod.sections[0]?.id;
+      setExpandedSections(firstSectionId ? [Number(firstSectionId)] : []);
+    }
+  }, [numericModuleId, course, currentLesson?.sectionId]);
+  const previousLesson = lessonNavigation.previousItem;
+  const nextLesson = lessonNavigation.nextItem;
+  const isCurrentLessonComplete = lessonNavigation.isCurrentItemComplete;
+  const isModuleComplete = lessonNavigation.isModuleComplete;
 
   const currentModuleProgress = moduleContentsProgress[numericModuleId];
 
@@ -692,13 +710,13 @@ export const LessonPage: React.FC = () => {
 
   const toggleModule = (id: number) => {
     setExpandedModules((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
+      prev.includes(id) ? prev.filter((m) => m !== id) : [id],
     );
   };
 
   const toggleSection = (id: number) => {
     setExpandedSections((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+      prev.includes(id) ? prev.filter((s) => s !== id) : [id],
     );
   };
 
@@ -724,6 +742,55 @@ export const LessonPage: React.FC = () => {
       userCompletionIntentRef.current = false;
     }, 500);
   };
+
+  const handleNavigateToLesson = useCallback(
+    (itemId: string | number) => {
+      const targetItem = orderedLessons.find(
+        (lesson) => String(lesson.id) === String(itemId),
+      );
+      if (!targetItem) return;
+
+      userCompletionIntentRef.current = false;
+      setActiveItemId(itemId);
+      scrollMainToItem(itemId, "smooth");
+      window.setTimeout(() => {
+        userCompletionIntentRef.current = false;
+      }, 500);
+    },
+    [orderedLessons, scrollMainToItem],
+  );
+
+  const handlePreviousLesson = useCallback(() => {
+    if (!previousLesson) return;
+    handleNavigateToLesson(previousLesson.id);
+  }, [handleNavigateToLesson, previousLesson]);
+
+  const handleNextLesson = useCallback(() => {
+    if (!currentModule) return;
+
+    if (nextLesson) {
+      if (!isCurrentLessonComplete) return;
+      handleNavigateToLesson(nextLesson.id);
+      return;
+    }
+
+    if (isModuleComplete) {
+      if (currentModule.quiz) {
+        navigate(`/learning/${courseId}/quiz/${currentModule.id}`);
+      } else {
+        handleNextModule();
+      }
+    }
+  }, [
+    currentModule,
+    courseId,
+    handleNavigateToLesson,
+    handleNextModule,
+    isCurrentLessonComplete,
+    isModuleComplete,
+    nextLesson,
+    navigate,
+  ]);
 
   const handleCloseLesson = async () => {
     if (numericCourseId) {
@@ -851,24 +918,24 @@ export const LessonPage: React.FC = () => {
 
             {/* Module Completion / Quiz Section */}
             <div className="pt-20 pb-10" id="module-quiz-banner">
-              <div className="relative rounded-3xl overflow-hidden bg-card text-card-foreground border p-8">
-                <div className="relative flex flex-col md:flex-row items-center gap-8">
+              <div className="mx-auto max-w-5xl rounded-2xl border border-slate-200 bg-card p-4 text-card-foreground shadow-sm dark:border-slate-700 sm:p-6">
+                <div className="flex flex-col items-center gap-4 md:flex-row md:items-center">
                   {currentModule.quiz ? (
                     <>
-                      <div className="w-20 h-20 rounded-2xl bg-blue-500/20 flex items-center justify-center flex-shrink-0 border border-blue-500/30">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10">
                         {isCurrentModuleCompleted ? (
-                          <CheckCircle2 className="w-10 h-10 text-green-500" />
+                          <CheckCircle2 className="h-7 w-7 text-green-500" />
                         ) : (
-                          <FileText className="w-10 h-10 text-blue-400" />
+                          <FileText className="h-7 w-7 text-blue-500" />
                         )}
                       </div>
                       <div className="flex-1 text-center md:text-left">
-                        <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">
+                        <h3 className="text-xl font-bold text-foreground dark:text-white">
                           {isCurrentModuleCompleted
                             ? "Module Review Complete"
                             : "Module Review"}
                         </h3>
-                        <p className="text-muted-foreground dark:text-gray-300 text-lg">
+                        <p className="mt-1 text-sm text-muted-foreground dark:text-gray-300">
                           {isCurrentModuleCompleted
                             ? "Your quiz result is saved. You can continue learning."
                             : "Test your knowledge with the module quiz to proceed."}
@@ -883,7 +950,7 @@ export const LessonPage: React.FC = () => {
                                 `/learning/${courseId}/quiz/${currentModule.id}`,
                               )
                         }
-                        className="h-14 px-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300"
+                        className="h-11 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700"
                       >
                         {isCurrentModuleCompleted
                           ? nextModule
@@ -894,21 +961,21 @@ export const LessonPage: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <div className="w-20 h-20 rounded-2xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0 border border-emerald-500/30">
-                        <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10">
+                        <CheckCircle2 className="h-7 w-7 text-emerald-500" />
                       </div>
                       <div className="flex-1 text-center md:text-left">
-                        <h3 className="text-2xl font-bold text-foreground dark:text-white mb-2">
+                        <h3 className="text-xl font-bold text-foreground dark:text-white">
                           Well Done!
                         </h3>
-                        <p className="text-muted-foreground dark:text-gray-300 text-lg">
-                          You've completed all lessons in this module.
+                        <p className="mt-1 text-sm text-muted-foreground dark:text-gray-300">
+                          You&apos;ve completed all lessons in this module.
                         </p>
                       </div>
                       <Button
                         size="lg"
                         onClick={handleNextModule}
-                        className="h-14 px-8 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-semibold transition-colors"
+                        className="h-11 rounded-xl bg-emerald-500 px-5 text-sm font-semibold text-white hover:bg-emerald-600"
                       >
                         {nextModule ? "Next Module" : "Finish Course"}
                       </Button>
@@ -967,6 +1034,69 @@ export const LessonPage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {currentLesson && (
+            <div className="sticky bottom-4 z-30 mt-8 pb-4">
+              <div className="mx-auto max-w-5xl px-4 sm:px-6">
+                <div className="pointer-events-auto rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/60 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/90 dark:shadow-none">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground dark:text-slate-400">
+                        Lesson {lessonNavigation.currentLessonNumber} of{" "}
+                        {lessonNavigation.totalLessons}
+                      </p>
+                      <p className="truncate text-sm font-semibold text-foreground dark:text-white">
+                        {currentLesson.title}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!previousLesson}
+                        onClick={handlePreviousLesson}
+                        className="h-10 rounded-xl px-3 text-sm"
+                        aria-label={
+                          previousLesson
+                            ? `Previous lesson: ${previousLesson.title}`
+                            : "Previous lesson unavailable"
+                        }
+                      >
+                        ← Previous
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        disabled={
+                          nextLesson
+                            ? !isCurrentLessonComplete
+                            : !isModuleComplete
+                        }
+                        onClick={handleNextLesson}
+                        className="h-10 rounded-xl px-4 text-sm font-semibold"
+                        aria-label={
+                          nextLesson
+                            ? `Next lesson: ${nextLesson.title}`
+                            : isModuleComplete
+                              ? "Continue to module completion"
+                              : "Next lesson unavailable until current lesson is complete"
+                        }
+                      >
+                        {nextLesson
+                          ? `Next: ${nextLesson.title}`
+                          : isModuleComplete
+                            ? currentModule.quiz
+                              ? "Start Module Quiz"
+                              : "Continue"
+                            : "Next Lesson"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
 
         {/* Backdrop for Mobile Sidebar */}
@@ -1116,7 +1246,8 @@ export const LessonPage: React.FC = () => {
                             </div>
                           </CollapsibleTrigger>
 
-                          <CollapsibleContent className="pl-8 pr-2 space-y-0.5 pt-1">
+                          <CollapsibleContent className="relative pl-7 pr-2 space-y-2 pt-1 pb-1">
+                            <div className="pointer-events-none absolute left-[9px] top-2 bottom-2 w-px bg-emerald-200/70 dark:bg-emerald-500/20" />
                             {section.contents.map((item, iIdx) => {
                               const isActiveItem =
                                 String(item.id) === String(activeItemId);
@@ -1139,25 +1270,38 @@ export const LessonPage: React.FC = () => {
                                     }
                                   }}
                                   className={cn(
-                                    "w-full flex items-start gap-2 p-2 rounded text-left transition-colors mb-1 last:mb-0 border border-transparent",
+                                    "relative w-full flex items-start gap-3 pl-7 pr-1 py-2 text-left transition-colors duration-200 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-50 dark:focus-visible:ring-offset-[#111827]",
                                     isActiveItem
-                                      ? "active-lesson-card"
-                                      : "hover:bg-gray-100 dark:hover:bg-[#1F2937]/45",
-                                    isCompleted &&
-                                      !isActiveItem &&
-                                      "opacity-85",
+                                      ? "bg-emerald-50/40 dark:bg-emerald-500/5"
+                                      : "hover:bg-accent/40 dark:hover:bg-white/[0.03]",
                                   )}
+                                  aria-current={
+                                    isActiveItem ? "step" : undefined
+                                  }
                                 >
-                                  <div className="flex-shrink-0 mt-0.5">
-                                    {getStatusIcon(isCompleted, isActiveItem)}
-                                  </div>
+                                  <span
+                                    aria-hidden="true"
+                                    className={cn(
+                                      "absolute left-0 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded-full transition-all",
+                                      isCompleted
+                                        ? "bg-emerald-600 border border-emerald-600"
+                                        : isActiveItem
+                                          ? "bg-emerald-50 dark:bg-emerald-500/10 border-2 border-emerald-600"
+                                          : "bg-white dark:bg-[#111827] border border-emerald-500/60 dark:border-emerald-400/50",
+                                    )}
+                                  >
+                                    {isCompleted ? (
+                                      <Check className="h-3 w-3 text-white" />
+                                    ) : null}
+                                  </span>
+
                                   <div className="flex-1 min-w-0">
                                     <p
                                       className={cn(
-                                        "text-[14px] font-medium leading-tight",
+                                        "text-[14px] leading-tight truncate",
                                         isActiveItem
-                                          ? "text-foreground dark:text-white"
-                                          : "text-muted-foreground dark:text-slate-200 group-hover:text-foreground dark:group-hover:text-white",
+                                          ? "font-semibold text-foreground dark:text-white"
+                                          : "font-medium text-foreground dark:text-slate-200",
                                       )}
                                     >
                                       {item.title}

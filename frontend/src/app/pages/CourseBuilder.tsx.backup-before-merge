@@ -1,0 +1,1084 @@
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
+import DeleteModal from "../components/ui/DeleteModal";
+import {
+  ArrowLeft,
+  Plus,
+  Edit2,
+  Trash2,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  CircleCheckBig,
+  Type,
+  Video,
+  Image as ImageIcon,
+  File as FileIcon,
+  Clock,
+  RefreshCw,
+  ShieldCheck,
+  Unlink2,
+} from "lucide-react";
+
+import StatusModal from "../components/ui/StatusModal";
+import { LessonModal } from "./course-builder/LessonModal";
+import { AssessmentModal } from "./course-builder/AssessmentModal";
+import { CoursePreviewModal } from "./course-builder/CoursePreviewModal";
+import { FinalAssessmentSettingsModal } from "./course-builder/FinalAssessmentSettingsModal";
+import { AssessmentLibraryPickerModal } from "./course-builder/AssessmentLibraryPickerModal";
+
+import {
+  fetchCourseDetails,
+  updateCourse,
+  publishCourse,
+  publishCourseChanges,
+  createModule,
+  updateModule,
+  deleteModule,
+  createSection,
+  updateSection,
+  deleteSection,
+  createContent,
+  updateContent,
+  deleteContent,
+  unpublishCourse
+} from "../../features/courses/courseSlice";
+import { createLocalAssessmentTemplate, cloneAssessmentIntoLocalTemplate, getLocalAssessmentTemplates, updateLocalAssessmentTemplate, type AssessmentLibraryItem, type LocalAssessmentTemplate } from "../../features/assessments/assessmentLibraryAdapter";
+import {
+  ContentItem,
+  QuizQuestion
+} from "../../features/courses/types";
+import { addQuestion, updateQuestion, createAssessment, attachAssessment, detachAssessment, deleteQuestionAction, updateAssessmentSettings } from "../../features/assessments/assessmentSlice";
+import assessmentAPI from "../../features/assessments/assessmentAPI";
+import type { AssessmentCreateData } from "../../features/assessments/types";
+import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
+
+export function CourseBuilderPage() {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const dispatch = useAppDispatch();
+
+  const course = useAppSelector((state) => state.courses.currentCourse);
+  const isLoading = useAppSelector((state) => state.courses.isLoading);
+
+  const [expandedModules, setExpandedModules] = useState<Set<string | number>>(
+    new Set(),
+  );
+  const [expandedSections, setExpandedSections] = useState<
+    Set<string | number>
+  >(new Set());
+  const [expandedContentItems, setExpandedContentItems] = useState<
+    Set<string | number>
+  >(new Set());
+  const [pendingModuleQuizzes, setPendingModuleQuizzes] = useState<
+    Record<string | number, LocalAssessmentTemplate>
+  >({});
+  const [pendingFinalAssessment, setPendingFinalAssessment] =
+    useState<LocalAssessmentTemplate | null>(null);
+  const [hasLocalUnpublishedChanges, setHasLocalUnpublishedChanges] =
+    useState(false);
+
+  const makeLocalQuestionId = () =>
+    `local-question-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  // Keep a ref mirror so async callbacks can read & restore the expanded state
+  // even after a fetchCourseDetails re-fetch resets the component.
+  const expandedModulesRef = useRef<Set<string | number>>(new Set());
+  const expandedSectionsRef = useRef<Set<string | number>>(new Set());
+
+  // Helper: dispatch fetchCourseDetails while preserving expanded state
+  const refetchCourse = async (courseId: string | number) => {
+    // Snapshot current expansion before the async call
+    const savedModules = new Set(expandedModulesRef.current);
+    const savedSections = new Set(expandedSectionsRef.current);
+    await dispatch(fetchCourseDetails(courseId));
+    // Re-apply after the store update triggers a re-render
+    setExpandedModules(savedModules);
+    setExpandedSections(savedSections);
+  };
+
+  const ensureFinalAssessmentTemplate = (forceCreate = false): LocalAssessmentTemplate | null => {
+    if (pendingFinalAssessment && !forceCreate) return pendingFinalAssessment;
+    if (!course.final_assessment) return null;
+
+    const item: AssessmentLibraryItem = {
+      id: course.final_assessment.id,
+      title: course.final_assessment.title || "Final Assessment",
+      assessment_type: course.final_assessment.assessment_type || "FINAL",
+      pass_mark: course.final_assessment.pass_mark,
+      max_attempts: course.final_assessment.max_attempts,
+      duration: course.final_assessment.duration,
+      tab_switch_enabled: course.final_assessment.tab_switch_enabled,
+      tab_switch_limit: course.final_assessment.tab_switch_limit,
+      descriptions: course.final_assessment.descriptions,
+      instructions: course.final_assessment.instructions,
+      questions: course.final_assessment.questions || [],
+      source: "course",
+      courseId: course.id,
+      courseTitle: course.title,
+    };
+
+    const template = cloneAssessmentIntoLocalTemplate(item);
+    setPendingFinalAssessment(template);
+    return template;
+  };
+
+  const ensureModuleQuizTemplate = (moduleId: string | number): LocalAssessmentTemplate | null => {
+    const existing = pendingModuleQuizzes[moduleId];
+    if (existing) return existing;
+
+    const module = course.modules?.find((m) => m.id === moduleId);
+    if (!module?.quiz) return null;
+
+    const item: AssessmentLibraryItem = {
+      id: module.quiz.id,
+      title: module.quiz.title || `Quiz: ${module.title}`,
+      assessment_type: module.quiz.assessment_type || "QUIZ",
+      pass_mark: module.quiz.pass_mark,
+      max_attempts: module.quiz.max_attempts,
+      duration: module.quiz.duration,
+      descriptions: module.quiz.descriptions,
+      instructions: module.quiz.instructions,
+      questions: module.quiz.questions || [],
+      source: "course",
+      courseId: course.id,
+      courseTitle: course.title,
+      moduleId: module.id,
+      moduleTitle: module.title,
+    };
+
+    const template = cloneAssessmentIntoLocalTemplate(item);
+    setPendingModuleQuizzes((prev) => ({
+      ...prev,
+      [moduleId]: template,
+    }));
+    return template;
+  };
+
+  const [showContentItemModal, setShowContentItemModal] = useState(false);
+  const [editingContentItem, setEditingContentItem] = useState<{
+    moduleId: string | number;
+    sectionId: string | number;
+    contentItem: ContentItem | null;
+  } | null>(null);
+
+  const [showAssessmentModal, setShowAssessmentModal] = useState<{
+    type: 'module' | 'final';
+    moduleId?: string | number;
+    assessmentId?: string | number;
+    question?: QuizQuestion;
+  } | null>(null);
+
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [isUnpublishing, setIsUnpublishing] = useState(false);
+  const [showUnpublishModal, setShowUnpublishModal] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: string, payload: any } | null>(null);
+  const [deleteQuestionTarget, setDeleteQuestionTarget] = useState<{ type: 'final' | 'module', questionId: any, moduleId?: string | number } | null>(null);
+  const [showFinalAssessmentSettings, setShowFinalAssessmentSettings] = useState<'create' | 'edit' | null>(null);
+  const [showAssessmentLibraryPicker, setShowAssessmentLibraryPicker] = useState<{ type: 'module' | 'final'; moduleId?: string | number } | null>(null);
+  const hasInitializedExpansion = useRef(false);
+
+  useEffect(() => {
+    setPendingModuleQuizzes({});
+    setPendingFinalAssessment(null);
+    setHasLocalUnpublishedChanges(false);
+    hasInitializedExpansion.current = false;
+
+    if (id && id !== "temp-id") {
+      dispatch(fetchCourseDetails(id));
+    }
+  }, [dispatch, id]);
+
+  useEffect(() => {
+    if (
+      course &&
+      course.modules &&
+      course.modules.length > 0 &&
+      !hasInitializedExpansion.current
+    ) {
+      setExpandedModules(new Set([course.modules[0].id]));
+      hasInitializedExpansion.current = true;
+    }
+  }, [course]);
+
+  const isCurrentCourseLoaded = Boolean(
+    course && (!id || String(course.id) === String(id)),
+  );
+
+  if ((!isCurrentCourseLoaded || isLoading) && id !== "temp-id") {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (!isCurrentCourseLoaded || !course) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h2 className="text-xl font-bold text-gray-900 mb-2">
+          Course not found
+        </h2>
+        <button
+          onClick={() => navigate("/admin/courses")}
+          className="text-indigo-600 hover:underline"
+        >
+          Back to Courses
+        </button>
+      </div>
+    );
+  }
+
+  const toggleModule = (moduleId: string | number) => {
+    const next = new Set(expandedModules);
+    if (next.has(moduleId)) next.delete(moduleId);
+    else next.add(moduleId);
+    expandedModulesRef.current = next;
+    setExpandedModules(next);
+  };
+
+  const toggleSection = (sectionId: string | number) => {
+    const next = new Set(expandedSections);
+    if (next.has(sectionId)) next.delete(sectionId);
+    else next.add(sectionId);
+    expandedSectionsRef.current = next;
+    setExpandedSections(next);
+  };
+
+  const toggleContentItem = (itemId: string | number) => {
+    const next = new Set(expandedContentItems);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
+    setExpandedContentItems(next);
+  };
+
+  const handleAddModule = async () => {
+    try {
+      const nextOrder =
+        (course.modules?.length || 0) > 0
+          ? Math.max(...(course.modules || []).map((m) => m.order)) + 1
+          : 1;
+      const res = await dispatch(
+        createModule({
+          courseId: course.id,
+          data: {
+            title: "New Module",
+            order: nextOrder,
+            sections: [],
+            has_unpublished_changes: true,
+          },
+        }),
+      ).unwrap();
+      const next = new Set(expandedModules);
+      next.add(res.data.id);
+      expandedModulesRef.current = next;
+      setExpandedModules(next);
+      toast.success("Module created successfully");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to create module");
+    }
+  };
+
+  const handleUpdateModuleTitle = async (
+    moduleId: string | number,
+    title: string,
+  ) => {
+    const module = course.modules?.find((m) => m.id === moduleId);
+    if (module) {
+      try {
+        await dispatch(
+          updateModule({
+            courseId: course.id,
+            moduleId,
+            data: { title, order: module.order },
+          }),
+        ).unwrap();
+        toast.success("Module title updated");
+      } catch (e: any) {
+        toast.error(e?.message || "Failed to update module");
+      }
+    }
+  };
+
+  const handleDeleteModule = (moduleId: string | number) => {
+    setDeleteTarget({ type: "module", payload: { moduleId } });
+  };
+
+  const createModuleQuiz = async (moduleId: string | number) => {
+    const module = course.modules?.find((m) => m.id === moduleId);
+    if (!module) return;
+
+    try {
+      // Create a backend assessment attached to this module
+      const payload: AssessmentCreateData = {
+        course: course.id,
+        module: moduleId,
+        title: `Quiz: ${module.title}`,
+        is_final: false,
+        assessment_type: "QUIZ",
+        pass_mark: 60,
+        max_attempts: 3,
+        duration: 30,
+      };
+
+      const response = await dispatch(createAssessment(payload)).unwrap();
+      const created = response?.data || response;
+
+      const template = createLocalAssessmentTemplate({
+        title: created.title || `Quiz: ${module.title}`,
+        assessment_type: "QUIZ",
+        pass_mark: created.pass_mark ?? 60,
+        max_attempts: created.max_attempts ?? 3,
+        duration: created.duration ?? 30,
+      }, String(created.id));
+
+      setPendingModuleQuizzes((prev) => ({
+        ...prev,
+        [moduleId]: template,
+      }));
+      setShowAssessmentModal({ type: 'module', moduleId, assessmentId: template.id });
+      toast.success("Quiz created on backend and ready to edit.");
+      setShowAssessmentLibraryPicker(null);
+    } catch (e: any) {
+      toast.error(e?.message || e || "Failed to create quiz template");
+    }
+  };
+
+  const toggleModuleQuiz = async (moduleId: string | number) => {
+    const module = course.modules?.find((m) => m.id === moduleId);
+    const isEnabled = Boolean(pendingModuleQuizzes[moduleId] || module?.quiz);
+
+    if (isEnabled && module?.quiz) {
+      try {
+        await dispatch(
+          detachAssessment({
+            assessmentId: module.quiz.id,
+            payload: { module_id: moduleId },
+          }),
+        ).unwrap();
+        if (course.is_published) setHasLocalUnpublishedChanges(true);
+        setPendingModuleQuizzes((prev) => {
+          const next = { ...prev };
+          delete next[moduleId];
+          return next;
+        });
+        await dispatch(fetchCourseDetails(course.id));
+        toast.success("Module quiz detached.");
+      } catch (e: any) {
+        toast.error(e?.message || "Failed to detach module quiz");
+      }
+      return;
+    }
+
+    setShowAssessmentLibraryPicker({ type: 'module', moduleId });
+  };
+
+  const handleUseAssessmentFromLibrary = async (
+    item: AssessmentLibraryItem,
+  ) => {
+    if (!showAssessmentLibraryPicker) return;
+
+    try {
+      if (
+        showAssessmentLibraryPicker.type === "module" &&
+        showAssessmentLibraryPicker.moduleId !== undefined
+      ) {
+        await dispatch(
+          attachAssessment({
+            assessmentId: item.id,
+            payload: { module_id: showAssessmentLibraryPicker.moduleId },
+          }),
+        ).unwrap();
+        if (course.is_published) setHasLocalUnpublishedChanges(true);
+        await dispatch(fetchCourseDetails(course.id));
+        setPendingModuleQuizzes((prev) => {
+          const next = { ...prev };
+          delete next[showAssessmentLibraryPicker.moduleId!];
+          return next;
+        });
+        toast.success("Quiz attached to this module");
+      } else {
+        await dispatch(
+          attachAssessment({
+            assessmentId: item.id,
+            payload: { course_id: course.id },
+          }),
+        ).unwrap();
+        if (course.is_published) setHasLocalUnpublishedChanges(true);
+        await dispatch(fetchCourseDetails(course.id));
+        setPendingFinalAssessment(null);
+        toast.success("Final assessment attached to this course");
+      }
+
+      setShowAssessmentLibraryPicker(null);
+      refetchCourse(course.id);
+    } catch (e: any) {
+      toast.error(e?.message || e || "Failed to copy assessment");
+    }
+  };
+
+  const handleAddSection = async (moduleId: string | number) => {
+    const module = course.modules?.find((m) => m.id === moduleId);
+    if (module) {
+      const nextOrder =
+        module.sections.length > 0
+          ? Math.max(...module.sections.map((s) => s.order)) + 1
+          : 1;
+      try {
+        await dispatch(
+          createSection({
+            moduleId,
+            data: {
+              title: "New Section",
+              order: nextOrder,
+              contents: [],
+              has_unpublished_changes: true,
+            },
+          }),
+        ).unwrap();
+        toast.success("Section added successfully");
+      } catch (e: any) {
+        toast.error(e?.message || "Failed to add section");
+      }
+    }
+  };
+
+  const handleUpdateSectionTitle = async (
+    moduleId: string | number,
+    sectionId: string | number,
+    title: string,
+  ) => {
+    const module = course.modules?.find((m) => m.id === moduleId);
+    const section = module?.sections.find((s) => s.id === sectionId);
+    if (section) {
+      try {
+        await dispatch(
+          updateSection({
+            courseId: course.id,
+            moduleId,
+            sectionId,
+            data: { title, order: section.order },
+          }),
+        ).unwrap();
+        toast.success("Section title updated");
+      } catch (e: any) {
+        toast.error(e?.message || "Failed to update section");
+      }
+    }
+  };
+
+  const handleDeleteSection = (
+    moduleId: string | number,
+    sectionId: string | number,
+  ) => {
+    setDeleteTarget({ type: "section", payload: { moduleId, sectionId } });
+  };
+
+  const openContentItemModal = (
+    moduleId: string | number,
+    sectionId: string | number,
+    contentItem: ContentItem | null = null,
+  ) => {
+    setEditingContentItem({ moduleId, sectionId, contentItem });
+    setShowContentItemModal(true);
+  };
+
+  const saveContentItem = async (data: any) => {
+    if (!editingContentItem) return;
+    const { moduleId, sectionId, contentItem } = editingContentItem;
+
+    const module = course.modules?.find((m) => m.id === moduleId);
+    const section = module?.sections.find((s) => s.id === sectionId);
+    const nextOrder = section
+      ? section.contents.length > 0
+        ? Math.max(...section.contents.map((c) => c.order)) + 1
+        : 1
+      : 1;
+
+    const contentData: any = {
+      title: data.title,
+      order: contentItem?.order || nextOrder,
+      content_type: "text",
+      text_content: JSON.stringify(data.blocks),
+      has_unpublished_changes: true,
+    };
+
+    try {
+      if (contentItem) {
+        await dispatch(
+          updateContent({
+            courseId: course.id,
+            moduleId,
+            sectionId,
+            contentId: contentItem.id,
+            data: contentData,
+          }),
+        ).unwrap();
+        toast.success("Content updated successfully");
+      } else {
+        await dispatch(
+          createContent({
+            courseId: course.id,
+            moduleId,
+            sectionId,
+            data: contentData,
+          }),
+        ).unwrap();
+        toast.success("Content added successfully");
+      }
+      refetchCourse(course.id);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to save content");
+    }
+
+    setShowContentItemModal(false);
+    setEditingContentItem(null);
+  };
+
+  const handleDeleteContentItem = (
+    moduleId: string | number,
+    sectionId: string | number,
+    contentItemId: string | number,
+  ) => {
+    setDeleteTarget({
+      type: "content",
+      payload: { moduleId, sectionId, contentItemId },
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      const { type, payload } = deleteTarget;
+      if (type === "module") {
+        await dispatch(
+          deleteModule({ courseId: course.id, moduleId: payload.moduleId }),
+        ).unwrap();
+        toast.success("Module deleted successfully");
+      } else if (type === "section") {
+        await dispatch(
+          deleteSection({
+            courseId: course.id,
+            moduleId: payload.moduleId,
+            sectionId: payload.sectionId,
+          }),
+        ).unwrap();
+        toast.success("Section deleted successfully");
+      } else if (type === "content") {
+        await dispatch(
+          deleteContent({
+            courseId: course.id,
+            moduleId: payload.moduleId,
+            sectionId: payload.sectionId,
+            contentId: payload.contentItemId,
+          }),
+        ).unwrap();
+        toast.success("Content item deleted successfully");
+      }
+      refetchCourse(course.id);
+    } catch (e: any) {
+      toast.error(e?.message || `Failed to delete ${deleteTarget.type}`);
+    }
+    setDeleteTarget(null);
+  };
+
+  const saveAssessment = async (data: QuizQuestion) => {
+    if (!course) return;
+
+    try {
+      let templateId: string | number | undefined = showAssessmentModal?.assessmentId;
+
+      if (!templateId) {
+        if (showAssessmentModal?.type === "final") {
+          const template = createLocalAssessmentTemplate({
+            title: "Final Assessment",
+            assessment_type: "FINAL",
+            pass_mark: 60,
+            max_attempts: 3,
+            duration: 60,
+          });
+          templateId = template.id;
+          setPendingFinalAssessment(template);
+        } else {
+          const moduleId = showAssessmentModal?.moduleId;
+          const module = course.modules?.find(m => m.id === moduleId);
+          const template = createLocalAssessmentTemplate({
+            title: `Quiz: ${module?.title || "New Quiz"}`,
+            assessment_type: "QUIZ",
+            pass_mark: 60,
+            max_attempts: 3,
+            duration: 30,
+          });
+          templateId = template.id;
+          if (moduleId) {
+            setPendingModuleQuizzes((prev) => ({
+              ...prev,
+              [moduleId]: template,
+            }));
+          }
+        }
+        setShowAssessmentModal((prev) => prev ? { ...prev, assessmentId: templateId } : prev);
+      }
+
+      if (templateId) {
+        const questionId = data.id || makeLocalQuestionId();
+        let existingTemplate: AssessmentLibraryItem | LocalAssessmentTemplate | null = getLocalAssessmentTemplates().find((item) => String(item.id) === String(templateId)) || null;
+
+        if (!existingTemplate) {
+          if (showAssessmentModal?.type === 'final') {
+            const template = ensureFinalAssessmentTemplate(true);
+            if (template) {
+              templateId = template.id;
+              existingTemplate = template;
+              setShowAssessmentModal((prev) => prev ? { ...prev, assessmentId: templateId } : prev);
+            }
+          } else if (showAssessmentModal?.moduleId) {
+            const template = ensureModuleQuizTemplate(showAssessmentModal.moduleId);
+            if (template) {
+              templateId = template.id;
+              existingTemplate = template;
+              setShowAssessmentModal((prev) => prev ? { ...prev, assessmentId: templateId } : prev);
+            }
+          }
+        }
+
+        const existingQuestions = existingTemplate?.questions || [];
+        const nextQuestion = {
+          ...data,
+          id: questionId,
+          question_text: data.question || data.question_text,
+          question_type: (data.question_type || "single") as any,
+          marks: data.marks || 1,
+          options: data.question_type === "matching" ? [] : data.options || data.choices?.map((opt: any) => opt.text) || [],
+          choices: data.question_type === "matching" ? [] : data.choices || data.options?.map((opt: any) => ({ text: String(opt.text || ""), is_correct: Boolean(opt.is_correct) })) || [],
+          matching_pairs: data.question_type === "matching" ? data.matching_pairs || [] : undefined,
+          correctAnswer: data.question_type === "matching" ? -1 : data.choices ? data.choices.findIndex((choice: any) => choice.is_correct) : data.options ? data.options.findIndex((opt: any) => opt.isCorrect) : -1,
+        };
+
+        const nextQuestions = existingQuestions.some((item) => String(item.id) === String(questionId))
+          ? existingQuestions.map((item) => (String(item.id) === String(questionId) ? nextQuestion : item))
+          : [...existingQuestions, nextQuestion];
+
+        // If the template id is a backend id (not a local- prefix), persist the question to backend
+        if (templateId && !String(templateId).startsWith("local-")) {
+          const payload: any = {
+            assessment: templateId,
+            question_text: nextQuestion.question_text,
+            question_type: nextQuestion.question_type === "multiple" ? "multiple" : nextQuestion.question_type === "matching" ? "matching" : "single",
+            marks: nextQuestion.marks || 1,
+          };
+
+          if (nextQuestion.question_type === "matching") {
+            payload.matching_pairs = nextQuestion.matching_pairs || [];
+          } else {
+            payload.choices = (nextQuestion.choices && nextQuestion.choices.length > 0)
+              ? nextQuestion.choices.map((choice: any) => ({ text: String(choice.text || ""), is_correct: Boolean(choice.is_correct) }))
+              : (nextQuestion.options || []).map((option: any, index: number) => ({ text: String(option || ""), is_correct: index === nextQuestion.correctAnswer }));
+          }
+
+          try {
+            const isExistingQuestion = !String(questionId).startsWith("local-")
+              && existingQuestions.some((item) => String(item.id) === String(questionId));
+            const response = isExistingQuestion
+              ? await dispatch(updateQuestion({ questionId, data: payload })).unwrap()
+              : await dispatch(addQuestion(payload)).unwrap();
+
+            if (isExistingQuestion && course.is_published) {
+              setHasLocalUnpublishedChanges(true);
+            }
+
+            await refetchCourse(course.id);
+            if (showAssessmentModal?.type === 'final') {
+              setPendingFinalAssessment(null);
+            } else if (showAssessmentModal?.moduleId) {
+              setPendingModuleQuizzes((prev) => {
+                const next = { ...prev };
+                delete next[showAssessmentModal.moduleId!];
+                return next;
+              });
+            }
+          } catch (err: any) {
+            toast.error(err?.message || 'Failed to save question');
+            return;
+          }
+        } else {
+          const updatedTemplate = updateLocalAssessmentTemplate(String(templateId), { questions: nextQuestions });
+
+          if (showAssessmentModal?.type === 'final') {
+            setPendingFinalAssessment(updatedTemplate as LocalAssessmentTemplate);
+          } else if (showAssessmentModal?.moduleId) {
+            setPendingModuleQuizzes((prev) => ({
+              ...prev,
+              [showAssessmentModal.moduleId!]: updatedTemplate as LocalAssessmentTemplate,
+            }));
+          }
+        }
+      }
+
+      toast.success("Question saved successfully.");
+    } catch (err: any) {
+      console.error("Assessment Error:", err);
+      toast.error(typeof err === 'string' ? err : 'Failed to save question');
+    }
+    setShowAssessmentModal(null);
+  };
+
+  /**
+   * Called from FinalAssessmentSettingsModal when creating the final assessment for the first time.
+   * Creates the assessment with the chosen settings, then opens the question editor.
+   */
+  const handleCreateFinalAssessmentWithSettings = async (settings: {
+    duration: number;
+    max_attempts: number;
+    pass_mark: number;
+    tab_switch_enabled?: boolean;
+    tab_switch_limit?: number;
+  }) => {
+    try {
+      // Create final assessment as a backend record attached to this course
+      const payload: AssessmentCreateData = {
+        course: course.id,
+        module: null,
+        title: "Final Assessment",
+        is_final: true,
+        assessment_type: "FINAL",
+        pass_mark: settings.pass_mark,
+        max_attempts: settings.max_attempts,
+        duration: settings.duration,
+        tab_switch_enabled: settings.tab_switch_enabled,
+        tab_switch_limit: settings.tab_switch_limit,
+      };
+
+      const response = await dispatch(createAssessment(payload)).unwrap();
+      const created = response?.data || response;
+
+      const template = createLocalAssessmentTemplate({
+        title: created.title || "Final Assessment",
+        assessment_type: "FINAL",
+        pass_mark: created.pass_mark ?? settings.pass_mark,
+        max_attempts: created.max_attempts ?? settings.max_attempts,
+        duration: created.duration ?? settings.duration,
+        tab_switch_enabled: created.tab_switch_enabled ?? settings.tab_switch_enabled,
+        tab_switch_limit: created.tab_switch_limit ?? settings.tab_switch_limit,
+      }, String(created.id));
+
+      setPendingFinalAssessment(template);
+      toast.success("Final assessment created on backend and ready to edit!");
+      setShowAssessmentModal({ type: 'final', assessmentId: template.id });
+    } catch (e: any) {
+      toast.error(e?.message || e || "Failed to create final assessment");
+      throw e;
+    } finally {
+      setShowFinalAssessmentSettings(null);
+    }
+  };
+
+  /**
+   * Called from FinalAssessmentSettingsModal when editing an existing final assessment's settings.
+   */
+  const handleUpdateFinalAssessmentSettings = async (settings: {
+    title: string;
+    duration: number;
+    max_attempts: number;
+    pass_mark: number;
+    tab_switch_enabled?: boolean;
+    tab_switch_limit?: number;
+  }) => {
+    const assessment = pendingFinalAssessment || course.final_assessment;
+    if (!assessment || String(assessment.id).startsWith("local-")) return;
+
+    try {
+      await dispatch(
+        updateAssessmentSettings({
+          assessmentId: assessment.id,
+          data: {
+            title: settings.title,
+            pass_mark: settings.pass_mark,
+            max_attempts: settings.max_attempts,
+            duration: settings.duration,
+            tab_switch_enabled: settings.tab_switch_enabled,
+            tab_switch_limit: settings.tab_switch_limit,
+          },
+        }),
+      ).unwrap();
+
+      await refetchCourse(course.id);
+      setPendingFinalAssessment(null);
+      toast.success("Assessment settings updated!");
+      setShowFinalAssessmentSettings(null);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update assessment settings");
+    }
+  };
+
+  const handleUnpublish = async () => {
+    setIsUnpublishing(true);
+    try {
+      await dispatch(unpublishCourse(course.id)).unwrap();
+      toast.success("Course unpublished successfully");
+      dispatch(fetchCourseDetails(course.id));
+    } catch (err: any) {
+      toast.error(typeof err === "string" ? err : "Failed to unpublish course");
+    } finally {
+      setIsUnpublishing(false);
+      setShowUnpublishModal(false);
+    }
+  };
+
+  const deleteQuestion = (
+    type: "final" | "module",
+    questionId: any,
+    moduleId?: string | number,
+  ) => {
+    setDeleteQuestionTarget({ type, questionId, moduleId });
+  };
+
+  const confirmDeleteQuestion = async () => {
+    if (!deleteQuestionTarget) return;
+    const { type, questionId, moduleId } = deleteQuestionTarget;
+    try {
+      const localFinalQuestionExists = pendingFinalAssessment?.questions.some(
+        (q) => String(q.id) === String(questionId),
+      );
+      const localModuleTemplate = moduleId
+        ? pendingModuleQuizzes[moduleId]
+        : undefined;
+      const localModuleQuestionExists = localModuleTemplate?.questions.some(
+        (q) => String(q.id) === String(questionId),
+      );
+
+      if (!String(questionId).startsWith("local-")) {
+        await dispatch(deleteQuestionAction(questionId)).unwrap();
+        setHasLocalUnpublishedChanges(true);
+        await refetchCourse(course.id);
+
+        if (type === "final") {
+          setPendingFinalAssessment(null);
+        } else if (moduleId) {
+          setPendingModuleQuizzes((prev) => {
+            const next = { ...prev };
+            delete next[moduleId];
+            return next;
+          });
+        }
+
+        toast.success("Question deleted successfully");
+        setDeleteQuestionTarget(null);
+        return;
+      }
+
+      if (localFinalQuestionExists && type === "final") {
+        setPendingFinalAssessment((prev) =>
+          prev
+            ? {
+                ...prev,
+                questions: prev.questions.filter(
+                  (q) => String(q.id) !== String(questionId),
+                ),
+              }
+            : prev,
+        );
+        toast.success("Question deleted successfully");
+      } else if (localModuleQuestionExists && type === "module" && moduleId) {
+        setPendingModuleQuizzes((prev) => {
+          const next = { ...prev };
+          const template = next[moduleId];
+          if (template) {
+            next[moduleId] = {
+              ...template,
+              questions: template.questions.filter(
+                (q) => String(q.id) !== String(questionId),
+              ),
+            };
+          }
+          return next;
+        });
+        toast.success("Question deleted successfully");
+      } else if (
+        type === "final" &&
+        course.final_assessment?.questions.some(
+          (q) => String(q.id) === String(questionId),
+        )
+      ) {
+        const template = ensureFinalAssessmentTemplate(true);
+        if (template) {
+          setPendingFinalAssessment((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  questions: prev.questions.filter(
+                    (q) => String(q.id) !== String(questionId),
+                  ),
+                }
+              : prev,
+          );
+          toast.success("Question deleted successfully");
+        } else {
+          toast.error("Failed to delete question");
+        }
+      } else if (type === "module" && moduleId) {
+        const module = course.modules?.find((m) => m.id === moduleId);
+        if (
+          module?.quiz?.questions.some(
+            (q) => String(q.id) === String(questionId),
+          )
+        ) {
+          const template = ensureModuleQuizTemplate(moduleId);
+          if (template) {
+            setPendingModuleQuizzes((prev) => ({
+              ...prev,
+              [moduleId]: {
+                ...template,
+                questions: template.questions.filter(
+                  (q) => String(q.id) !== String(questionId),
+                ),
+              },
+            }));
+            toast.success("Question deleted successfully");
+          } else {
+            toast.error("Failed to delete question");
+          }
+        } else {
+          toast.error("Failed to delete question");
+        }
+      } else {
+        if (type === "final") {
+          const newQuestions =
+            course.final_assessment?.questions?.filter(
+              (q) => q.id !== questionId,
+            ) || [];
+          dispatch(
+            updateCourse({
+              id: course.id,
+              data: {
+                final_assessment: {
+                  ...(course.final_assessment || {
+                    id: "",
+                    title: "",
+                    questions: [],
+                  }),
+                  questions: newQuestions,
+                },
+              },
+            }),
+          );
+        } else if (moduleId) {
+          const module = course.modules?.find((m) => m.id === moduleId);
+          if (module && module.quiz) {
+            const newQuestions = module.quiz.questions.filter(
+              (q) => q.id !== questionId,
+            );
+            dispatch(
+              updateModule({
+                courseId: course.id,
+                moduleId,
+                data: { quiz: { ...module.quiz, questions: newQuestions } },
+              }),
+            );
+          }
+        }
+      }
+    } catch (err: any) {
+      toast.error("Failed to delete question");
+    }
+    setDeleteQuestionTarget(null);
+  };
+
+  const handlePublish = () => {
+    if (!course.modules || course.modules.length === 0) {
+      setStatus({
+        type: "error",
+        message: "Add at least one module before publishing.",
+      });
+      return;
+    }
+    if (
+      !course.final_assessment ||
+      course.final_assessment.questions.length === 0
+    ) {
+      setStatus({ type: "error", message: "Final Assessment is required." });
+      return;
+    }
+
+    if (course.is_published) {
+      dispatch(publishCourseChanges(course.id)).then((res) => {
+        if (res.meta.requestStatus === "fulfilled") {
+          setHasLocalUnpublishedChanges(false);
+          setStatus({
+            type: "success",
+            message: "Course changes published successfully!",
+          });
+          dispatch(fetchCourseDetails(course.id));
+        } else {
+          setStatus({
+            type: "error",
+            message:
+              typeof res.payload === "string"
+                ? res.payload
+                : "Failed to publish course changes.",
+          });
+        }
+      });
+    } else {
+      dispatch(publishCourse(course.id)).then((res) => {
+        if (res.meta.requestStatus === "fulfilled") {
+          setStatus({
+            type: "success",
+            message: "Course published successfully!",
+          });
+          dispatch(fetchCourseDetails(course.id));
+        } else {
+          setStatus({
+            type: "error",
+            message:
+              typeof res.payload === "string"
+                ? res.payload
+                : "Failed to publish course.",
+          });
+        }
+      });
+    }
+  };
+
+  const finalAssessmentQuestionCount = pendingFinalAssessment?.questions.length ?? course.final_assessment?.questions?.length ?? 0;
+  const activeFinalAssessment = pendingFinalAssessment || course.final_assessment || null;
+  const canPublish = (course.modules?.length || 0) > 0 && finalAssessmentQuestionCount > 0;
+
+  return (
+    <div className="max-w-[1200px] mx-auto pb-12 sm:px-6 lg:px-8">
+      <div className="mb-8">
+        <button
+          onClick={() => navigate("/admin/courses")}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4 transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span className="text-sm font-medium">Back to Courses</span>
+        </button>
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1 flex flex-wrap items-center gap-2">
+              <span>{course.title}</span>
+              {course.is_published ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  Live
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-50 text-gray-700 border border-gray-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                  Draft
+                </span>
+              )}
+            </h1>
+            <p className="text-sm text-gray-500">
+              Build and manage your course content
+            </p>
+          </div>
+... (backup file truncated)

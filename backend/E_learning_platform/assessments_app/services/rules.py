@@ -331,4 +331,3 @@ def apply_assessment_rules(data):
         data["module"] = None
 
     return data
-

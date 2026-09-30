@@ -188,31 +188,6 @@ const courseAPI = {
     return response.data;
   },
 
-  createLevel: async (name: string): Promise<{ success: boolean; data: Level }> => {
-    const response = await api.post('levels/create/', { name });
-    return response.data;
-  },
-
-  updateCategory: async (categoryId: number | string, name: string): Promise<{ success: boolean; data: Category }> => {
-    const response = await api.patch(`categories/${categoryId}/update/`, { name });
-    return response.data;
-  },
-
-  deleteCategory: async (categoryId: number | string): Promise<{ success: boolean; message: string }> => {
-    const response = await api.delete(`categories/${categoryId}/delete/`);
-    return response.data;
-  },
-
-  updateLevel: async (levelId: number | string, name: string): Promise<{ success: boolean; data: Level }> => {
-    const response = await api.patch(`levels/${levelId}/update/`, { name });
-    return response.data;
-  },
-
-  deleteLevel: async (levelId: number | string): Promise<{ success: boolean; message: string }> => {
-    const response = await api.delete(`levels/${levelId}/delete/`);
-    return response.data;
-  },
-
   uploadMedia: async (file: File): Promise<{ success: boolean; message: string; data: { id: number; file: string; uploaded_at: string } }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -246,6 +221,11 @@ const courseAPI = {
 
   completeContent: async (courseId: number | string, sectionId: number | string, contentId: number | string): Promise<CompleteContentResponse> => {
     const response = await api.post(`progress/courses/${courseId}/sections/${sectionId}/contents/${contentId}/complete/`);
+    return response.data;
+  },
+
+  reviewConceptCard: async (courseId: number | string, sectionId: number | string, contentId: number | string, cardIndex: number): Promise<any> => {
+    const response = await api.post(`progress/courses/${courseId}/sections/${sectionId}/contents/${contentId}/cards/${cardIndex}/review/`);
     return response.data;
   },
 
