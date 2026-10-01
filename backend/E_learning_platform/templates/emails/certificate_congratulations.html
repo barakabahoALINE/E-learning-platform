@@ -1,0 +1,18 @@
+{% extends 'emails/base_email.html' %}
+
+{% block title %}Certificate Earned{% endblock %}
+
+{% block content %}
+<h2>Congratulations, {{ full_name }}!</h2>
+<p>You have successfully completed <strong>{{ course_title }}</strong> and earned your certificate of completion.</p>
+<p>We are proud of your progress and the dedication you showed throughout the course.</p>
+
+<div style="margin: 24px 0;">
+    <a href="{{ certificate_view_url }}" class="cta-button">View Certificate</a>
+</div>
+
+<div class="security-notice">
+    <strong>Course completion</strong>
+    Your certificate is ready to be viewed, downloaded, and shared.
+</div>
+{% endblock %}

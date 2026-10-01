@@ -1,5 +1,10 @@
+import logging
+from threading import Thread
+
+from django.conf import settings
 from django.http import Http404, FileResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -8,6 +13,7 @@ from rest_framework.views import APIView
 from assessments_app.models import Attempt
 
 from courses_app.models import Course
+from users_app.services.email_service import send_certificate_congratulation_email
 from .models import Certificate, Feedback
 from .serializers import (
     CertificateSerializer,
@@ -25,6 +31,8 @@ from .utils import (
     generate_certificate_file,
 )
 from .services import CertificateShareService, get_sharing_method
+
+logger = logging.getLogger(__name__)
 
 
 class ClaimCertificateAPIView(APIView):
@@ -111,6 +119,29 @@ class SubmitCertificateFeedbackAPIView(APIView):
 
         feedback.certificate = certificate
         feedback.save(update_fields=["certificate"])
+
+        if created:
+            try:
+                frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+                certificate_view_url = f"{frontend_url}/certificate/{course.id}"
+                certificate_download_url = request.build_absolute_uri(
+                    reverse("certificate-download", kwargs={"certificate_id": certificate.id}),
+                )
+
+                def _send_certificate_email_async():
+                    try:
+                        send_certificate_congratulation_email(
+                            request.user,
+                            course,
+                            certificate_view_url,
+                            certificate_download_url,
+                        )
+                    except Exception as exc:
+                        logger.error(f"Failed to send certificate congratulation email: {str(exc)}")
+
+                Thread(target=_send_certificate_email_async, daemon=True).start()
+            except Exception as exc:
+                logger.error(f"Failed to queue certificate congratulation email: {str(exc)}")
 
         return Response({
             "success": True,

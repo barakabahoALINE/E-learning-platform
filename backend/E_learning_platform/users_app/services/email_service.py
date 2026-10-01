@@ -171,3 +171,35 @@ def send_password_changed_email(user):
     except Exception as e:
         logger.error(f"Failed to send password changed email to {user.email}: {str(e)}")
         raise
+
+
+def send_certificate_congratulation_email(user, course, certificate_view_url, certificate_download_url):
+    """
+    Send a congratulation email when a student successfully earns a course certificate.
+    """
+    try:
+        context = {
+            'full_name': user.full_name or user.email,
+            'course_title': course.title,
+            'certificate_view_url': certificate_view_url,
+            'certificate_download_url': certificate_download_url,
+        }
+
+        html_message = render_to_string('emails/certificate_congratulations.html', context)
+
+        _send_html_email(
+            subject=f'Congratulations! You earned your {course.title} certificate',
+            plain_message=(
+                f'Congratulations {user.full_name or user.email}! '
+                f'You have successfully completed {course.title} and earned your certificate.'
+            ),
+            recipient_email=user.email,
+            html_message=html_message,
+        )
+
+        logger.info(f"Certificate congratulation email sent to {user.email} for course {course.title}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to send certificate congratulation email to {user.email}: {str(e)}")
+        raise
