@@ -6,8 +6,9 @@ ROLE_ADMIN = "Admin"
 ROLE_INSTRUCTOR = "Instructor"
 ROLE_STUDENT = "Student"
 ROLE_VIEWER = "Viewer"
+ROLE_TRAINING_USER = "TrainingUser"
 
-DEFAULT_ROLES = (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_INSTRUCTOR, ROLE_STUDENT, ROLE_VIEWER)
+DEFAULT_ROLES = (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_INSTRUCTOR, ROLE_STUDENT, ROLE_VIEWER, ROLE_TRAINING_USER)
 
 STUDENT_PERMISSIONS = [
     "courses_app.view_course",
@@ -59,12 +60,27 @@ ADMIN_PERMISSIONS = [
     "enrollments_app.change_enrollment",
     # Assessments and progress (view-level)
     "assessments_app.view_assessment",
+    "assessments_app.add_assessment",
+    "assessments_app.change_assessment",
+    "assessments_app.delete_assessment",
+    "assessments_app.start_assessment",
+    "assessments_app.view_attempt",
+    "assessments_app.change_attempt",
+    "assessments_app.grade_assessment",
     "progress_app.view_progress",
     # Read-only RBAC visibility
     "auth.view_group",
     "auth.view_permission",
     # Allow admins to modify role permissions within institution scope
     "users_app.modify_permission",
+]
+
+TRAINING_USER_PERMISSIONS = [
+    "assessments_app.view_assessment",
+    "assessments_app.start_assessment",
+    "assessments_app.view_attempt",
+    "assessments_app.change_attempt",
+    "progress_app.view_progress",
 ]
 
 INSTRUCTOR_PERMISSIONS = [
@@ -146,6 +162,10 @@ def _assign_default_permissions(group):
         group.permissions.set(_get_permissions(VIEWER_PERMISSIONS))
         return
 
+    if group.name == ROLE_TRAINING_USER:
+        group.permissions.set(_get_permissions(TRAINING_USER_PERMISSIONS))
+        return
+
     return
 
 
@@ -193,6 +213,7 @@ def sync_user_role_group(user):
         "instructor": ROLE_INSTRUCTOR,
         "student": ROLE_STUDENT,
         "viewer": ROLE_VIEWER,
+        "training_user": ROLE_TRAINING_USER,
     }
     group_name = role_to_group.get(user.role)
 
@@ -224,5 +245,6 @@ def seed_roles():
     _assign_default_permissions(groups[ROLE_INSTRUCTOR])
     _assign_default_permissions(groups[ROLE_STUDENT])
     _assign_default_permissions(groups[ROLE_VIEWER])
+    _assign_default_permissions(groups[ROLE_TRAINING_USER])
 
     return groups

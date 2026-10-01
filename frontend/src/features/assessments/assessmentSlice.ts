@@ -22,13 +22,24 @@ const initialState: AssessmentState = {
   status: 'idle',
 };
 
+const getErrorMessage = (error: any, fallback: string) => {
+  const value = error?.response?.data?.error ?? error?.response?.data?.detail ?? error?.response?.data;
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    return Object.entries(value)
+      .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : String(messages)}`)
+      .join('; ');
+  }
+  return fallback;
+};
+
 export const createAssessment = createAsyncThunk(
   'assessments/createAssessment',
   async (data: AssessmentCreateData, { rejectWithValue }) => {
     try {
       return await assessmentAPI.createAssessment(data);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to create assessment');
+      return rejectWithValue(getErrorMessage(error, 'Failed to create assessment'));
     }
   }
 );

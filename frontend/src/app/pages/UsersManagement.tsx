@@ -363,7 +363,7 @@ export function UsersManagementPage() {
       setShowAddUserDialog(false);
       resetAddForm();
     } catch (error: any) {
-      const message = error?.message || error?.detail || "Failed to create user";
+      const message = typeof error === "string" ? error : error?.message || error?.detail || "Failed to create user";
       toast.error(message, { id: toastId });
     } finally {
       setIsAddingUser(false);

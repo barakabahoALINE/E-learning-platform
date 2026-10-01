@@ -5,17 +5,56 @@ from .models import *
 from .services.rules import RuleError, validate_unique_assessment
 import random
 
+class TrainingSerializer(serializers.ModelSerializer):
+    survey_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Training
+        fields = ["id", "title", "description", "survey", "survey_name", "is_active", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def get_survey_name(self, obj):
+        return obj.survey.name if obj.survey else None
+
+
+class TrainingAssessmentSerializer(serializers.ModelSerializer):
+    training_title = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Assessment
+        fields = [
+            "id",
+            "title",
+            "assessment_type",
+            "training",
+            "training_title",
+            "duration_minutes",
+            "pass_mark",
+            "require_access_code",
+            "is_published",
+            "published_at",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at", "published_at"]
+
+    def get_training_title(self, obj):
+        return obj.training.title if obj.training else None
+
+
 # ASSESSMENT SERIALIZER
 class CreateAssessmentSerializer(serializers.ModelSerializer):
     is_final = serializers.BooleanField(required=False, write_only=True)
 
     max_attempts = serializers.IntegerField(required=False, default=1, min_value=0, allow_null=True)
     duration = serializers.IntegerField(required=False, default=30, min_value=0, allow_null=True)
+    duration_minutes = serializers.IntegerField(required=False, default=None, min_value=0, allow_null=True)
     tab_switch_enabled = serializers.BooleanField(required=False, default=False)
     tab_switch_limit = serializers.IntegerField(required=False, default=0, min_value=0)
+    require_access_code = serializers.BooleanField(required=False, default=False)
 
     courses = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all(), many=True, required=False)
     modules = serializers.PrimaryKeyRelatedField(queryset=Module.objects.all(), many=True, required=False)
+    training = serializers.PrimaryKeyRelatedField(queryset=Training.objects.all(), required=False, allow_null=True)
 
     class Meta:
         model = Assessment
@@ -25,14 +64,17 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
             'module',
             'courses',
             'modules',
+            'training',
             'assessment_type',
             'is_final',
             'title',
             'pass_mark',
             'max_attempts',
             'duration',
+            'duration_minutes',
             'tab_switch_enabled',
             'tab_switch_limit',
+            'require_access_code',
             'descriptions',
             'instructions',
             'is_published',
@@ -71,16 +113,24 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         if data['assessment_type'] == 'QUIZ' and module is None and not data.get('modules') and course is not None:
             raise serializers.ValidationError("Quiz must be linked to a module when a course is provided.")
 
+        if data['assessment_type'] == 'TRAINING':
+            training = data.get('training')
+            if training is None:
+                raise serializers.ValidationError({"training": "Training assessments must be linked to a training."})
+
         assessment = Assessment(
             course=data.get('course'),
             module=data.get('module'),
+            training=data.get('training'),
             assessment_type=data.get('assessment_type'),
             title=data.get('title'),
             pass_mark=data.get('pass_mark'),
             max_attempts=data.get('max_attempts'),
             duration=data.get('duration'),
+            duration_minutes=data.get('duration_minutes') or data.get('duration'),
             tab_switch_enabled=data.get('tab_switch_enabled', False),
             tab_switch_limit=data.get('tab_switch_limit', 0),
+            require_access_code=data.get('require_access_code', False),
             descriptions=data.get('descriptions'),
             instructions=data.get('instructions')
         )
@@ -128,14 +178,18 @@ class CreateAssessmentSerializer(serializers.ModelSerializer):
         legacy_course = validated_data.pop('course', None)
         legacy_module = validated_data.pop('module', None)
 
+        training = validated_data.pop('training', None)
         assessment = Assessment.objects.create(
+            training=training,
             assessment_type=validated_data.get('assessment_type'),
             title=validated_data.get('title'),
             pass_mark=validated_data.get('pass_mark'),
             max_attempts=validated_data.get('max_attempts'),
             duration=validated_data.get('duration'),
+            duration_minutes=validated_data.get('duration_minutes') or validated_data.get('duration'),
             tab_switch_enabled=validated_data.get('tab_switch_enabled', False),
             tab_switch_limit=validated_data.get('tab_switch_limit', 0),
+            require_access_code=validated_data.get('require_access_code', False),
             descriptions=validated_data.get('descriptions'),
             instructions=validated_data.get('instructions')
         )
@@ -401,6 +455,7 @@ class StartAttemptSerializer(serializers.ModelSerializer):
             "assessment",
             "attempt_number",
             "started_at",
+            "expires_at",
             "is_locked",
             "is_submitted",
         ]
@@ -418,6 +473,7 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
     module_title = serializers.SerializerMethodField()
     course_attachments = serializers.SerializerMethodField()
     module_attachments = serializers.SerializerMethodField()
+    training_user_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Assessment
@@ -427,8 +483,10 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
             'course_title',
             'module',
             'module_title',
+            'training',
             'course_attachments',
             'module_attachments',
+            'training_user_count',
             'title',
             'assessment_type',
             'pass_mark',
@@ -436,6 +494,7 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
             'tab_switch_limit',
             'max_attempts',
             'duration',
+            'require_access_code',
             'descriptions',
             'instructions',
             'is_published',
@@ -468,6 +527,16 @@ class AssessmentDetailSerializer(serializers.ModelSerializer):
             first_module = obj.modules.first()
             return first_module.title if first_module else None
         return None
+
+    def get_training_user_count(self, obj):
+        if obj.assessment_type != "TRAINING" or obj.training_id is None:
+            return 0
+        profiles = obj.training.training_users.all()
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        if user and not user.is_superuser:
+            profiles = profiles.filter(user__institution=user.institution)
+        return profiles.count()
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

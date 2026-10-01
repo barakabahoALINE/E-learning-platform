@@ -9,6 +9,22 @@ from django.contrib.auth.models import (
 from django.utils import timezone
 
 
+class TrainingUserProfile(models.Model):
+    user = models.OneToOneField("User", on_delete=models.CASCADE, related_name="traininguserprofile")
+    trainings = models.ManyToManyField("assessments_app.Training", related_name="training_users", blank=True)
+    national_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    phone = models.CharField(max_length=30, blank=True, null=True)
+    province = models.CharField(max_length=100, blank=True, null=True)
+    district = models.CharField(max_length=100, blank=True, null=True)
+    must_change_password = models.BooleanField(default=False)
+    created_by = models.ForeignKey("User", on_delete=models.SET_NULL, null=True, blank=True, related_name="created_training_users")
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.user.email} training profile"
+
+
 class UserManager(BaseUserManager):
 
     def create_user(self, email, password=None, **extra_fields):
@@ -36,6 +52,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         ("viewer", "Viewer"),
         ("admin", "Admin"),
         ("super_admin", "Super Admin"),
+        ("training_user", "Training User"),
     )
     LEVEL_CHOICES = (
         ('beginner', 'Beginner'),
@@ -77,7 +94,9 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.is_staff = True
             self.is_verified = True
         elif self.role == "admin":
-            self.is_staff = True 
+            self.is_staff = True
+        elif self.role == "training_user":
+            self.is_staff = False
         else:
             self.is_staff = False
 
@@ -87,6 +106,9 @@ class User(AbstractBaseUser, PermissionsMixin):
             from .services.rbac import sync_user_role_group
 
             sync_user_role_group(self)
+
+            if self.role == "training_user" and not TrainingUserProfile.objects.filter(user=self).exists():
+                TrainingUserProfile.objects.get_or_create(user=self)
 
     
     def __str__(self):
@@ -101,3 +123,33 @@ class RoleMetadata(models.Model):
 
     def __str__(self):
         return f"{self.group.name} metadata"
+
+
+class AuditLog(models.Model):
+    SEVERITY_CHOICES = (
+        ("info", "Info"),
+        ("warning", "Warning"),
+        ("critical", "Critical"),
+    )
+    STATUS_CHOICES = (
+        ("success", "Success"),
+        ("warning", "Warning"),
+        ("failed", "Failed"),
+        ("critical", "Critical"),
+    )
+
+    actor = models.ForeignKey("User", on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_logs")
+    action = models.CharField(max_length=120)
+    target = models.CharField(max_length=255, blank=True, default="")
+    details = models.TextField(blank=True, default="")
+    module = models.CharField(max_length=80, default="Access Management")
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default="info")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="success")
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.action} by {self.actor.email if self.actor else 'system'}"

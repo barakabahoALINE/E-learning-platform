@@ -12,7 +12,10 @@ from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     AddUserSerializer,
+    AdminCreateUserSerializer,
+    AuditLogSerializer,
     CreatePasswordSerializer,
+    GoogleLoginSerializer,
     GroupPermissionsUpdateSerializer,
     GroupSerializer,
     GroupUpdateSerializer,
@@ -52,11 +55,25 @@ import json
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from .services.rbac import DEFAULT_ROLES
-from .models import RoleMetadata
+from .models import AuditLog, RoleMetadata
 import logging
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def create_audit_log(actor, action, target="", details="", module="Users", severity="info", status="success", request=None):
+    return AuditLog.objects.create(
+        actor=actor,
+        action=action,
+        target=target,
+        details=details,
+        module=module,
+        severity=severity,
+        status=status,
+        ip_address=request.META.get("REMOTE_ADDR") if request else None,
+    )
+
 
 def check_permission_modification_allowed(request_user, target_role_name):
     if request_user.is_superuser:
@@ -81,17 +98,20 @@ def check_permission_modification_allowed(request_user, target_role_name):
 def check_user_permission_modification_allowed(request_user, target_user):
     if request_user.is_superuser:
         return True
-        
+
+    if request_user == target_user:
+        return True
+
     user_role = getattr(request_user, 'role', '').lower()
     target_role = getattr(target_user, 'role', '').lower()
-    
+
     if user_role == 'viewer':
         return False
-        
+
     if user_role == 'instructor':
         # Instructor can only manage Student
         return target_role == 'student'
-        
+
     if user_role == 'admin':
         # Admin can manage Instructor, Viewer, Student within their own institution
         if target_user.is_superuser:
@@ -101,8 +121,18 @@ def check_user_permission_modification_allowed(request_user, target_user):
         if getattr(target_user, 'institution', '') != getattr(request_user, 'institution', ''):
             return False
         return target_role in ['instructor', 'viewer', 'student']
-        
+
     return False
+
+
+def can_manage_user(request_user, target_user):
+    if request_user.is_superuser:
+        return True
+    if request_user == target_user:
+        return True
+    if getattr(target_user, 'institution', '') != getattr(request_user, 'institution', ''):
+        return False
+    return check_user_permission_modification_allowed(request_user, target_user)
 
 
 class StructuredResponseMixin:
@@ -179,6 +209,50 @@ class AddUserApiView(StructuredResponseMixin, generics.CreateAPIView):
         )
 
 
+class AdminCreateUserAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanAddUsers]
+
+    def post(self, request):
+        serializer = AdminCreateUserSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+
+        create_audit_log(
+            actor=request.user,
+            action="Created user",
+            target=user.email,
+            details=f"Admin-created user {user.email} with role {user.role}.",
+            module="Users",
+            severity="info",
+            status="success",
+            request=request,
+        )
+
+        return Response(
+            {
+                "status": "success",
+                "message": "User created successfully.",
+                "data": UserListSerializer(user).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AuditLogListAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanViewUsers]
+
+    def get(self, request):
+        logs = AuditLog.objects.select_related("actor").order_by("-created_at")[:200]
+        return Response(
+            {
+                "status": "success",
+                "message": "Audit logs retrieved successfully.",
+                "data": AuditLogSerializer(logs, many=True).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class CreatePasswordApiView(StructuredResponseMixin, APIView):
     permission_classes = []
 
@@ -247,76 +321,32 @@ class GoogleLoginAPIView(APIView):
     permission_classes = []
 
     def post(self, request):
-
-        token = request.data.get("token")
-
-        if not token:
+        serializer = GoogleLoginSerializer(data={"token": request.data.get("token")})
+        if not serializer.is_valid():
+            errors = serializer.errors
+            message = "Invalid Google token"
+            if isinstance(errors, dict):
+                non_field = errors.get("non_field_errors") or errors.get("token")
+                if non_field:
+                    message = non_field[0] if isinstance(non_field, list) else str(non_field)
             return Response({
                 "success": False,
-                "message": "Google token is required"
+                "status": "failed",
+                "message": message,
+                "data": None,
             }, status=400)
 
-        try:
-            # VERIFY TOKEN
-            idinfo = id_token.verify_oauth2_token(
-                token,
-                requests.Request(),
-                settings.GOOGLE_CLIENT_ID
-            )
-
-            email = idinfo.get("email")
-            full_name = idinfo.get("name", "Google User")
-
-            if not email:
-                return Response({
-                    "success": False,
-                    "message": "Email not found in Google account"
-                }, status=400)
-
-            # CREATE OR GET USER
-            user, created = User.objects.get_or_create(
-                email=email,
-                defaults={
-                    "full_name": full_name,
-                    "institution": "Google User",
-                    "role": "student",
-                    "is_verified": True,
-                    "is_active": True,
-                }
-            )
-
-            if created:
-                sync_user_role_group(user)
-            else:
-                if not user.is_verified:
-                    user.is_verified = True
-                sync_user_role_group(user)
-                user.save(update_fields=["is_verified"])
-
-            if not user.is_active:
-                return Response({
-                    "success": False,
-                    "message": "Account is deactivated"
-                }, status=403)
-
-            # GENERATE JWT
-            refresh = RefreshToken.for_user(user)
-
-            return Response({
-                "success": True,
-                "message": "Google login successful",
-                "data": {
-                    "access": str(refresh.access_token),
-                    "refresh": str(refresh),
-                    "user": get_user_auth_payload(user),
-                }
-            })
-
-        except ValueError:
-            return Response({
-                "success": False,
-                "message": "Invalid Google token"
-            }, status=400)
+        validated = serializer.validated_data
+        return Response({
+            "success": True,
+            "status": "success",
+            "message": "Google login successful",
+            "data": {
+                "access": validated["access"],
+                "refresh": validated["refresh"],
+                "user": validated["user"],
+            },
+        }, status=200)
         
 # logout view
 
@@ -474,24 +504,53 @@ class UserListView(generics.ListAPIView):
         user = self.request.user
         if user.is_superuser:
             return queryset
-        if getattr(user, 'role', '') in ['admin', 'viewer'] or user.groups.filter(name__in=['Admin', 'Viewer']).exists():
-            return queryset
-        return queryset.filter(institution=user.institution)
+
+        institution = getattr(user, 'institution', '')
+        if institution:
+            return queryset.filter(institution=institution)
+
+        return queryset.filter(pk=user.pk)
     
 class UserUpdateView(generics.UpdateAPIView):
     queryset = User.objects.all()
     serializer_class = UserUpdateSerializer
     permission_classes = [IsAuthenticated, CanChangeUsers]
     lookup_field = "id"
-    
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not can_manage_user(request.user, instance):
+            return Response(
+                {"detail": "You do not have permission to update users outside your institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().update(request, *args, **kwargs)
+
+
 class UserDeleteView(generics.DestroyAPIView):
     queryset = User.objects.all()
     permission_classes = [IsAuthenticated, CanDeleteUsers]
     lookup_field = "id"
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        username = instance.email  # cyangwa email niba ushaka
+        if not can_manage_user(request.user, instance):
+            return Response(
+                {"detail": "You do not have permission to delete users outside your institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        username = instance.email
         self.perform_destroy(instance)
+        create_audit_log(
+            actor=request.user,
+            action="Deleted user",
+            target=username,
+            details=f"User {username} was deleted by {request.user.email}.",
+            module="Users",
+            severity="warning",
+            status="success",
+            request=request,
+        )
         return Response(
             {
                 "success": True,
@@ -509,9 +568,25 @@ class UserRoleAssignView(generics.UpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
+        if not can_manage_user(request.user, instance):
+            return Response(
+                {"detail": "You do not have permission to update roles for users outside your institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = self.get_serializer(instance, data=request.data, partial=False)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+
+        create_audit_log(
+            actor=request.user,
+            action="Updated user role",
+            target=instance.email,
+            details=f"Assigned role {instance.role} to {instance.email}.",
+            module="Users",
+            severity="info",
+            status="success",
+            request=request,
+        )
 
         response_serializer = UserListSerializer(instance)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
@@ -526,9 +601,25 @@ class UserRoleUpdateView(generics.UpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
+        if not can_manage_user(request.user, instance):
+            return Response(
+                {"detail": "You do not have permission to update roles for users outside your institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = self.get_serializer(instance, data=request.data, partial=False)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+
+        create_audit_log(
+            actor=request.user,
+            action="Updated user role",
+            target=instance.email,
+            details=f"Role changed for {instance.email} to {instance.role}.",
+            module="Users",
+            severity="info",
+            status="success",
+            request=request,
+        )
 
         response_serializer = UserListSerializer(instance)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
@@ -556,6 +647,17 @@ class UserPermissionsUpdateView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
+        create_audit_log(
+            actor=request.user,
+            action="Updated user permissions",
+            target=user.email,
+            details=f"Updated permissions for {user.email}.",
+            module="Users",
+            severity="info",
+            status="success",
+            request=request,
+        )
+
         return Response(UserListSerializer(user).data, status=status.HTTP_200_OK)
 
 
@@ -580,6 +682,17 @@ class UserGroupsUpdateView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+
+        create_audit_log(
+            actor=request.user,
+            action="Updated user groups",
+            target=user.email,
+            details=f"Updated group membership for {user.email}.",
+            module="Users",
+            severity="info",
+            status="success",
+            request=request,
+        )
 
         return Response(UserListSerializer(user).data, status=status.HTTP_200_OK)
 
@@ -608,6 +721,17 @@ class RolePermissionUpdateView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+
+        create_audit_log(
+            actor=request.user,
+            action="Updated role permissions",
+            target=group.name,
+            details=f"Updated permissions for role {group.name}.",
+            module="Access Management",
+            severity="info",
+            status="success",
+            request=request,
+        )
 
         return Response(GroupSerializer(group).data, status=status.HTTP_200_OK)
 
@@ -681,6 +805,17 @@ class RoleCreateView(APIView):
             serializer.is_valid(raise_exception=True)
             serializer.save()
 
+        create_audit_log(
+            actor=request.user,
+            action="Created role",
+            target=group.name,
+            details=f"Created role {group.name} with description '{description}'.",
+            module="Access Management",
+            severity="info",
+            status="success",
+            request=request,
+        )
+
         return Response(GroupSerializer(group).data, status=201 if created else 200)
 
 
@@ -712,6 +847,17 @@ class RoleDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
+        create_audit_log(
+            actor=request.user,
+            action="Updated role",
+            target=group.name,
+            details=f"Updated role configuration for {group.name}.",
+            module="Access Management",
+            severity="info",
+            status="success",
+            request=request,
+        )
+
         return Response(GroupSerializer(group).data)
 
     def delete(self, request, role_id):
@@ -724,7 +870,18 @@ class RoleDetailView(APIView):
         if group.name in DEFAULT_ROLES and not request.user.is_superuser:
             return Response({"detail": "Cannot delete reserved role."}, status=403)
 
+        group_name = group.name
         group.delete()
+        create_audit_log(
+            actor=request.user,
+            action="Deleted role",
+            target=group_name,
+            details=f"Deleted role {group_name}.",
+            module="Access Management",
+            severity="warning",
+            status="success",
+            request=request,
+        )
         return Response({"detail": "Role deleted."}, status=200)
 
 
@@ -741,7 +898,18 @@ class RoleDeleteView(APIView):
         if group.name in DEFAULT_ROLES and not request.user.is_superuser:
             return Response({"detail": "Cannot delete reserved role."}, status=403)
 
+        group_name = group.name
         group.delete()
+        create_audit_log(
+            actor=request.user,
+            action="Deleted role",
+            target=group_name,
+            details=f"Deleted role {group_name}.",
+            module="Access Management",
+            severity="warning",
+            status="success",
+            request=request,
+        )
         return Response({"detail": "Role deleted."}, status=200)
 
 
@@ -763,6 +931,17 @@ class RolePermissionAssignView(APIView):
         serializer = GroupPermissionsUpdateSerializer(data=request.data, context={"group": group})
         serializer.is_valid(raise_exception=True)
         serializer.save()
+
+        create_audit_log(
+            actor=request.user,
+            action="Assigned role permissions",
+            target=group.name,
+            details=f"Assigned permissions to role {group.name}.",
+            module="Access Management",
+            severity="info",
+            status="success",
+            request=request,
+        )
 
         return Response(GroupSerializer(group).data, status=200)
 

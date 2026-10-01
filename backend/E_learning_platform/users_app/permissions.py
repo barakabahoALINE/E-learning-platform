@@ -1,6 +1,41 @@
 from rest_framework.permissions import BasePermission
 
 
+class IsAdminUserRole(BasePermission):
+    """Allows access to admin/instructor role checks used by the training platform."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        role = getattr(user, "role", None)
+        group_names = set(user.groups.values_list("name", flat=True)) if hasattr(user, "groups") else set()
+        return role in {"admin", "instructor", "super_admin"} or group_names.intersection({"Admin", "Instructor"})
+
+    def has_object_permission(self, request, view, obj):
+        return self.has_permission(request, view)
+
+
+class IsTrainingUser(BasePermission):
+    """Allows access only to authenticated users assigned to the training program."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return False
+        if hasattr(user, "traininguserprofile") and user.traininguserprofile is not None:
+            return True
+        group_names = set(user.groups.values_list("name", flat=True)) if hasattr(user, "groups") else set()
+        return "TrainingUser" in group_names
+
+    def has_object_permission(self, request, view, obj):
+        return self.has_permission(request, view)
+
+
 class HasPermission(BasePermission):
     required_permission = None
 

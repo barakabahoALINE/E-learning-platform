@@ -342,11 +342,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // Institution updates are not managed through DataContext at the moment.
   };
 
-  const contextUsers = rbacUsers.filter((u: User) => u.id !== currentUser?.id);
+  const isSuperAdmin = Boolean(currentUser?.is_superuser);
+  const currentInstitution = currentUser?.institution || "";
+
+  const visibleUsers = isSuperAdmin
+    ? rbacUsers.filter((u: User) => u.id !== currentUser?.id)
+    : currentInstitution
+      ? rbacUsers.filter((u: User) => u.institution === currentInstitution)
+      : [];
+
+  const visibleInstitutions = isSuperAdmin
+    ? rbacInstitutions
+    : currentInstitution
+      ? rbacInstitutions.filter((institution) => institution.name === currentInstitution)
+      : [];
+
+  const contextUsers = visibleUsers;
   const contextRoles = rbacRoles;
   const contextPermissions = rbacPermissions;
   const contextAuditLogs = rbacAuditLogs;
-  const contextInstitutions = rbacInstitutions;
+  const contextInstitutions = visibleInstitutions;
 
   const addUserFromRBAC = (user: Omit<User, "id" | "createdAt">) => {
     return dispatch(

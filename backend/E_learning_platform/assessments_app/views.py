@@ -1,5 +1,7 @@
 import json
+from datetime import timedelta
 from urllib import request
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
@@ -8,11 +10,13 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from .models import Assessment,StudentAnswer, Question, Choice, Attempt
+from .models import Assessment,StudentAnswer, Question, Choice, Attempt, Training, Survey
 from .serializers import *
 from courses_app.models import Course, Module
 from progress_app.models import (ModuleProgress, SectionProgress, _refresh_course_progress, _refresh_module_progress)
 from enrollments_app.models import Enrollment
+from users_app.permissions import IsTrainingUser
+from users_app.models import TrainingUserProfile
 from .permissions import *
 from .utils import *
 from .services.rules import (
@@ -27,6 +31,8 @@ from .services.rules import (
 from progress_app.models import (
                 CourseProgress
             )
+
+User = get_user_model()
 
 
 
@@ -60,6 +66,22 @@ def build_attempt_snapshot(assessment):
         "tab_switch_limit": assessment.tab_switch_limit,
     }
     return settings, questions
+
+
+def learner_attempt_questions(attempt):
+    questions = attempt.question_snapshot or []
+    if attempt.assessment.assessment_type != "TRAINING":
+        return questions
+    return [
+        {
+            **question,
+            "choices": [
+                {key: value for key, value in choice.items() if key != "is_correct"}
+                for choice in question.get("choices", [])
+            ],
+        }
+        for question in questions
+    ]
 
 
 def detach_final_assessments_from_unpublished_course(course):
@@ -207,6 +229,221 @@ def repair_duplicate_unpublished_quiz_attachments(module_ids):
             detach_quiz_assessments_from_unpublished_module(module)
 
 
+class ListTrainingsAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanAddAssessment]
+
+    def get(self, request):
+        trainings = Training.objects.select_related("survey").all().order_by("-created_at")
+        serializer = TrainingSerializer(trainings, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+
+class CreateTrainingAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanAddAssessment]
+
+    def post(self, request):
+        title = (request.data.get("title") or "").strip()
+        description = (request.data.get("description") or "").strip()
+        survey_name = (request.data.get("survey_name") or request.data.get("name") or "").strip()
+        survey_description = (request.data.get("survey_description") or "").strip()
+
+        if not title:
+            return Response({"success": False, "error": "Training title is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if survey_name:
+            survey, _ = Survey.objects.get_or_create(
+                name=survey_name,
+                defaults={"description": survey_description or description},
+            )
+        else:
+            survey = Survey.objects.create(
+                name=title,
+                description=survey_description or description,
+            )
+
+        training = Training.objects.create(
+            title=title,
+            description=description,
+            survey=survey,
+            is_active=request.data.get("is_active", True),
+        )
+        return Response({
+            "success": True,
+            "message": "Training created successfully",
+            "data": TrainingSerializer(training).data,
+        }, status=status.HTTP_201_CREATED)
+
+
+class MyTrainingAssessmentsAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsTrainingUser]
+
+    def get(self, request):
+        profile = TrainingUserProfile.objects.filter(user=request.user, is_active=True).first()
+        if profile is None:
+            return Response({"success": True, "data": []})
+
+        training_ids = profile.trainings.filter(is_active=True).values_list("id", flat=True)
+        assessments = Assessment.objects.filter(
+            assessment_type="TRAINING",
+            training_id__in=training_ids,
+            training__is_active=True,
+            is_published=True,
+            pending_delete=False,
+        ).select_related("training").order_by("title")
+        assessment_ids = list(assessments.values_list("id", flat=True))
+        latest_attempt_status = {}
+        for attempt in Attempt.objects.filter(
+            student=request.user,
+            assessment_id__in=assessment_ids,
+        ).order_by("assessment_id", "-started_at"):
+            latest_attempt_status.setdefault(
+                attempt.assessment_id,
+                "completed" if attempt.is_submitted else "in_progress",
+            )
+        data = [
+            {
+                "id": assessment.id,
+                "title": assessment.title,
+                "training": assessment.training_id,
+                "training_title": assessment.training.title,
+                "survey_name": assessment.training.survey.name,
+                "duration": assessment.duration_minutes or assessment.duration,
+                "pass_mark": assessment.pass_mark,
+                "require_access_code": assessment.require_access_code,
+                "question_count": assessment.questions.filter(pending_delete=False).count(),
+                "status": latest_attempt_status.get(assessment.id, "not_completed"),
+            }
+            for assessment in assessments
+        ]
+        return Response({"success": True, "data": data})
+
+
+class PublishTrainingAssessmentAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanChangeAssessment]
+
+    def post(self, request, assessment_id):
+        assessment = get_object_or_404(
+            Assessment,
+            id=assessment_id,
+            assessment_type="TRAINING",
+        )
+        is_published = request.data.get("is_published")
+        if not isinstance(is_published, bool):
+            return Response({"success": False, "error": "is_published must be a boolean."}, status=400)
+
+        if is_published:
+            if not assessment.training_id:
+                return Response({"success": False, "error": "Select a training program before publishing."}, status=400)
+            if not assessment.questions.filter(pending_delete=False).exists():
+                return Response({"success": False, "error": "Add at least one question before publishing."}, status=400)
+            if assessment.require_access_code and not assessment.access_codes.filter(is_active=True).exists():
+                return Response({"success": False, "error": "Set an active access code before publishing."}, status=400)
+
+        assessment.is_published = is_published
+        assessment.published_at = timezone.now() if is_published else None
+        assessment.has_unpublished_changes = False
+        assessment.save(update_fields=["is_published", "published_at", "has_unpublished_changes"])
+        return Response({
+            "success": True,
+            "message": "Training assessment published." if is_published else "Training assessment unpublished.",
+            "data": TrainingAssessmentSerializer(assessment).data,
+        })
+
+
+class TrainingAssessmentUsersAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanAddAssessment]
+
+    def _get_assessment(self, assessment_id):
+        return get_object_or_404(
+            Assessment.objects.select_related("training"),
+            id=assessment_id,
+            assessment_type="TRAINING",
+        )
+
+    def _get_candidates(self, request):
+        users = User.objects.filter(role="training_user", traininguserprofile__is_active=True)
+        if not request.user.is_superuser:
+            users = users.filter(institution=request.user.institution)
+        return users.order_by("full_name", "email")
+
+    def get(self, request, assessment_id):
+        assessment = self._get_assessment(assessment_id)
+        if not assessment.training_id:
+            return Response({"success": False, "error": "Assessment has no training program."}, status=400)
+        assigned_ids = set(assessment.training.training_users.values_list("user_id", flat=True))
+        users = self._get_candidates(request)
+        return Response({
+            "success": True,
+            "data": [{
+                "id": user.id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "is_assigned": user.id in assigned_ids,
+            } for user in users],
+        })
+
+    @transaction.atomic
+    def put(self, request, assessment_id):
+        assessment = self._get_assessment(assessment_id)
+        if not assessment.training_id:
+            return Response({"success": False, "error": "Assessment has no training program."}, status=400)
+        user_ids = request.data.get("user_ids")
+        if not isinstance(user_ids, list):
+            return Response({"success": False, "error": "user_ids must be a list."}, status=400)
+
+        candidates = self._get_candidates(request)
+        selected_users = list(candidates.filter(id__in=user_ids))
+        if {user.id for user in selected_users} != set(user_ids):
+            return Response({"success": False, "error": "One or more selected users are unavailable."}, status=400)
+
+        profiles = TrainingUserProfile.objects.filter(user__in=selected_users)
+        for profile in profiles:
+            profile.trainings.add(assessment.training)
+        existing_assigned = TrainingUserProfile.objects.filter(
+            trainings=assessment.training,
+        ).exclude(user__in=selected_users)
+        if not request.user.is_superuser:
+            existing_assigned = existing_assigned.filter(user__institution=request.user.institution)
+        if not selected_users:
+            existing_assigned = TrainingUserProfile.objects.filter(trainings=assessment.training)
+            if not request.user.is_superuser:
+                existing_assigned = existing_assigned.filter(user__institution=request.user.institution)
+        for profile in existing_assigned:
+            profile.trainings.remove(assessment.training)
+
+        return Response({"success": True, "message": "Training user assignments updated."})
+
+
+class ListSurveysAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanAddAssessment]
+
+    def get(self, request):
+        surveys = Survey.objects.all().order_by("-created_at")
+        return Response({"success": True, "data": [{
+            "id": survey.id,
+            "name": survey.name,
+            "description": survey.description,
+        } for survey in surveys]})
+
+
+class CreateSurveyAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanAddAssessment]
+
+    def post(self, request):
+        name = (request.data.get("name") or "").strip()
+        description = (request.data.get("description") or "").strip()
+
+        if not name:
+            return Response({"success": False, "error": "Survey name is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        survey = Survey.objects.create(name=name, description=description)
+        return Response({
+            "success": True,
+            "message": "Survey created successfully",
+            "data": {"id": survey.id, "name": survey.name, "description": survey.description},
+        }, status=status.HTTP_201_CREATED)
+
+
 class ListAssessmentsAPIView(APIView):
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
@@ -255,16 +492,50 @@ class ListAssessmentsAPIView(APIView):
 class CreateAssessmentAPIView(APIView):
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
+    @transaction.atomic
     def post(self, request):
         data = apply_assessment_rules(request.data.copy())
         serializer = CreateAssessmentSerializer(data=data)
 
         if serializer.is_valid():
             try:
+                access_code_value = (request.data.get("access_code") or "").strip()
+                is_code_required = (
+                    serializer.validated_data.get("assessment_type") == "TRAINING"
+                    and serializer.validated_data.get("require_access_code", False)
+                )
+                if is_code_required and not access_code_value:
+                    return Response({
+                        "success": False,
+                        "error": "Access code is required when training access is enabled.",
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                if is_code_required and len(access_code_value) > 8:
+                    return Response({
+                        "success": False,
+                        "error": "Access code must be 8 characters or fewer.",
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                if is_code_required and AccessCode.objects.filter(code=access_code_value).exists():
+                    return Response({
+                        "success": False,
+                        "error": "This access code is already in use.",
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
                 assessment = serializer.save(
                     is_published=False,
                     has_unpublished_changes=False
                 )
+
+                if is_code_required:
+                    AccessCode.objects.update_or_create(
+                        assessment=assessment,
+                        defaults={
+                            "training": assessment.training,
+                            "code": access_code_value,
+                            "max_uses": 0,
+                            "created_by": request.user,
+                            "is_active": True,
+                        },
+                    )
 
                 if assessment.course and assessment.course.is_published:
                     assessment.has_unpublished_changes = True
@@ -285,6 +556,7 @@ class CreateAssessmentAPIView(APIView):
 class UpdateAssessmentAPIView(APIView):
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
+    @transaction.atomic
     def patch(self, request, assessment_id):
         assessment = get_object_or_404(Assessment, id=assessment_id)
 
@@ -296,13 +568,56 @@ class UpdateAssessmentAPIView(APIView):
             "title",
             "tab_switch_enabled",
             "tab_switch_limit",
+            "training",
+            "require_access_code",
+            "access_code",
         ]
         update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+        access_code_value = str(request.data.get("access_code") or "").strip()
+        requested_training = assessment.training
+        if "training" in update_data:
+            training_id = update_data.pop("training")
+            if training_id in (None, ""):
+                return Response({"success": False, "error": "Training assessments must be linked to a training."}, status=400)
+            requested_training = Training.objects.filter(pk=training_id).first()
+            if requested_training is None:
+                return Response({"success": False, "error": "Selected training program was not found."}, status=400)
+
+        requested_require_access_code = bool(
+            update_data.get("require_access_code", assessment.require_access_code)
+        )
+        existing_access_code = assessment.access_codes.filter(is_active=True).first()
+        if assessment.assessment_type == "TRAINING" and requested_require_access_code:
+            if access_code_value and len(access_code_value) > 8:
+                return Response({"success": False, "error": "Access code must be 8 characters or fewer."}, status=400)
+            if access_code_value and AccessCode.objects.filter(code=access_code_value).exclude(assessment=assessment).exists():
+                return Response({"success": False, "error": "This access code is already in use."}, status=400)
+            if not access_code_value and existing_access_code is None:
+                return Response({"success": False, "error": "Enter an access code before requiring one."}, status=400)
 
         for field, value in update_data.items():
+            if field in {"access_code", "require_access_code"}:
+                continue
             setattr(assessment, field, value)
-
+        assessment.training = requested_training
+        assessment.require_access_code = requested_require_access_code
         assessment.save()
+
+        if assessment.assessment_type == "TRAINING" and assessment.require_access_code:
+            if access_code_value:
+                AccessCode.objects.update_or_create(
+                    assessment=assessment,
+                    defaults={
+                        "training": assessment.training,
+                        "code": access_code_value,
+                        "max_uses": 0,
+                        "created_by": request.user,
+                        "is_active": True,
+                    },
+                )
+            elif existing_access_code and existing_access_code.training_id != assessment.training_id:
+                existing_access_code.training = assessment.training
+                existing_access_code.save(update_fields=["training"])
 
         impacted_courses = set(filter(None, [assessment.course]))
         impacted_courses.update(assessment.courses.all())
@@ -433,6 +748,12 @@ class AttachAssessmentAPIView(APIView):
             removals_modules = set(assessment.draft_module_removals or [])
             additions_courses = set(assessment.draft_course_additions or [])
             removals_courses = set(assessment.draft_course_removals or [])
+            if module_ids is not None:
+                additions_modules.update(str(module.id) for module in modules)
+                removals_modules.difference_update(str(module.id) for module in modules)
+            if course_ids is not None:
+                additions_courses.update(str(course.id) for course in courses)
+                removals_courses.difference_update(str(course.id) for course in courses)
             if published_module_ids:
                 additions_modules.update(published_module_ids)
                 removals_modules.difference_update(published_module_ids)
@@ -658,9 +979,22 @@ class CreateQuestionAPIView(APIView):
     permission_classes = [IsAuthenticated, CanAddAssessment]
 
     def post(self, request):
+        request_data = getattr(request, "data", None)
+
+        if request_data is None or (
+            hasattr(request_data, "keys") and not request_data
+        ):
+            if hasattr(request, "POST") and request.POST:
+                request_data = request.POST
+            else:
+                try:
+                    import json
+                    request_data = json.loads(request.body.decode("utf-8")) if request.body else {}
+                except Exception:
+                    request_data = {}
 
         serializer = QuestionCreateSerializer(
-            data=request.data
+            data=request_data
         )
 
         if serializer.is_valid():
@@ -943,6 +1277,44 @@ class StartAttemptAPIView(APIView):
                 "data": None
             }, status=404)
 
+        if assessment.assessment_type == "TRAINING":
+            training_profile = TrainingUserProfile.objects.filter(user=user, is_active=True).first()
+            if training_profile is None or not training_profile.trainings.filter(id=assessment.training_id, is_active=True).exists():
+                return Response({
+                    "status": "failed",
+                    "message": "User is not assigned to this training.",
+                    "data": None,
+                }, status=403)
+
+            access_code_value = request.data.get("access_code") or request.query_params.get("access_code")
+            if assessment.require_access_code or access_code_value is not None:
+                if not access_code_value:
+                    return Response({
+                        "status": "failed",
+                        "message": "Access code is required for this training assessment.",
+                        "data": None,
+                    }, status=403)
+
+                access_code = AccessCode.objects.filter(
+                    training=assessment.training,
+                    assessment=assessment,
+                    code=access_code_value.strip(),
+                ).select_related("training", "assessment").first()
+                if not access_code:
+                    return Response({
+                        "status": "failed",
+                        "message": "Invalid access code for this training assessment.",
+                        "data": None,
+                    }, status=403)
+
+                valid, message = access_code.is_valid()
+                if not valid:
+                    return Response({
+                        "status": "failed",
+                        "message": message,
+                        "data": None,
+                    }, status=403)
+
         course = None
         if course_id:
             course = get_object_or_404(Course, id=course_id)
@@ -995,7 +1367,7 @@ class StartAttemptAPIView(APIView):
                     "data": {
                         **StartAttemptSerializer(existing).data,
                         "assessment_snapshot": existing.assessment_snapshot,
-                        "question_snapshot": existing.question_snapshot,
+                        "question_snapshot": learner_attempt_questions(existing),
                     }
                 })
 
@@ -1026,10 +1398,23 @@ class StartAttemptAPIView(APIView):
         else:
             assessment_snapshot, question_snapshot = build_attempt_snapshot(assessment)
 
+        access_code = None
+        if assessment.assessment_type == "TRAINING" and assessment.require_access_code:
+            access_code_value = request.data.get("access_code") or request.query_params.get("access_code")
+            access_code = AccessCode.objects.filter(
+                training=assessment.training,
+                assessment=assessment,
+                code=(access_code_value or '').strip(),
+            ).first()
+            if access_code:
+                access_code.used_count += 1
+                access_code.save(update_fields=["used_count"])
+
         attempt = Attempt.objects.create(
             student=user,
             assessment=assessment,
             course=course,
+            access_code=access_code,
             assessment_snapshot=assessment_snapshot,
             question_snapshot=question_snapshot,
             attempt_number=(
@@ -1041,13 +1426,18 @@ class StartAttemptAPIView(APIView):
             )
         )
 
+        if assessment.assessment_type == "TRAINING":
+            duration_minutes = assessment.duration_minutes or assessment.duration or 30
+            attempt.expires_at = timezone.now() + timedelta(minutes=duration_minutes)
+            attempt.save(update_fields=["expires_at", "access_code"])
+
         return Response({
             "status": "success",
             "message": "Attempt started",
             "data": {
                 **StartAttemptSerializer(attempt).data,
                 "assessment_snapshot": attempt.assessment_snapshot,
-                "question_snapshot": attempt.question_snapshot,
+                "question_snapshot": learner_attempt_questions(attempt),
             }
         })
 

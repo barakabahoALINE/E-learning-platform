@@ -4,15 +4,18 @@ from types import SimpleNamespace
 from django.test import TestCase
 from django.utils import timezone
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from courses_app.models import Course, Module
 from enrollments_app.models import Enrollment
 from courses_app.serializers import ModuleSerializer, CourseDetailSerializer
-from .models import Assessment, Attempt, Choice, Question
+from .models import Assessment, Attempt, Choice, Question, Survey, Training, AccessCode
 from .services.rules import RuleError, check_attempt_limit, validate_attachment_targets
 from .serializers import CreateAssessmentSerializer, AssessmentDetailSerializer
+from users_app.permissions import IsAdminUserRole, IsTrainingUser
 from .views import (
+    CreateAssessmentAPIView,
     CreateQuestionAPIView,
     DeleteQuestionAPIView,
     DetachAssessmentAPIView,
@@ -21,6 +24,9 @@ from .views import (
     UpdateQuestionAPIView,
     UpdateAssessmentAPIView,
     StartAttemptAPIView,
+    MyTrainingAssessmentsAPIView,
+    PublishTrainingAssessmentAPIView,
+    TrainingAssessmentUsersAPIView,
 )
 from courses_app.views import apply_assessment_attachment_drafts, apply_question_draft_changes, CoursePublishAPIView
 
@@ -76,6 +82,28 @@ class AssessmentSerializerTests(TestCase):
         assessment = serializer.save()
 
         self.assertEqual(assessment.assessment_type, "QUIZ")
+
+    def test_training_assessment_requires_training_and_tracks_access_code(self):
+        survey = Survey.objects.create(name="Population Census", description="training survey")
+        training = Training.objects.create(title="Census Basics", description="intro", survey=survey, is_active=True)
+
+        data = {
+            "assessment_type": "TRAINING",
+            "title": "Census training assessment",
+            "training": training.id,
+            "pass_mark": 70,
+            "duration": 30,
+            "require_access_code": True,
+            "descriptions": "Access code required.",
+        }
+
+        serializer = CreateAssessmentSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+        assessment = serializer.save()
+        self.assertEqual(assessment.assessment_type, "TRAINING")
+        self.assertEqual(assessment.training_id, training.id)
+        self.assertTrue(assessment.require_access_code)
         self.assertIsNone(assessment.course)
         self.assertIsNone(assessment.module)
 
@@ -688,6 +716,330 @@ class AssessmentSerializerTests(TestCase):
         replacement_assessment.refresh_from_db()
         self.assertIn(str(self.course.id), replacement_assessment.draft_course_additions)
         self.assertIn(str(other_course.id), replacement_assessment.draft_course_additions)
+
+
+class TrainingAssessmentPhase1Tests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="training.student@example.com",
+            password="Str0ngP@ssword!",
+            full_name="Training Student",
+            institution="NISR",
+            role="admin",
+        )
+        self.survey = Survey.objects.create(name="Population Census", description="baseline survey")
+        self.training = Training.objects.create(title="Census Basics", description="intro", survey=self.survey, is_active=True)
+        self.training_user = get_user_model().objects.create_user(
+            email="training.user@example.com",
+            password="Str0ngP@ssword!",
+            full_name="Survey User",
+            institution="NISR",
+            role="training_user",
+        )
+        self.training_user_profile = self.training_user.traininguserprofile
+        self.training_user_profile.trainings.add(self.training)
+        self.group = Group.objects.get(name="TrainingUser")
+        self.training_user.groups.add(self.group)
+        self.assessment = Assessment.objects.create(
+            title="Census training assessment",
+            assessment_type="TRAINING",
+            training=self.training,
+            pass_mark=70,
+            duration=30,
+            duration_minutes=30,
+            is_published=True,
+            require_access_code=True,
+        )
+        self.question = Question.objects.create(
+            assessment=self.assessment,
+            question_text="What is the capital of Rwanda?",
+            question_type="single",
+            marks=1,
+            order=1,
+        )
+        Choice.objects.create(question=self.question, text="Kigali", is_correct=True)
+        Choice.objects.create(question=self.question, text="Nairobi", is_correct=False)
+        self.access_code = AccessCode.objects.create(
+            training=self.training,
+            assessment=self.assessment,
+            code="ABC12345",
+            created_by=self.user,
+            max_uses=1,
+            is_active=True,
+        )
+
+    def test_training_user_group_and_permission_flags_exist(self):
+        self.assertTrue(Group.objects.filter(name="TrainingUser").exists())
+        self.assertTrue(IsTrainingUser().has_permission(SimpleNamespace(user=self.training_user), None))
+        self.assertTrue(IsAdminUserRole().has_permission(SimpleNamespace(user=self.user), None))
+
+    def test_publish_training_assessment_lists_only_for_assigned_users(self):
+        self.assessment.is_published = False
+        self.assessment.save(update_fields=["is_published"])
+        publish_request = APIRequestFactory().post(
+            f"/api/assessments/training/{self.assessment.id}/publish/",
+            {"is_published": True},
+            format="json",
+        )
+        force_authenticate(publish_request, user=self.user)
+        publish_response = PublishTrainingAssessmentAPIView.as_view()(publish_request, assessment_id=self.assessment.id)
+        self.assertEqual(publish_response.status_code, 200, publish_response.data)
+        self.assessment.refresh_from_db()
+        self.assertTrue(self.assessment.is_published)
+        self.assertIsNotNone(self.assessment.published_at)
+
+        other_survey = Survey.objects.create(name="Other training survey")
+        other_training = Training.objects.create(title="Other program", survey=other_survey)
+        other_assessment = Assessment.objects.create(
+            title="Other published assessment",
+            assessment_type="TRAINING",
+            training=other_training,
+            is_published=True,
+        )
+        listing_request = APIRequestFactory().get("/api/assessments/training/my-assessments/")
+        force_authenticate(listing_request, user=self.training_user)
+        listing_response = MyTrainingAssessmentsAPIView.as_view()(listing_request)
+        listed_ids = [entry["id"] for entry in listing_response.data["data"]]
+        self.assertEqual(listing_response.status_code, 200)
+        self.assertIn(self.assessment.id, listed_ids)
+        self.assertNotIn(other_assessment.id, listed_ids)
+
+    def test_training_assessment_list_includes_latest_attempt_status(self):
+        in_progress_assessment = self.assessment
+        completed_assessment = Assessment.objects.create(
+            title="Completed training assessment",
+            assessment_type="TRAINING",
+            training=self.training,
+            is_published=True,
+        )
+        Attempt.objects.create(
+            student=self.training_user,
+            assessment=in_progress_assessment,
+            is_submitted=True,
+            submitted_at=timezone.now() - timedelta(minutes=5),
+        )
+        Attempt.objects.create(
+            student=self.training_user,
+            assessment=in_progress_assessment,
+            is_submitted=False,
+        )
+        Attempt.objects.create(
+            student=self.training_user,
+            assessment=completed_assessment,
+            is_submitted=True,
+            submitted_at=timezone.now(),
+        )
+
+        request = APIRequestFactory().get("/api/assessments/training/my-assessments/")
+        force_authenticate(request, user=self.training_user)
+        response = MyTrainingAssessmentsAPIView.as_view()(request)
+        status_by_id = {entry["id"]: entry["status"] for entry in response.data["data"]}
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(status_by_id[in_progress_assessment.id], "in_progress")
+        self.assertEqual(status_by_id[completed_assessment.id], "completed")
+
+    def test_training_assessment_cannot_publish_without_questions(self):
+        empty_assessment = Assessment.objects.create(
+            title="Empty training assessment",
+            assessment_type="TRAINING",
+            training=self.training,
+        )
+        request = APIRequestFactory().post(
+            f"/api/assessments/training/{empty_assessment.id}/publish/",
+            {"is_published": True},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = PublishTrainingAssessmentAPIView.as_view()(request, assessment_id=empty_assessment.id)
+        self.assertEqual(response.status_code, 400)
+        empty_assessment.refresh_from_db()
+        self.assertFalse(empty_assessment.is_published)
+
+    def test_admin_can_assign_training_program_to_training_user(self):
+        request = APIRequestFactory().put(
+            f"/api/assessments/training/{self.assessment.id}/users/",
+            {"user_ids": [self.training_user.id]},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = TrainingAssessmentUsersAPIView.as_view()(request, assessment_id=self.assessment.id)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(self.training_user.traininguserprofile.trainings.filter(id=self.training.id).exists())
+
+        learner_request = APIRequestFactory().get("/api/assessments/training/my-assessments/")
+        force_authenticate(learner_request, user=self.training_user)
+        learner_response = MyTrainingAssessmentsAPIView.as_view()(learner_request)
+        visible_ids = [entry["id"] for entry in learner_response.data["data"]]
+        self.assertEqual(learner_response.status_code, 200)
+        self.assertIn(self.assessment.id, visible_ids)
+
+    def test_superadmin_can_assign_training_user_from_another_institution(self):
+        other_institution_user = get_user_model().objects.create_user(
+            email="rdb.training.user@example.com",
+            password="Str0ngP@ssword!",
+            full_name="RDB Training User",
+            institution="RDB",
+            role="training_user",
+        )
+        regular_admin_request = APIRequestFactory().get(
+            f"/api/assessments/training/{self.assessment.id}/users/"
+        )
+        force_authenticate(regular_admin_request, user=self.user)
+        regular_admin_response = TrainingAssessmentUsersAPIView.as_view()(
+            regular_admin_request,
+            assessment_id=self.assessment.id,
+        )
+        self.assertNotIn(
+            other_institution_user.id,
+            [user["id"] for user in regular_admin_response.data["data"]],
+        )
+
+        self.user.is_superuser = True
+        self.user.save()
+        superadmin_request = APIRequestFactory().put(
+            f"/api/assessments/training/{self.assessment.id}/users/",
+            {"user_ids": [other_institution_user.id]},
+            format="json",
+        )
+        force_authenticate(superadmin_request, user=self.user)
+        superadmin_response = TrainingAssessmentUsersAPIView.as_view()(
+            superadmin_request,
+            assessment_id=self.assessment.id,
+        )
+
+        self.assertEqual(superadmin_response.status_code, 200, superadmin_response.data)
+        self.assertTrue(other_institution_user.traininguserprofile.trainings.filter(id=self.training.id).exists())
+
+    def test_training_start_attempt_requires_valid_code_and_assignment(self):
+        request = APIRequestFactory().post(
+            "/api/assessments/1/start-attempt/",
+            {"assessment_id": self.assessment.id, "access_code": self.access_code.code},
+            format="json",
+        )
+        force_authenticate(request, user=self.training_user)
+
+        response = StartAttemptAPIView.as_view()(request, assessment_id=self.assessment.id)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["data"]["assessment"], self.assessment.id)
+        self.assertIsNotNone(response.data["data"].get("expires_at"))
+        self.assertNotIn("is_correct", response.data["data"]["question_snapshot"][0]["choices"][0])
+
+        other_user = get_user_model().objects.create_user(
+            email="other@example.com",
+            password="Str0ngP@ssword!",
+            full_name="Other User",
+            institution="NISR",
+        )
+        request = APIRequestFactory().post(
+            "/api/assessments/1/start-attempt/",
+            {"assessment_id": self.assessment.id, "access_code": self.access_code.code},
+            format="json",
+        )
+        force_authenticate(request, user=other_user)
+        response = StartAttemptAPIView.as_view()(request, assessment_id=self.assessment.id)
+        self.assertEqual(response.status_code, 403)
+
+    def test_training_assessment_update_accepts_training_id(self):
+        request = APIRequestFactory().patch(
+            f"/api/assessments/{self.assessment.id}/update/",
+            {
+                "training": self.training.id,
+                "title": "Updated census training assessment",
+                "require_access_code": True,
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = UpdateAssessmentAPIView.as_view()(request, assessment_id=self.assessment.id)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assessment.refresh_from_db()
+        self.access_code.refresh_from_db()
+        self.assertEqual(self.assessment.training_id, self.training.id)
+        self.assertEqual(self.assessment.title, "Updated census training assessment")
+        self.assertEqual(self.access_code.training_id, self.training.id)
+
+    def test_training_start_attempt_reports_missing_access_code(self):
+        request = APIRequestFactory().post(
+            f"/api/assessments/{self.assessment.id}/start-attempt/",
+            {},
+            format="json",
+        )
+        force_authenticate(request, user=self.training_user)
+
+        response = StartAttemptAPIView.as_view()(request, assessment_id=self.assessment.id)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data["message"], "Access code is required for this training assessment.")
+
+    def test_training_creation_persists_access_code(self):
+        request = APIRequestFactory().post(
+            "/api/assessments/create/",
+            {
+                "assessment_type": "TRAINING",
+                "title": "Census access code training",
+                "training": self.training.id,
+                "pass_mark": 70,
+                "duration": 30,
+                "require_access_code": True,
+                "access_code": "CENSUS1",
+                "descriptions": "Requires access code.",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = CreateAssessmentAPIView.as_view()(request)
+        self.assertEqual(response.status_code, 201, response.data)
+        access_code = AccessCode.objects.get(code="CENSUS1")
+        self.assertEqual(access_code.max_uses, 0)
+        self.assertTrue(access_code.is_valid()[0])
+
+    def test_duplicate_training_access_code_does_not_create_assessment(self):
+        assessment_count = Assessment.objects.count()
+        request = APIRequestFactory().post(
+            "/api/assessments/create/",
+            {
+                "assessment_type": "TRAINING",
+                "title": "Duplicate access code training",
+                "training": self.training.id,
+                "require_access_code": True,
+                "access_code": self.access_code.code,
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = CreateAssessmentAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Assessment.objects.count(), assessment_count)
+        self.assertEqual(AccessCode.objects.filter(code=self.access_code.code).count(), 1)
+
+    def test_access_code_validation_checks_expired_and_exhausted_state(self):
+        self.access_code.is_active = False
+        self.access_code.save(update_fields=["is_active"])
+        ok, message = self.access_code.is_valid()
+        self.assertFalse(ok)
+        self.assertIn("inactive", message.lower())
+
+        self.access_code.is_active = True
+        self.access_code.expires_at = timezone.now() - timedelta(minutes=5)
+        self.access_code.save(update_fields=["is_active", "expires_at"])
+        ok, message = self.access_code.is_valid()
+        self.assertFalse(ok)
+        self.assertIn("expired", message.lower())
+
+        self.access_code.expires_at = None
+        self.access_code.max_uses = 1
+        self.access_code.used_count = 1
+        self.access_code.save(update_fields=["expires_at", "max_uses", "used_count"])
+        ok, message = self.access_code.is_valid()
+        self.assertFalse(ok)
+        self.assertIn("used", message.lower())
 
 
 class FinalAssessmentCooldownTests(TestCase):

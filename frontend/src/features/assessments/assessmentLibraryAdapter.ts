@@ -23,6 +23,10 @@ export interface AssessmentLibraryItem {
   duration?: number;
   tab_switch_enabled?: boolean;
   tab_switch_limit?: number;
+  training?: string | number | null;
+  require_access_code?: boolean;
+  is_published?: boolean;
+  training_user_count?: number;
   descriptions?: string;
   instructions?: string;
   questions: QuizQuestion[];
@@ -42,6 +46,8 @@ export interface LocalAssessmentTemplate {
   duration: number;
   tab_switch_enabled?: boolean;
   tab_switch_limit?: number;
+  training?: string | number | null;
+  require_access_code?: boolean;
   descriptions?: string;
   instructions?: string;
   questions: QuizQuestion[];
@@ -112,6 +118,8 @@ export const getLocalAssessmentTemplates = (): AssessmentLibraryItem[] => {
     duration: template.duration,
     tab_switch_enabled: template.tab_switch_enabled,
     tab_switch_limit: template.tab_switch_limit,
+    training: template.training ?? null,
+    require_access_code: template.require_access_code ?? false,
     descriptions: template.descriptions,
     instructions: template.instructions,
     questions: template.questions || [],
@@ -135,6 +143,8 @@ export const createLocalAssessmentTemplate = (data: CreateTemplateData, id?: str
     duration: data.duration ?? (data.assessment_type === "FINAL" ? 60 : 30),
     tab_switch_enabled: data.tab_switch_enabled ?? false,
     tab_switch_limit: data.tab_switch_limit ?? 0,
+    training: data.assessment_type === "TRAINING" ? (data as any).training ?? null : null,
+    require_access_code: data.assessment_type === "TRAINING" ? Boolean((data as any).require_access_code) : false,
     descriptions: data.descriptions,
     instructions: data.instructions,
     questions: [],
@@ -211,6 +221,9 @@ const toLibraryItem = (
   pass_mark: assessment.pass_mark,
   max_attempts: assessment.max_attempts,
   duration: assessment.duration,
+  training: (assessment as any).training ?? null,
+  require_access_code: Boolean((assessment as any).require_access_code),
+  is_published: assessment.is_published,
   descriptions: assessment.descriptions,
   instructions: assessment.instructions,
   questions: assessment.questions || [],
@@ -267,6 +280,10 @@ export const listAssessmentLibrary = async (): Promise<AssessmentLibraryItem[]> 
     duration: assessment.duration,
     tab_switch_enabled: assessment.tab_switch_enabled,
     tab_switch_limit: assessment.tab_switch_limit,
+    training: assessment.training ?? null,
+    require_access_code: assessment.require_access_code,
+    is_published: assessment.is_published,
+    training_user_count: assessment.training_user_count,
     descriptions: assessment.descriptions,
     instructions: assessment.instructions,
     questions: assessment.questions || [],
@@ -359,6 +376,8 @@ export const cloneAssessmentIntoCourse = async (
     pass_mark: source.pass_mark ?? (target.assessmentType === "FINAL" ? 60 : 70),
     max_attempts: source.max_attempts ?? 3,
     duration: source.duration ?? (target.assessmentType === "FINAL" ? 60 : 30),
+    training: source.training ?? null,
+    require_access_code: source.require_access_code ?? false,
     descriptions: source.descriptions,
     instructions: source.instructions,
   };
