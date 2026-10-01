@@ -91,9 +91,15 @@ class SectionSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        if request and not (
-            request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
-        ):
+        user = request.user if request else None
+        is_admin = bool(user and (
+            user.is_superuser
+            or user.groups.filter(name__in=["Admin", "Instructor"]).exists()
+            or getattr(user, "role", None) in ["admin", "instructor"]
+        ))
+        if is_admin and instance.draft_title:
+            data["title"] = instance.draft_title
+        if request and not is_admin:
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
         return data
@@ -208,9 +214,15 @@ class ModuleSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        if request and not (
-            request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
-        ):
+        user = request.user if request else None
+        is_admin = bool(user and (
+            user.is_superuser
+            or user.groups.filter(name__in=["Admin", "Instructor"]).exists()
+            or getattr(user, "role", None) in ["admin", "instructor"]
+        ))
+        if is_admin and instance.draft_title:
+            data["title"] = instance.draft_title
+        if request and not is_admin:
             data.pop('has_unpublished_changes', None)
             data.pop('pending_delete', None)
 

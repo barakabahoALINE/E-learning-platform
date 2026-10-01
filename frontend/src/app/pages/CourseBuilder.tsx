@@ -1369,6 +1369,7 @@ export function CourseBuilderPage() {
                       <ChevronRight className="w-5 h-5" />
                     )}
                   </button>
+
                   <div className="flex-1 flex items-center gap-3">
                     <div
                       className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${module.pending_delete ? "bg-red-50 text-red-600" : "bg-indigo-50 text-indigo-600"}`}
@@ -1380,7 +1381,10 @@ export function CourseBuilderPage() {
                       className={`flex-1 flex items-center gap-2 ${module.pending_delete ? "line-through text-gray-400" : ""}`}
                     >
                       <EditableTitle
-                        initialTitle={module.title}
+                        initialTitle={
+                          module.title === "New Module" ? "" : module.title
+                        }
+                        placeholder="New Module"
                         onSave={(val) =>
                           handleUpdateModuleTitle(module.id, val)
                         }
@@ -1403,6 +1407,7 @@ export function CourseBuilderPage() {
                       ) : null}
                     </div>
                   </div>
+
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-gray-500">
@@ -1470,7 +1475,12 @@ export function CourseBuilderPage() {
                               className={`flex items-center flex-1 w-full gap-2 ${section.pending_delete ? "line-through text-gray-400" : ""}`}
                             >
                               <EditableTitle
-                                initialTitle={section.title}
+                                initialTitle={
+                                  section.title === "New Section"
+                                    ? ""
+                                    : section.title
+                                }
+                                placeholder="New Section"
                                 onSave={(val) =>
                                   handleUpdateSectionTitle(
                                     module.id,
@@ -2185,11 +2195,13 @@ export function CourseBuilderPage() {
 
 function EditableTitle({
   initialTitle,
+  placeholder,
   onSave,
   prefix,
   className,
 }: {
   initialTitle: string;
+  placeholder?: string;
   onSave: (val: string) => void;
   prefix?: string;
   className?: string;
@@ -2212,6 +2224,7 @@ function EditableTitle({
       <input
         type="text"
         value={title}
+        placeholder={placeholder}
         onChange={handleChange}
         onBlur={() => {
           if (title !== initialTitle) onSave(title);
