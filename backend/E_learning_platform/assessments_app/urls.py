@@ -2,6 +2,13 @@ from django.urls import path
 from .views import *
 
 urlpatterns = [
+    path('trainings/', ListTrainingsAPIView.as_view(), name="list-trainings"),
+    path('trainings/create/', CreateTrainingAPIView.as_view(), name="create-training"),
+    path('training/my-assessments/', MyTrainingAssessmentsAPIView.as_view(), name="my-training-assessments"),
+    path('training/<int:assessment_id>/publish/', PublishTrainingAssessmentAPIView.as_view(), name="publish-training-assessment"),
+    path('training/<int:assessment_id>/users/', TrainingAssessmentUsersAPIView.as_view(), name="training-assessment-users"),
+    path('surveys/', ListSurveysAPIView.as_view(), name="list-surveys"),
+    path('surveys/create/', CreateSurveyAPIView.as_view(), name="create-survey"),
     path('list/', ListAssessmentsAPIView.as_view(), name="list-assessments"),
     path('create/', CreateAssessmentAPIView.as_view(), name="create-assessment"),
     path('<int:assessment_id>/update/', UpdateAssessmentAPIView.as_view(), name="update-assessment"),

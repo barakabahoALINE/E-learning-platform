@@ -1,4 +1,4 @@
-export type AssessmentType = "QUIZ" | "FINAL";
+export type AssessmentType = "QUIZ" | "FINAL" | "TRAINING";
 export type QuestionType = "single" | "multiple" | "matching" | "text";
 
 export interface Choice {
@@ -55,6 +55,7 @@ export interface Assessment {
   id?: number | string;
   course: number | string;
   module?: number | string | null;
+  training?: number | string | null;
   title: string;
   is_final: boolean;
   assessment_type: AssessmentType;
@@ -66,11 +67,13 @@ export interface Assessment {
   questions?: Question[];
   tab_switch_enabled?: boolean;
   tab_switch_limit?: number;
+  require_access_code?: boolean;
 }
 
 export interface AssessmentCreateData {
   course?: number | string | null;
   module?: number | string | null;
+  training?: number | string | null;
   title: string;
   is_final: boolean;
   assessment_type: AssessmentType;
@@ -81,6 +84,7 @@ export interface AssessmentCreateData {
   instructions?: string;
   tab_switch_enabled?: boolean;
   tab_switch_limit?: number;
+  require_access_code?: boolean;
 }
 
 export interface QuestionCreateData {

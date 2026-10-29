@@ -55,6 +55,8 @@ import { MyLearningPage } from "./pages/MyLearningPage";
 import { InstructorCourseStudents } from "./pages/InstructorCourseStudents";
 import { CommunityPage } from "./pages/CommunityPage";
 import { DiscussionDetailPage } from "./pages/DiscussionDetailPage";
+import { TrainingAssessmentsPage } from "./pages/TrainingAssessmentsPage";
+import { TrainingDashboardPage } from "./pages/TrainingDashboardPage";
 
 // Permissions that grant access to the shared admin/instructor portal
 const ADMIN_ACCESS_PERMISSIONS = [
@@ -165,6 +167,8 @@ function AppRoutes() {
             <ProtectedRoute>
               {canAccessAdmin ? (
                 <Navigate to="/admin" replace />
+              ) : user?.role === "training_user" || user?.groups?.includes("TrainingUser") ? (
+                <TrainingDashboardPage />
               ) : (
                 <DashboardPage />
               )}
@@ -175,7 +179,9 @@ function AppRoutes() {
           path="/courses"
           element={
             <ProtectedRoute>
-              {canAccessAdmin ? (
+              {user?.role === "training_user" || user?.groups?.includes("TrainingUser") ? (
+                <Navigate to="/dashboard" replace />
+              ) : canAccessAdmin ? (
                 <Navigate to="/admin/courses" replace />
               ) : (
                 <CoursesPage />
@@ -236,6 +242,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <MyLearningPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training-assessments"
+          element={
+            <ProtectedRoute>
+              <TrainingAssessmentsPage />
             </ProtectedRoute>
           }
         />

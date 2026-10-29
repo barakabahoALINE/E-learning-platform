@@ -14,7 +14,7 @@ import type {
   UpdateUserPayload,
 } from "./types";
 
-const SYSTEM_ROLES = new Set(["SuperAdmin", "Admin", "Instructor", "Student", "Viewer"]);
+const SYSTEM_ROLES = new Set(["SuperAdmin", "Admin", "Instructor", "Student", "Viewer", "TrainingUser"]);
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   Admin: "Platform manager with broad administrative access.",
@@ -47,7 +47,10 @@ const initials = (name: string, email: string) => {
     .toUpperCase();
 };
 
-const roleToBackendRole = (roleName: string) => roleName.toLowerCase().replace(/\s+/g, "_");
+const roleToBackendRole = (roleName: string) => {
+  if (["traininguser", "training user"].includes(roleName.toLowerCase())) return "training_user";
+  return roleName.toLowerCase().replace(/\s+/g, "_");
+};
 
 const formatDate = (value?: string | null) => {
   if (!value) return "Not available";
@@ -166,7 +169,16 @@ const initialState: RBACState = {
 
 const errorMessage = (error: unknown) => {
   const err = error as any;
-  return err?.response?.data?.detail || err?.response?.data?.message || err?.message || "RBAC request failed";
+  const responseData = err?.response?.data;
+  const directMessage = responseData?.detail || responseData?.message || responseData?.error;
+  if (typeof directMessage === "string") return directMessage;
+  if (responseData && typeof responseData === "object") {
+    const fieldMessages = Object.entries(responseData)
+      .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(", ") : String(messages)}`)
+      .join("; ");
+    if (fieldMessages) return fieldMessages;
+  }
+  return err?.message || "RBAC request failed";
 };
 
 export const fetchRBACData = createAsyncThunk(

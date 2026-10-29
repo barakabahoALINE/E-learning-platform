@@ -10,6 +10,36 @@ const assessmentAPI = {
     return response.data;
   },
 
+  listTrainings: async () => {
+    const response = await api.get('assessments/trainings/');
+    return response.data?.data || response.data || [];
+  },
+
+  createTraining: async (data: { title: string; description?: string; survey_name?: string; survey_description?: string; is_active?: boolean }) => {
+    const response = await api.post('assessments/trainings/create/', data);
+    return response.data;
+  },
+
+  listMyTrainingAssessments: async () => {
+    const response = await api.get('assessments/training/my-assessments/');
+    return response.data?.data || [];
+  },
+
+  setTrainingAssessmentPublished: async (assessmentId: number | string, isPublished: boolean) => {
+    const response = await api.post(`assessments/training/${assessmentId}/publish/`, { is_published: isPublished });
+    return response.data;
+  },
+
+  getTrainingAssessmentUsers: async (assessmentId: number | string) => {
+    const response = await api.get(`assessments/training/${assessmentId}/users/`);
+    return response.data?.data || [];
+  },
+
+  setTrainingAssessmentUsers: async (assessmentId: number | string, userIds: number[]) => {
+    const response = await api.put(`assessments/training/${assessmentId}/users/`, { user_ids: userIds });
+    return response.data;
+  },
+
   listAssessments: async (params?: { assessment_type?: string; course_id?: number | string; module_id?: number | string; unassigned?: boolean }) => {
     const query = new URLSearchParams();
     if (params) {
@@ -49,8 +79,11 @@ const assessmentAPI = {
     return response.data;
   },
 
-  startAttempt: async (assessmentId: number | string, courseId?: number | string) => {
-    const response = await api.post(`assessments/${assessmentId}/start-attempt/`, courseId !== undefined && courseId !== null ? { course_id: courseId } : {});
+  startAttempt: async (assessmentId: number | string, courseId?: number | string, accessCode?: string) => {
+    const payload: { course_id?: number | string; access_code?: string } = {};
+    if (courseId !== undefined && courseId !== null) payload.course_id = courseId;
+    if (accessCode) payload.access_code = accessCode;
+    const response = await api.post(`assessments/${assessmentId}/start-attempt/`, payload);
     return response.data;
   },
 
@@ -96,7 +129,7 @@ const assessmentAPI = {
 
   updateAssessmentSettings: async (
     assessmentId: number | string,
-    data: { title?: string; duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string; tab_switch_enabled?: boolean; tab_switch_limit?: number }
+    data: { title?: string; duration?: number; max_attempts?: number; pass_mark?: number; instructions?: string; tab_switch_enabled?: boolean; tab_switch_limit?: number; training?: number | string | null; require_access_code?: boolean }
   ) => {
     const response = await api.patch(`assessments/${assessmentId}/update/`, data);
     return response.data;

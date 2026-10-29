@@ -1,19 +1,4 @@
-# This module provides helper functions to filter querysets so that
-# users only see objects belonging to their own institution, while
-# allowing global objects (with no creator or institution) to be visible.
-# Super‑admin users bypass all filters and see every record.
-# from rest_framework.permissions import AllowAny, IsAuthenticated
-# from rest_framework.exceptions import PermissionDenied, ValidationError
-# from rest_framework.response import Response
-# from rest_framework.views import APIView
-# from django.db import transaction
-# from django.shortcuts import get_object_or_404
-# from .models import Content, Section, Module, Course, Level, Category
-# from .permissions import IsAdmin
-# from rest_framework.exceptions import ValidationError
-# from .models import Content, Section, Module, Course
-# from .serializers import *
-# from django.db.models import F
+
 from django.db.models import F, Q
 # # ═══════════════════════════════════════════════
 # # COURSE VIEWS  (unchanged logic, updated names)

@@ -21,6 +21,7 @@ import {
   X,
   CreditCard,
   Award,
+  ClipboardCheck,
 } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { logout } from "../../features/auth/authSlice";
@@ -39,13 +40,19 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isTrainingUser = user?.role === "training_user" || user?.groups?.includes("TrainingUser");
 
-  const navigation = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Courses", href: "/courses", icon: BookOpen },
-    { name: "My Learning", href: "/my-learning", icon: Award, authOnly: true },
-    { name: "Pricing", href: "/pricing", icon: CreditCard },
-  ];
+  const navigation = isTrainingUser
+    ? [
+        { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { name: "Assessments", href: "/training-assessments", icon: ClipboardCheck },
+      ]
+    : [
+        { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { name: "Courses", href: "/courses", icon: BookOpen },
+        { name: "My Learning", href: "/my-learning", icon: Award, authOnly: true },
+        { name: "Pricing", href: "/pricing", icon: CreditCard },
+      ];
 
   const handleLogout = () => {
     dispatch(logout());
@@ -92,9 +99,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
             {/* Search & User Menu */}
             <div className="flex items-center space-x-4">
-              <div className="hidden lg:block w-80">
-                <GlobalSearch />
-              </div>
+              {!isTrainingUser && <div className="hidden lg:block w-80"><GlobalSearch /></div>}
 
               <ThemeToggle />
 

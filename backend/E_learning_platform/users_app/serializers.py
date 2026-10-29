@@ -18,8 +18,14 @@ from google.auth.transport import requests
 from django.utils import timezone
 from django.db import transaction
 from django.contrib.auth.models import Group, Permission
-from .services.rbac import sync_user_role_group
-from .models import RoleMetadata
+from .services.rbac import (
+    ROLE_ADMIN,
+    ROLE_INSTRUCTOR,
+    ROLE_STUDENT,
+    ROLE_VIEWER,
+    sync_user_role_group,
+)
+from .models import AuditLog, RoleMetadata
 from .services.email_service import (
     send_verification_email,
     send_invitation_email,
@@ -144,12 +150,92 @@ class SignupSerializer(serializers.ModelSerializer):
         return user
 
 
+class AdminCreateUserSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    full_name = serializers.CharField(max_length=255)
+    institution = serializers.CharField(max_length=255)
+    department = serializers.CharField(required=False, allow_blank=True, default="")
+    role = serializers.ChoiceField(
+        choices=[
+            ("admin", "Admin"),
+            ("instructor", "Instructor"),
+            ("viewer", "Viewer"),
+            ("student", "Student"),
+        ],
+        default="instructor",
+    )
+    is_active = serializers.BooleanField(default=False)
+    is_verified = serializers.BooleanField(default=False)
+    groups = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+    )
+
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value.lower()
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if request and not request.user.is_superuser:
+            if attrs.get("institution") != request.user.institution:
+                raise serializers.ValidationError({"institution": "You can only create users in your own institution."})
+        return attrs
+
+    def validate_groups(self, value):
+        group_names = list(dict.fromkeys(value))
+        groups = list(Group.objects.filter(name__in=group_names).order_by("name"))
+        existing_names = {group.name for group in groups}
+        missing = [name for name in group_names if name not in existing_names]
+        if missing:
+            raise serializers.ValidationError(f"One or more groups do not exist: {', '.join(missing)}")
+        return groups
+
+    def create(self, validated_data):
+        groups = validated_data.pop("groups", [])
+
+        with transaction.atomic():
+            user = User.objects.create_user(
+                email=validated_data["email"],
+                full_name=validated_data["full_name"],
+                institution=validated_data["institution"],
+                department=validated_data.get("department", ""),
+                password=None,
+                role=validated_data["role"],
+                is_active=validated_data.get("is_active", False),
+                is_verified=validated_data.get("is_verified", False),
+            )
+
+            sync_user_role_group(user)
+
+            role_group_map = {
+                "student": ROLE_STUDENT,
+                "instructor": ROLE_INSTRUCTOR,
+                "admin": ROLE_ADMIN,
+                "viewer": ROLE_VIEWER,
+            }
+            role_group_name = role_group_map.get(user.role)
+            if role_group_name:
+                role_group = Group.objects.filter(name=role_group_name).first()
+                if role_group:
+                    merged_groups = list(dict.fromkeys(list(groups) + [role_group]))
+                    user.groups.set(merged_groups)
+            elif groups:
+                user.groups.set(groups)
+
+            return user
+
+
 class AddUserSerializer(serializers.ModelSerializer):
     role = serializers.ChoiceField(
         choices=[
             ("admin", "Admin"),
             ("instructor", "Instructor"),
             ("viewer", "Viewer"),
+            ("training_user", "Training User"),
         ],
         default="instructor",
     )
@@ -355,6 +441,33 @@ class LogoutSerializer(serializers.Serializer):
             token.blacklist()
         except Exception:
             raise serializers.ValidationError("Invalid or expired token")
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    actor_email = serializers.SerializerMethodField()
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "action",
+            "target",
+            "details",
+            "module",
+            "severity",
+            "status",
+            "ip_address",
+            "created_at",
+            "actor_email",
+            "actor_name",
+        ]
+
+    def get_actor_email(self, obj):
+        return obj.actor.email if obj.actor else ""
+
+    def get_actor_name(self, obj):
+        return obj.actor.full_name if obj.actor else "System"
+
 
 class UserListSerializer(serializers.ModelSerializer):
     groups = serializers.SlugRelatedField(
