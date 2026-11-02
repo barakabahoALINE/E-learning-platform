@@ -3,6 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
+from django.db.models import Count, Q
 from .models import CommunityDiscussion, CommunityReply, CommunityLike
 from .serializers import CommunityDiscussionSerializer, CommunityReplySerializer, CommunityLikeSerializer
 from .permissions import (
@@ -256,6 +257,32 @@ class LikeListAPIView(generics.ListAPIView):
                 "success": True,
                 "message": "Likes retrieved successfully.",
                 "data": serializer.data,
+            }
+        )
+
+
+class LikeSummaryAPIView(APIView):
+    permission_classes = [IsAuthenticated, CanViewLike]
+
+    def get(self, request):
+        summaries = CommunityLike.objects.values("item_type", "item_id").annotate(
+            like_count=Count("id"),
+            liked_by_current_user=Count("id", filter=Q(user=request.user)),
+        )
+        data = [
+            {
+                "item_type": summary["item_type"],
+                "item_id": summary["item_id"],
+                "like_count": summary["like_count"],
+                "liked_by_current_user": summary["liked_by_current_user"] > 0,
+            }
+            for summary in summaries
+        ]
+        return Response(
+            {
+                "success": True,
+                "message": "Like summaries retrieved successfully.",
+                "data": data,
             }
         )
 

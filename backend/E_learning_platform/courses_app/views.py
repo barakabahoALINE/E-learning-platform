@@ -36,7 +36,7 @@ from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from .models import Content, Section, Module, Course
 from .serializers import *
-from assessments_app.models import Assessment, Choice
+from assessments_app.models import Assessment, Attempt, Choice
 
 
 def _is_admin_user(user):
@@ -471,7 +471,9 @@ class CourseDeleteAPIView(generics.DestroyAPIView):
 
         # If the course is a draft (not published), delete it directly
         if not instance.is_published:
-            instance.delete()
+            with transaction.atomic():
+                Attempt.objects.filter(course=instance).delete()
+                instance.delete()
             return Response({
                 "success": True,
                 "message": f"Course '{instance.title}' deleted successfully."
@@ -1611,6 +1613,7 @@ class PublishCourseChangesAPIView(APIView):
             # 2. HANDLE DELETE COURSE
             # =========================
             if course.pending_delete:
+                Attempt.objects.filter(course=course).delete()
                 course.delete()
                 return Response({
                     "success": True,

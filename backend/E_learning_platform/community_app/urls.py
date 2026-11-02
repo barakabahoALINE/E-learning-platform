@@ -13,6 +13,7 @@ urlpatterns = [
     path("replies/<int:pk>/", ReplyDetailAPIView.as_view(), name="community-reply-detail"),
     path("replies/<int:pk>/update/", ReplyUpdateAPIView.as_view(), name="community-reply-update"),
     path("replies/<int:pk>/delete/", ReplyDeleteAPIView.as_view(), name="community-reply-delete"),
+    path("likes/summary/", LikeSummaryAPIView.as_view(), name="community-like-summary"),
     path("likes/", LikeListAPIView.as_view(), name="community-like-list"),
     path("likes/create/", LikeCreateAPIView.as_view(), name="community-like-create"),
     path("likes/<int:pk>/", LikeDetailAPIView.as_view(), name="community-like-detail"),

@@ -11,7 +11,7 @@ interface Props {
     courseTitle: string,
     title: string,
     description: string,
-  ) => void | string;
+  ) => void | string | Promise<void | string>;
   submitLabel?: string;
 }
 
@@ -24,6 +24,8 @@ const AskDiscussionModal: React.FC<Props> = ({
 }) => {
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [courseId, setCourseId] = React.useState(
     defaultCourseId ?? enrolledCourses[0]?.id ?? "",
   );
@@ -36,10 +38,20 @@ const AskDiscussionModal: React.FC<Props> = ({
   const selected =
     enrolledCourses.find((c) => c.id === courseId) ?? enrolledCourses[0];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selected || !title.trim() || !description.trim()) return;
-    onPost(courseId, selected.title, title.trim(), description.trim());
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onPost(courseId, selected.title, title.trim(), description.trim());
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Unable to post the question.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -64,6 +76,11 @@ const AskDiscussionModal: React.FC<Props> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
+          {submitError && (
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              {submitError}
+            </p>
+          )}
           <div>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
               Course
@@ -116,9 +133,10 @@ const AskDiscussionModal: React.FC<Props> = ({
             </Button>
             <Button
               type="submit"
+              disabled={isSubmitting}
               className="bg-blue-600 text-white hover:bg-blue-700"
             >
-              {submitLabel}
+              {isSubmitting ? "Posting..." : submitLabel}
             </Button>
           </div>
         </form>

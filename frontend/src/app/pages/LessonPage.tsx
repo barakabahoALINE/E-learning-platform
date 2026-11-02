@@ -743,29 +743,26 @@ export const LessonPage: React.FC = () => {
     }, 500);
   };
 
-  const handleNavigateToLesson = useCallback(
-    (itemId: string | number) => {
-      const targetItem = orderedLessons.find(
-        (lesson) => String(lesson.id) === String(itemId),
-      );
-      if (!targetItem) return;
+  const handleNavigateToLesson = (itemId: string | number) => {
+    const targetItem = orderedLessons.find(
+      (lesson) => String(lesson.id) === String(itemId),
+    );
+    if (!targetItem) return;
 
+    userCompletionIntentRef.current = false;
+    setActiveItemId(itemId);
+    scrollMainToItem(itemId, "smooth");
+    window.setTimeout(() => {
       userCompletionIntentRef.current = false;
-      setActiveItemId(itemId);
-      scrollMainToItem(itemId, "smooth");
-      window.setTimeout(() => {
-        userCompletionIntentRef.current = false;
-      }, 500);
-    },
-    [orderedLessons, scrollMainToItem],
-  );
+    }, 500);
+  };
 
-  const handlePreviousLesson = useCallback(() => {
+  const handlePreviousLesson = () => {
     if (!previousLesson) return;
     handleNavigateToLesson(previousLesson.id);
-  }, [handleNavigateToLesson, previousLesson]);
+  };
 
-  const handleNextLesson = useCallback(() => {
+  const handleNextLesson = () => {
     if (!currentModule) return;
 
     if (nextLesson) {
@@ -781,16 +778,7 @@ export const LessonPage: React.FC = () => {
         handleNextModule();
       }
     }
-  }, [
-    currentModule,
-    courseId,
-    handleNavigateToLesson,
-    handleNextModule,
-    isCurrentLessonComplete,
-    isModuleComplete,
-    nextLesson,
-    navigate,
-  ]);
+  };
 
   const handleCloseLesson = async () => {
     if (numericCourseId) {
@@ -806,38 +794,37 @@ export const LessonPage: React.FC = () => {
   return (
     <div className="h-screen bg-background dark:bg-gray-900 flex flex-col font-sans overflow-hidden">
       {/* Header */}
-      <header className=" bg-white/30 dark:bg-gray-900/30 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50 px-6 bg-red-500 py-4 backdrop-blur-2xl rounded-b-lg shadow-xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-4 flex-1">
+      <header className="sticky top-0 z-50 rounded-b-lg border-b border-gray-200 bg-white/90 px-4 py-2 shadow-xs backdrop-blur-2xl dark:border-gray-700 dark:bg-gray-900/90 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center space-x-3">
             <Link
               to="/dashboard"
-              className="flex items-center space-x-2 border-r border-gray-300 pr-4"
+              className="flex shrink-0 items-center space-x-2 border-r border-gray-300 pr-3 sm:pr-4"
             >
-              <img src={Logo} alt="Logo" className="h-14 w-auto" />
+              <img src={Logo} alt="Logo" className="h-10 w-auto sm:h-12" />
             </Link>
-            <div className="flex-1 px-6">
-              <h1 className="text-sm dark:text-white font-medium">
+            <div className="min-w-0 flex-1 px-1 sm:px-3">
+              <h1 className="truncate text-sm font-medium dark:text-white">
                 {course.title}
               </h1>
-              <p className="text-xs text-muted-foreground dark:text-gray-400">
+              <p className="truncate text-xs text-muted-foreground dark:text-gray-400">
                 {currentModule.title} {" > "}{" "}
                 {currentModule.sections
                   .map((section) => section.title)
                   .join(", ")}
               </p>
-              <div className="flex-1">
-                <div className="flex items-center justify-between text-sm text-muted-foreground dark:text-gray-400 mb-1">
-                  <div></div>
-                  <div className="flex gap-4">
+              <div className="mt-1 flex-1">
+                <div className="mb-1 flex items-center justify-end text-xs text-muted-foreground dark:text-gray-400">
+                  <div className="flex gap-3">
                     <span>Course Progress</span>
                     <span>{Math.round(currentProgressPercentage)}%</span>
                   </div>
                 </div>
-                <Progress value={currentProgressPercentage} className="h-1.5" />
+                <Progress value={currentProgressPercentage} className="h-1" />
               </div>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex shrink-0 items-center space-x-1 sm:space-x-2">
             <ThemeToggle />
             <Button
               variant="ghost"
@@ -863,16 +850,16 @@ export const LessonPage: React.FC = () => {
         {/* Main Content Area - Scrollable */}
         <main
           ref={mainRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth custom-scrollbar bg-gray-50 dark:bg-[#111827]"
+          className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden scroll-smooth custom-scrollbar bg-gray-50 dark:bg-[#111827]"
         >
-          <div className="max-w-4xl mx-auto px-6 py-12 space-y-20 pb-32">
+          <div className="mx-auto w-full max-w-6xl space-y-12 px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-8">
             {/* Continuous Scroll Sections */}
-            <div className="space-y-32">
+            <div className="space-y-20">
               {currentModule.sections.map((section, sIdx) => (
                 <div
                   key={section.id}
                   id={`section-${section.id}`}
-                  className="space-y-12 scroll-mt-24"
+                  className="space-y-8 scroll-mt-24"
                 >
                   <div className="flex items-center gap-6">
                     <div className="flex-1">
@@ -883,7 +870,7 @@ export const LessonPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-16 pl-0">
+                  <div className="space-y-10 pl-0">
                     {section.contents.map((item) => {
                       const blocks =
                         contentBlocksByItemId.get(String(item.id)) || [];
@@ -917,7 +904,7 @@ export const LessonPage: React.FC = () => {
             </div>
 
             {/* Module Completion / Quiz Section */}
-            <div className="pt-20 pb-10" id="module-quiz-banner">
+            <div className="pt-10 pb-6" id="module-quiz-banner">
               <div className="mx-auto max-w-5xl rounded-2xl border border-slate-200 bg-card p-4 text-card-foreground shadow-sm dark:border-slate-700 sm:p-6">
                 <div className="flex flex-col items-center gap-4 md:flex-row md:items-center">
                   {currentModule.quiz ? (
@@ -1036,10 +1023,10 @@ export const LessonPage: React.FC = () => {
           </div>
 
           {currentLesson && (
-            <div className="sticky bottom-4 z-30 mt-8 pb-4">
-              <div className="mx-auto max-w-5xl px-4 sm:px-6">
-                <div className="pointer-events-auto rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/60 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/90 dark:shadow-none">
-                  <div className="flex items-center justify-between gap-3">
+            <div className="sticky bottom-0 z-30 px-3 py-2 sm:px-6">
+              <div className="mx-auto max-w-6xl">
+                <div className="pointer-events-auto rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-lg shadow-slate-200/60 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-none sm:px-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground dark:text-slate-400">
                         Lesson {lessonNavigation.currentLessonNumber} of{" "}
@@ -1050,13 +1037,13 @@ export const LessonPage: React.FC = () => {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex shrink-0 gap-2 sm:items-center">
                       <Button
                         variant="outline"
                         size="sm"
                         disabled={!previousLesson}
                         onClick={handlePreviousLesson}
-                        className="h-10 rounded-xl px-3 text-sm"
+                        className="h-9 flex-1 rounded-lg px-3 text-sm sm:flex-none"
                         aria-label={
                           previousLesson
                             ? `Previous lesson: ${previousLesson.title}`
@@ -1074,7 +1061,7 @@ export const LessonPage: React.FC = () => {
                             : !isModuleComplete
                         }
                         onClick={handleNextLesson}
-                        className="h-10 rounded-xl px-4 text-sm font-semibold"
+                        className="h-9 flex-1 rounded-lg px-3 text-sm font-semibold sm:flex-none"
                         aria-label={
                           nextLesson
                             ? `Next lesson: ${nextLesson.title}`
@@ -1084,7 +1071,7 @@ export const LessonPage: React.FC = () => {
                         }
                       >
                         {nextLesson
-                          ? `Next: ${nextLesson.title}`
+                          ? "Next Lesson →"
                           : isModuleComplete
                             ? currentModule.quiz
                               ? "Start Module Quiz"
@@ -1111,14 +1098,14 @@ export const LessonPage: React.FC = () => {
         <aside
           className={cn(
             "fixed lg:static top-0 right-0 z-[60] lg:z-0",
-            "w-96 max-w-[90vw] h-full",
+            "w-80 max-w-[90vw] h-full shrink-0 lg:w-[min(22rem,30vw)]",
             "bg-gray-50 dark:bg-[#111827] border-l border-gray-200 dark:border-gray-800 shadow-2xl lg:shadow-none",
             "transition-transform duration-500 ease-in-out flex flex-col overflow-hidden",
             showSidebar ? "translate-x-0" : "translate-x-full lg:translate-x-0",
           )}
         >
           {/* Sidebar Header */}
-          <div className="px-6 py-5 border-b border-border dark:border-white/5 backdrop-blur-md sticky top-0 z-10 shrink-0">
+          <div className="sticky top-0 z-10 shrink-0 border-b border-border px-4 py-3 backdrop-blur-md dark:border-white/5 sm:px-5">
             <div className="flex items-center justify-between mb-1.5">
               <h3 className="text-[17px] font-bold text-foreground dark:text-white">
                 Course Content
@@ -1147,7 +1134,7 @@ export const LessonPage: React.FC = () => {
           </div>
 
           {/* Scrollable Sidebar Content */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-2">
+          <div className="flex-1 space-y-2 overflow-y-auto custom-scrollbar p-4">
             {course.modules?.map((module, mIdx) => {
               const isModuleExpanded = expandedModules.includes(
                 Number(module.id),
