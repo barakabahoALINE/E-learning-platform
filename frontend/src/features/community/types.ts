@@ -31,3 +31,10 @@ export interface CommunityLike {
   itemId: string;
   createdAt: string;
 }
+
+export interface CommunityLikeSummary {
+  itemType: LikeItemType;
+  itemId: string;
+  likeCount: number;
+  likedByCurrentUser: boolean;
+}

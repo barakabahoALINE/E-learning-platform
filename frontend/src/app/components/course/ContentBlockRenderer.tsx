@@ -42,7 +42,6 @@ const TrackableVideo: React.FC<{
     hasPlayed: false,
     hasReported: false,
     lastTime: 0,
-    watchedSeconds: 0,
   });
 
   React.useEffect(() => {
@@ -50,7 +49,6 @@ const TrackableVideo: React.FC<{
       hasPlayed: false,
       hasReported: false,
       lastTime: 0,
-      watchedSeconds: 0,
     };
   }, [block.content]);
 
@@ -62,33 +60,25 @@ const TrackableVideo: React.FC<{
   const handleTimeUpdate = (event: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = event.currentTarget as HTMLVideoElement;
     const state = watchStateRef.current;
-    if (!state.hasPlayed || video.paused || video.seeking) {
-      state.lastTime = video.currentTime;
-      return;
-    }
-
-    const elapsed = video.currentTime - state.lastTime;
-    if (elapsed > 0 && elapsed <= 2.5) {
-      state.watchedSeconds += elapsed;
-    }
+    if (!state.hasPlayed || video.seeking) return;
     state.lastTime = video.currentTime;
   };
 
   const handleSeekBoundary = (
     event: React.SyntheticEvent<HTMLVideoElement>,
   ) => {
-    watchStateRef.current.lastTime = event.currentTarget.currentTime;
-  };
-
-  const handleEnded = (event: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = event.currentTarget as HTMLVideoElement;
     const state = watchStateRef.current;
-    const duration = Number.isFinite(video.duration) ? video.duration : 0;
-    const requiredWatchSeconds = duration > 0 ? duration * 0.95 : 0;
-    const watchedEnough =
-      duration === 0 || state.watchedSeconds >= requiredWatchSeconds;
+    if (video.currentTime < state.lastTime) {
+      state.lastTime = video.currentTime;
+    } else if (video.currentTime > state.lastTime) {
+      video.currentTime = state.lastTime;
+    }
+  };
 
-    if (state.hasPlayed && watchedEnough && !state.hasReported) {
+  const handleEnded = () => {
+    const state = watchStateRef.current;
+    if (state.hasPlayed && !state.hasReported) {
       state.hasReported = true;
       onWatchedToEnd?.(block.id);
     }
@@ -103,7 +93,6 @@ const TrackableVideo: React.FC<{
       onPlay={handlePlay}
       onTimeUpdate={handleTimeUpdate}
       onSeeking={handleSeekBoundary}
-      onSeeked={handleSeekBoundary}
       onEnded={handleEnded}
     >
       Your browser does not support the video tag.

@@ -34,6 +34,13 @@ export interface CommunityLikeResponse {
   created_at: string;
 }
 
+export interface CommunityLikeSummaryResponse {
+  item_type: LikeItemType;
+  item_id: string | number;
+  like_count: number;
+  liked_by_current_user: boolean;
+}
+
 interface ApiResponse<T> {
   success: boolean | string;
   message?: string;
@@ -119,6 +126,13 @@ const communityAPI = {
   fetchLikes: async () => {
     const response = await api.get<ApiResponse<CommunityLikeResponse[]>>(
       'community/likes/',
+    );
+    return response.data;
+  },
+
+  fetchLikeSummaries: async () => {
+    const response = await api.get<ApiResponse<CommunityLikeSummaryResponse[]>>(
+      'community/likes/summary/',
     );
     return response.data;
   },

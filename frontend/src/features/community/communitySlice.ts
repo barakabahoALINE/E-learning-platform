@@ -3,12 +3,14 @@ import communityAPI, {
   CommunityDiscussionResponse,
   CommunityReplyResponse,
   CommunityLikeResponse,
+  CommunityLikeSummaryResponse,
   LikeItemType,
 } from './communityAPI';
 import {
   CommunityDiscussion,
   CommunityReply,
   CommunityLike,
+  CommunityLikeSummary,
 } from './types';
 
 interface CommunityState {
@@ -16,6 +18,7 @@ interface CommunityState {
   discussionById: Record<string, CommunityDiscussion | undefined>;
   replies: CommunityReply[];
   likes: CommunityLike[];
+  likeSummaries: CommunityLikeSummary[];
   isLoading: boolean;
   error: string | null;
   status: 'idle' | 'loading' | 'succeeded' | 'failed';
@@ -26,6 +29,7 @@ const initialState: CommunityState = {
   discussionById: {},
   replies: [],
   likes: [],
+  likeSummaries: [],
   isLoading: false,
   error: null,
   status: 'idle',
@@ -197,6 +201,17 @@ export const fetchCommunityLikes = createAsyncThunk(
   },
 );
 
+export const fetchCommunityLikeSummaries = createAsyncThunk(
+  'community/fetchLikeSummaries',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await communityAPI.fetchLikeSummaries();
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch like summaries');
+    }
+  },
+);
+
 export const createCommunityLike = createAsyncThunk(
   'community/createLike',
   async (
@@ -317,15 +332,47 @@ const communitySlice = createSlice({
       .addCase(fetchCommunityLikes.fulfilled, (state, action: PayloadAction<any>) => {
         state.likes = action.payload.data.map(normalizeLike);
       })
+      .addCase(fetchCommunityLikeSummaries.fulfilled, (state, action: PayloadAction<any>) => {
+        state.likeSummaries = action.payload.data.map((summary: CommunityLikeSummaryResponse) => ({
+          itemType: summary.item_type,
+          itemId: String(summary.item_id),
+          likeCount: summary.like_count,
+          likedByCurrentUser: summary.liked_by_current_user,
+        }));
+      })
       .addCase(createCommunityLike.fulfilled, (state, action: PayloadAction<any>) => {
         const normalized = normalizeLike(action.payload.data);
         if (!state.likes.some((like) => like.id === normalized.id)) {
           state.likes.push(normalized);
+          const summary = state.likeSummaries.find(
+            (item) => item.itemType === normalized.itemType && item.itemId === normalized.itemId,
+          );
+          if (summary) {
+            summary.likeCount += 1;
+            summary.likedByCurrentUser = true;
+          } else {
+            state.likeSummaries.push({
+              itemType: normalized.itemType,
+              itemId: normalized.itemId,
+              likeCount: 1,
+              likedByCurrentUser: true,
+            });
+          }
         }
       })
       .addCase(deleteCommunityLike.fulfilled, (state, action: PayloadAction<any>) => {
         const deletedId = (action as any).meta?.arg as string;
+        const deletedLike = state.likes.find((like) => like.id === deletedId);
         state.likes = state.likes.filter((like) => like.id !== deletedId);
+        if (deletedLike) {
+          const summary = state.likeSummaries.find(
+            (item) => item.itemType === deletedLike.itemType && item.itemId === deletedLike.itemId,
+          );
+          if (summary) {
+            summary.likeCount = Math.max(0, summary.likeCount - 1);
+            summary.likedByCurrentUser = false;
+          }
+        }
       })
       .addMatcher(
         (action) => action.type.startsWith('community/') && action.type.endsWith('/pending'),

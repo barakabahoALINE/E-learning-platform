@@ -51,15 +51,18 @@ import {
 } from "../../features/progress/progressSlice";
 import {
   normalizeCourseId,
-  useCommunity,
   formatRelativeTime,
 } from "../data/community-data";
-import { useLikeState } from "../data/like-data";
 import { MainLayout } from "../components/MainLayout";
 import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { getMediaUrl } from "../utils/media";
 import AskDiscussionModal from "../components/AskDiscussionModal";
+import {
+  createCommunityDiscussion,
+  fetchCommunityDiscussions,
+  fetchCommunityLikeSummaries,
+} from "../../features/community/communitySlice";
 
 export const CourseDetailPage: React.FC = () => {
   const { courseId } = useParams();
@@ -81,10 +84,15 @@ export const CourseDetailPage: React.FC = () => {
     (state) => state.progress,
   );
   const { user } = useAppSelector((state) => state.auth);
-
-  const { discussions, addDiscussion } = useCommunity();
-  const { getSummary } = useLikeState(user ? String(user.id) : undefined);
+  const { discussions, likeSummaries } = useAppSelector(
+    (state) => state.community,
+  );
   const [showAskModal, setShowAskModal] = React.useState(false);
+
+  const getLikeSummary = (itemId: string) =>
+    likeSummaries.find(
+      (summary) => summary.itemType === "discussion" && summary.itemId === itemId,
+    ) ?? { likeCount: 0, likedByCurrentUser: false };
 
   const handleOpenAskModal = () => {
     if (!user) {
@@ -115,7 +123,7 @@ export const CourseDetailPage: React.FC = () => {
     );
   const discussionCount = courseDiscussions.length;
 
-  const handlePostCourseDiscussion = (
+  const handlePostCourseDiscussion = async (
     courseIdValue: string,
     courseTitle: string,
     title: string,
@@ -126,16 +134,16 @@ export const CourseDetailPage: React.FC = () => {
       return;
     }
 
-    const newDiscussionId = addDiscussion(
-      courseIdValue,
-      courseTitle,
-      title,
-      description,
-      String(user.id),
-      user.full_name || user.email?.split("@")[0] || "User",
-    );
+    const response = await dispatch(
+      createCommunityDiscussion({
+        course_id: courseIdValue,
+        course_title: courseTitle,
+        title,
+        description,
+      }),
+    ).unwrap();
     setShowAskModal(false);
-    navigate(`/community/${newDiscussionId}`);
+    navigate(`/community/${response.data.id}`);
   };
 
   const enrolledCoursesForModal = course
@@ -149,6 +157,11 @@ export const CourseDetailPage: React.FC = () => {
       dispatch(fetchCourseModulesProgress(numericCourseId));
     }
   }, [dispatch, numericCourseId]);
+
+  useEffect(() => {
+    dispatch(fetchCommunityDiscussions());
+    dispatch(fetchCommunityLikeSummaries());
+  }, [dispatch]);
 
   useEffect(() => {
     if (user && numericCourseId) {
@@ -599,10 +612,7 @@ export const CourseDetailPage: React.FC = () => {
                 ) : (
                   <div className="space-y-4">
                     {courseDiscussions.map((discussion) => {
-                      const discussionLike = getSummary(
-                        "discussion",
-                        discussion.id,
-                      );
+                      const discussionLike = getLikeSummary(discussion.id);
                       return (
                         <Link
                           to={`/community/${discussion.id}`}

@@ -15,17 +15,23 @@ import {
   Heart,
 } from "lucide-react";
 import { MainLayout } from "../components/MainLayout";
-import { useAppSelector } from "../../hooks/reduxHooks";
+import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
 import { selectCurrentUser } from "../../features/auth/authSelectors";
 import {
-  useCommunity,
   formatRelativeTime,
   getInitials,
   normalizeCourseId,
-  CommunityDiscussion,
 } from "../data/community-data";
-import { useLikeState } from "../data/like-data";
 import AskDiscussionModal from "../components/AskDiscussionModal";
+import {
+  createCommunityDiscussion,
+  createCommunityLike,
+  deleteCommunityLike,
+  fetchCommunityDiscussions,
+  fetchCommunityLikeSummaries,
+  fetchCommunityLikes,
+} from "../../features/community/communitySlice";
+import type { CommunityDiscussion, LikeItemType } from "../../features/community/types";
 
 // ── Ask Question Modal ─────────────────────────────────────────────────────────
 
@@ -164,6 +170,7 @@ const DiscussionRow: React.FC<DiscussionRowProps> = ({
 
 export const CommunityPage: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const reduxUser = useAppSelector(selectCurrentUser);
   const user = reduxUser
     ? {
@@ -175,6 +182,9 @@ export const CommunityPage: React.FC = () => {
   // Get enrolled courses from Redux
   const { myEnrollments } = useAppSelector((state) => state.enrollments);
   const { courses } = useAppSelector((state) => state.courses);
+  const { discussions, likes, likeSummaries, isLoading, error: communityError } = useAppSelector(
+    (state) => state.community,
+  );
 
   const enrolledCourses = myEnrollments
     .filter((enrollment) => enrollment.status !== "cancelled")
@@ -186,12 +196,26 @@ export const CommunityPage: React.FC = () => {
       };
     });
 
-  const { discussions, addDiscussion } = useCommunity();
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [likeLoading, setLikeLoading] = useState<Record<string, boolean>>({});
   const [likeError, setLikeError] = useState<string | null>(null);
-  const { getSummary, toggleLike } = useLikeState(user?.id);
+
+  React.useEffect(() => {
+    dispatch(fetchCommunityDiscussions());
+    dispatch(fetchCommunityLikes());
+    dispatch(fetchCommunityLikeSummaries());
+  }, [dispatch]);
+
+  const getSummary = (itemType: LikeItemType, itemId: string) =>
+    likeSummaries.find(
+      (summary) => summary.itemType === itemType && summary.itemId === itemId,
+    ) ?? {
+      itemType,
+      itemId,
+      likeCount: 0,
+      likedByCurrentUser: false,
+    };
 
   const enrolledIds = new Set(
     enrolledCourses.map((course) => normalizeCourseId(course.id)),
@@ -211,7 +235,19 @@ export const CommunityPage: React.FC = () => {
     setLikeError(null);
     setLikeLoading((prev) => ({ ...prev, [key]: true }));
     try {
-      await toggleLike("discussion", discussionId);
+      const existingLike = likes.find(
+        (like) =>
+          like.itemType === "discussion" &&
+          like.itemId === discussionId &&
+          like.user === user.id,
+      );
+      if (existingLike) {
+        await dispatch(deleteCommunityLike(existingLike.id)).unwrap();
+      } else {
+        await dispatch(
+          createCommunityLike({ itemType: "discussion", itemId: discussionId }),
+        ).unwrap();
+      }
     } catch (error) {
       setLikeError(
         error instanceof Error
@@ -276,6 +312,12 @@ export const CommunityPage: React.FC = () => {
           </div>
         )}
 
+        {communityError && (
+          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+            {communityError}
+          </div>
+        )}
+
         {/* No enrolled courses empty state */}
         {!hasEnrolledCourses ? (
           <Card>
@@ -311,6 +353,10 @@ export const CommunityPage: React.FC = () => {
                 className="pl-10"
               />
             </div>
+
+            {isLoading && discussions.length === 0 ? (
+              <p className="py-8 text-center text-sm text-gray-500">Loading discussions...</p>
+            ) : null}
 
             {/* Discussion list */}
             <Card>
@@ -379,16 +425,16 @@ export const CommunityPage: React.FC = () => {
         <AskDiscussionModal
           enrolledCourses={enrolledCoursesSimple}
           defaultCourseId={enrolledCoursesSimple[0]?.id}
-          onPost={(cId, cTitle, title, desc) => {
-            const newId = addDiscussion(
-              cId,
-              cTitle,
-              title,
-              desc,
-              user.id,
-              user.name,
-            );
-            // close modal and navigate to discussion
+          onPost={async (cId, cTitle, title, desc) => {
+            const response = await dispatch(
+              createCommunityDiscussion({
+                course_id: cId,
+                course_title: cTitle,
+                title,
+                description: desc,
+              }),
+            ).unwrap();
+            const newId = String(response.data.id);
             setShowModal(false);
             navigate(`/community/${newId}`);
             return newId;
